@@ -50,6 +50,13 @@ than in user config because a deck reached through `CARD_ROOT` arrives as a
 bare path with nothing else supplied, and the agent holding it still has to be
 able to name a new card.
 
+**The convention path is read-only inside the sandbox by default.** `sbox`
+ro-binds `/` and grants read-write to the workspace, `~/.cache`, and the
+entries in its `COMMON_RW_MOUNTS`; `~/.local/share` was not among them, so
+`init` failed with EROFS from any agent session. `~/.local/share/card` was
+added to that list on 2026-08-21. It has to exist before sbox runs, because a
+mount path that is missing is skipped with a warning.
+
 **User config has one job**: pointing at decks that are not where the
 convention would put them. A conventional deck needs no entry at all.
 Agentpane's `docs/work/` is the only entry that exists today; card's own deck
@@ -69,8 +76,8 @@ Outside a git repository at all, there is no deck and nothing to report.
 
 ```
 ---
-labels: PROJ-123, work-laptop
-blocked-by: PROJ-behilo
+labels: [PROJ-123, work-laptop]
+blocked-by: [PROJ-behilo]
 ---
 
 # One headline, never wrapped, the only `# ` line in the file.
@@ -79,8 +86,12 @@ Body, wrapped at eighty columns, `##` for any subheading.
 ```
 
 Both frontmatter fields are lists, both may be absent, and the tool interprets
-only `blocked-by`. Labels are opaque strings it matches and never reasons
-about. `kind:` and `where:` are gone; the brief says why.
+only `blocked-by`. Values are YAML flow sequences on a single line: one line
+per field is what keeps `^labels:` a useful grep, and the bracket form is
+valid YAML, so anything else that opens the deck reads a list rather than one
+comma-laden string. No block sequences, no wrapping. Labels are opaque strings
+it matches and never reasons about. `kind:` and `where:` are gone; the brief
+says why.
 
 Ids are `<PREFIX>-` plus three consonant-vowel syllables drawn at random, from
 eighteen consonants and five vowels. `reference/tracking.md`, "Ids are drawn at
@@ -144,9 +155,16 @@ something the repo or the tool guarantees. That file travels between the
 owner's machines; one without it would leave agent worktrees showing up as
 untracked in a repo they must never be committed to.
 
-**7. `status`.** Thin at first — sandbox probe, deck location, counts — and
-filled once the payload exists. A failed sandbox probe warns and stops the
-session rather than continuing unsandboxed.
+**7. `status`.** Probes the sandbox first and prints nothing else unless it
+passes. The probe attempts to create a file in `$HOME`, which always exists
+and is read-only whenever the sandbox is on: EROFS or EACCES means sandboxed
+and `status` continues; success means the sandbox is off, so remove the file,
+warn, and stop; any other error is inconclusive, which also warns and stops.
+Three outcomes rather than two, because a probe path that is merely missing
+must not read as a pass. Card reports the verdict and never describes the
+sandbox's mounts — that description drifts from `sbox` and belongs in personal
+instructions, which are on the same machine as the mount list. The rest is
+thin at first — deck location, counts — and filled once the payload exists.
 
 Then the payload and the two mode prompts, then the synthetic-ticket rehearsal
 the brief's sequencing describes.
@@ -172,13 +190,7 @@ that fixes a defect, watch it go red first.
 
 `check` and the rest of `list` are deferred in the brief and stay deferred.
 Nothing Jira-shaped is built: no fan-in, no promote verb, no API. The tool
-never commits, never pushes, and never edits a card because another card
-changed — authors edit cards, the tool does not do it on their behalf.
-
-## Open
-
-- What the sandbox probe actually checks. `status` runs it first, a failure
-  stops the session, and it is the one part of `status` that is useful in a
-  repo with no deck — but its content is written down nowhere here, nowhere in
-  `reference/`, and no longer in the owner's personal instructions. Checkpoint
-  7 cannot be built until that text arrives.
+never commits, never pushes, never fetches — the sandbox has no SSH keys, so a
+reflex `git fetch` only produces a confusing failure — and never edits a card
+because another card changed — authors edit cards, the tool does not do it on
+their behalf.

@@ -34,8 +34,7 @@ The workflow: one file per work item, status is the containing directory
 headline, prose body priced for a cold agent reader. Closing is a move plus a
 dated note. The list is a grep.
 
-The benefits, experienced over weeks of daily use in agentpane rather than
-predicted:
+The benefits, experienced in agentpane rather than predicted:
 
 - **Externalized memory.** A single place for anything that must not be
   forgotten. No "which conversation was that in", no fear of context
@@ -65,12 +64,17 @@ judgment.** Evidence text stays typed by hand.
 
 ## The context that shapes the design: private corpus, corporate repo
 
-The first deployment target is corporate work: official tracking in Jira,
-corporate repos as defined above, and no desire to manage agents in public.
-That produces a two-tier model:
+The first deployment target is corporate work: official tracking in a shared
+system, corporate repos as defined above, and no desire to manage agents in
+public. That produces a two-tier model:
 
-- **Jira is the public, human-resolution record.** Coarse, compressed for
-  colleagues. Commits and PRs cite Jira keys, like everyone else's.
+- **The public tier is the human-resolution record.** Coarse, compressed for
+  colleagues, and whatever the project already uses — Jira on one of the
+  owner's, nothing so formal on another. It has to satisfy only three things:
+  people not running this workflow can see it, its unit of work has a start
+  and an end, and that unit has an identifier stable enough to name in a close
+  note. **Ticket** below means one such unit, whatever issues it. Commits and
+  PRs cite its keys, like everyone else's.
 - **The corpus is the private, agent-resolution tier.** Fine-grained, full
   reasoning, priced for cold model readers. It lives outside the repo and is
   keyed by repository — every clone and every worktree of one repo resolving
@@ -84,13 +88,16 @@ agreed versions are filed; everything else closes with the reason it did not
 survive. A ticket ends with none of its own cards open — the rule is per
 ticket rather than per deck, because more than one ticket can be in flight at
 once. Open cards are ticket-scoped and short-lived; the closed pile is the
-durable asset.
+durable asset. A project with no public tier at all — this one — collapses to
+a single tier: the deck is the durable record, fan-out has nowhere to file
+to, and what is given up is the ability to hand work to a colleague rather
+than anything the workflow needs to function.
 
 Two rules follow, and both are load-bearing:
 
-- **References are one-directional.** Items cite Jira keys and shas freely;
-  nothing public ever cites an item id. This rule is the entire privacy
-  boundary, and it is checkable.
+- **References are one-directional.** Items cite the public tier's keys
+  freely; nothing public ever cites an item id. This rule is the entire
+  privacy boundary, and it is checkable.
 - **Authoring must sweep the closed corpus for prior art.** Under ticket-scoped
   lifetimes, a deferral too small for Jira survives only as a closed item; if
   the next ticket's authoring step does not search `closed/`, it is
@@ -156,7 +163,8 @@ pricing a card for a cold reader, applied to instructions rather than to cost.
   the corpus outside the repo, location abstraction is a missing capability,
   not a nicer rendering of an existing one.
 - **The format stays the API.** Files remain greppable — one `# ` headline per
-  file, flat one-line frontmatter scalars — and the tool is a resolver plus
+  file, one line per frontmatter field and no block sequences, so `^labels:`
+  matches a line that shows its values — and the tool is a resolver plus
   verbs, not the owner of a query language. It interprets exactly one relation
   between cards, matches labels as opaque strings, and has no opinion about
   anything else a card says. `card exec` keeps the raw files reachable on
@@ -196,9 +204,9 @@ there is a reason to choose one.
 
 **`where:` is dropped for the same reason.** It named the code a card
 concerns, which the body says in more detail and at greater length. What is
-left is frontmatter of exactly two list-valued fields, blockers and labels,
-both present because something computes over them. Every other fact about a
-card is prose.
+left is frontmatter of exactly two list-valued fields, `blocked-by:` and
+`labels:`, both present because something computes over them. Every other fact
+about a card is prose.
 
 **The ticket a card belongs to is a label too.** That is what lets two tickets
 share a deck, which happens whenever one is halted for the other — the common
@@ -220,11 +228,12 @@ what keeps the corpus something a person can edit with an editor and a grep.
 Build now:
 
 - **`status`** — probe the sandbox, resolve the deck, print the guidance above.
-  Read-only, cheap, run at the start of every session. A failed sandbox probe
-  is where the session stops: warn the owner and do nothing further, rather
-  than working unsandboxed. Evidence: with nothing installable in a corporate
-  repo, guidance has to be delivered rather than stored, and there is no other
-  delivery.
+  Read-only, cheap, run at the start of every session. A sandbox probe that
+  fails, or that cannot reach a verdict, is where the session stops: warn the
+  owner and print nothing else, rather than working unsandboxed or leaving
+  guidance underneath a warning for a model to read past. Evidence: with
+  nothing installable in a corporate repo, guidance has to be delivered rather
+  than stored, and there is no other delivery.
 - **`init`** — establish that a deck exists for this project, under a chosen
   prefix: the two directories and a marker file carrying the prefix. That is
   the whole of it, and what changes afterwards is what `status` reports. The
