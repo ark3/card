@@ -78,8 +78,8 @@ random", is the specification and carries the generator.
 
 Vertical slice: build enough of each verb to walk one card through the whole
 loop, then deepen. Each checkpoint below is a stop for trying it and
-reassessing, not a deliverable — nothing is usable until the payload exists, because until
-then nothing tells a session the verbs are there.
+reassessing, not a deliverable — nothing is usable until the payload exists,
+because until then nothing tells a session the verbs are there.
 
 **1. Resolution and `init`.** Demonstrable when `init` creates a deck for this
 repository under a chosen prefix, a second `init` refuses rather than
