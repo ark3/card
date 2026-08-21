@@ -1,7 +1,11 @@
 # card — design brief
 
 Seeded 2026-08-20 from a discussion in agentpane, whose work-item workflow this
-tool carries into contexts where the corpus cannot live in the project repo.
+tool carries into **corporate repositories**: repositories governed by rules the
+owner does not set and shared with colleagues who are not running this workflow.
+Nothing about the workflow can be committed to one — not the corpus, and not the
+prompts and rules that operate it — and that single constraint shapes everything
+below.
 The deciding item on the agentpane side is `docs/work/open/OW-59.md` there; the
 format itself is specified in agentpane's `docs/TRACKING.md` ("The format:
 Maildir-shaped work items", "Staying greppable", "Ids are drawn at random").
@@ -46,17 +50,24 @@ predicted:
 - **The closed corpus is accumulated archaeology.** Declined-with-reason and
   closed-with-evidence notes are exactly the grounding a later item needs;
   nothing is relitigated from scratch.
+- **The session stays thin.** Reading and writing happen in dispatched
+  subagents; what they find lands in a file rather than in the session that
+  dispatched them. The item is the handoff, so compaction costs little and a
+  long-lived context is not a prerequisite for good work. Agentpane states
+  only the prohibition — exploring in the session that is landing an item is
+  the failure mode (`execute/SKILL.md`) — and the goal behind it is recorded
+  here because it is a reason the design looks the way it does.
 
 The discipline that produces these — agree-then-write authoring, evidence at
 the source, verified claims with dates, review of every diff — travels as
 prompts and skills, not in the tool. **The tool automates placement, never
 judgment.** Evidence text stays typed by hand.
 
-## The context that shapes the design: private corpus, shared repo
+## The context that shapes the design: private corpus, corporate repo
 
 The first deployment target is corporate work: official tracking in Jira,
-shared repos, and no desire to manage agents in public. That produces a
-two-tier model:
+corporate repos as defined above, and no desire to manage agents in public.
+That produces a two-tier model:
 
 - **Jira is the public, human-resolution record.** Coarse, compressed for
   colleagues. Commits and PRs cite Jira keys, like everyone else's.
@@ -82,6 +93,54 @@ Two rules follow, and both are load-bearing:
   the next ticket's authoring step does not search `closed/`, it is
   functionally deleted.
 
+## What the deliverable is: the whole workflow, delivered rather than installed
+
+Not a CLI with documentation around it. In agentpane the workflow lives in four
+committed files — the format spec in `docs/TRACKING.md`, the landing and
+evidence rules in `AGENTS.md`, and the two skills under `.claude/skills/`. A
+corporate repo can hold none of them: a checked-in skill file describing a
+private work-item corpus discloses the workflow as surely as the corpus would.
+So this repository holds all of it, and the tool is how a session reaches it.
+
+**`card status` is the entry point and the only discovery mechanism.** With
+nothing installed in the repo, nothing in the environment advertises that the
+workflow exists. The bootstrap is one line in the owner's personal agent
+instructions — run `card status` before other work — which is the one file that
+is both private and always loaded. Everything else follows from what that
+command prints.
+
+What it prints: the sandbox probe, where the deck is and how many cards are in
+it, the two modes, the verbs, and the handful of rules that hold in any mode —
+cite ids and never restate a card, anything left undone becomes a card rather
+than getting done, a finding that lives only in a transcript dies with the
+session, references are one-directional, and the session stays thin. The modes
+are a conditional the model resolves from what was already asked — going to
+author, run `card author`; going to land a card, `card execute` — never a
+question put back to the user. The verbs are taught, not merely named: `close`
+does not retire the instruction for closing a card, it replaces a two-step
+procedure with a command that still has to be explained.
+
+**The payload carries only what cannot be written down in the corporate repo.**
+That repo keeps its own documentation and is welcome to it: its check command,
+its branch and review policy, where its evidence goes, its code conventions.
+None of that is secret and none of it belongs here. Test each candidate line by
+asking whether a colleague reading it would learn that this workflow exists.
+
+**When the project has no deck, `status` says nothing about cards at all.** No
+orientation, no modes, no rules. That is what makes the line safe to put in
+personal instructions unconditionally: a project that does not use the workflow
+pays one command and one line of output.
+
+**The payload is read by whichever model is running.** Phrasing that reads as
+advice to one model reads as a mandate to another: agentpane's "ask which mode
+before doing anything else" is followed literally by GPT, which insists the
+owner choose, and loosely by Claude, which does not — the sentence was a
+miscommunication that only one reader exposed. OW-59 records a second instance,
+where a Codex session built a work-item path by hand from a sentence that had
+never misled anyone else. The literal reader is the normal case, not the edge
+one, and prompts here are written for it. This is the same discipline as
+pricing a card for a cold reader, applied to instructions rather than to cost.
+
 ## Requirements carried over from agentpane
 
 - **No hardcoded prefix.** Derive it from filenames already present, or read
@@ -104,6 +163,14 @@ Two rules follow, and both are load-bearing:
 
 Build now:
 
+- **`status`** — probe the sandbox, resolve the deck, print the guidance above.
+  Read-only, cheap, run at the start of every session. Evidence: with nothing
+  installable in a corporate repo, guidance has to be delivered rather than
+  stored, and there is no other delivery.
+- **`init`** — create a deck for a project and fix its prefix. Evidence: the
+  prefix cannot be derived from the filenames present in the one corpus that
+  has none, which is a new one; and `status` reporting that a project has no
+  deck is only useful if something answers it.
 - **`new`** — draw an id, check `open/` and `closed/`, create the skeleton
   file exclusively. Evidence: agentpane's OW-70/OW-71 silent overwrite
   (two sessions, one clone, no signal from git), and a three-step manual
@@ -117,10 +184,12 @@ Build now:
   the corpus location deliberately leaked to whoever asks.
 - **`worktree`** — create and set up an agent worktree: cut it, fast-forward
   to local main, report the starting sha, run the project's setup command
-  (per-project config — `bun install` in one project is `mvn` in another),
-  probe the sandbox. Evidence: agentpane's execute skill carries all of this
-  as remembered prompt procedure today, including the fast-forward that
-  exists because worktree baselines were observed stale.
+  (per-project config — `bun install` in one project is `mvn` in another).
+  Evidence: agentpane's execute skill carries all of this as remembered prompt
+  procedure today, including the fast-forward that exists because worktree
+  baselines were observed stale. The sandbox probe this verb was first
+  sketched with belongs to `status` instead: it is a fact about the session,
+  not about a tree just cut.
 
 Deliberately not built yet:
 
@@ -139,11 +208,22 @@ Deliberately not built yet:
 - **Anything Jira-shaped** — fan-in, promote, filing via API. No usage
   evidence exists yet; guessing verbs before living without them is the
   failure mode the parent project's method exists to avoid.
+- **Per-deck copies of the `author` and `execute` prompts**, so that a project
+  could amend its own procedure without changing the tool. Plausible and
+  cheap to add later; nothing yet says any project needs its own, so the
+  prompts ship in the tool.
+- **A `status` that knows it is inside a worktree** and prints a shorter
+  payload there. Proposed to stop a dispatched subagent from being asked to
+  pick a mode, then left unbuilt when the mode question stopped being a
+  question. The remaining content — which card, which sha — is already stated
+  inline by the prompt that dispatched the agent.
 
 ## Sequencing
 
-1. Minimal tool: corpus resolution, `new`, `close`, `exec`, `worktree`.
-2. Port the authoring and execution skills with the Jira fan-in/fan-out
+1. Minimal tool: corpus resolution, `status`, `init`, `new`, `close`, `exec`,
+   `worktree`.
+2. Write the guidance `status` prints and the `author` and `execute` prompts it
+   points at, ported from agentpane's skills with the Jira fan-in/fan-out
    added; dress-rehearse once on a synthetic ticket — fan a fake ticket into
    three items, work one, decline one, promote one.
 3. First real ticket, chosen for low stakes rather than size.
