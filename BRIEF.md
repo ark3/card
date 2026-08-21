@@ -40,20 +40,20 @@ The benefits, experienced in agentpane rather than predicted:
   forgotten. No "which conversation was that in", no fear of context
   compaction or session boundaries. Any session — human or agent, warm or
   cold — picks up from the corpus.
-- **Small grounded items yield high-quality work.** Authoring forces the
+- **Small grounded cards yield high-quality work.** Authoring forces the
   grounding (paths, symbols, what done looks like) before execution starts,
-  and the execute-then-review loop catches drift. A cold read of an item
-  before starting it has found ~20 real defects in an item that read finished.
-- **Scope creep converts into new items.** The known agent failure of drive-by
+  and the execute-then-review loop catches drift. A cold read of a card
+  before starting it has found ~20 real defects in a card that read finished.
+- **Scope creep converts into new cards.** The known agent failure of drive-by
   "improvements" becomes an encouraged result instead: file it, don't do it.
 - **The closed corpus is accumulated archaeology.** Declined-with-reason and
-  closed-with-evidence notes are exactly the grounding a later item needs;
+  closed-with-evidence notes are exactly the grounding a later card needs;
   nothing is relitigated from scratch.
 - **The session stays thin.** Reading and writing happen in dispatched
   subagents; what they find lands in a file rather than in the session that
-  dispatched them. The item is the handoff, so compaction costs little and a
+  dispatched them. The card is the handoff, so compaction costs little and a
   long-lived context is not a prerequisite for good work. Agentpane states
-  only the prohibition — exploring in the session that is landing an item is
+  only the prohibition — exploring in the session that is landing a card is
   the failure mode (`execute/SKILL.md`) — and the goal behind it is recorded
   here because it is a reason the design looks the way it does.
 
@@ -82,8 +82,8 @@ public. That produces a two-tier model:
   declaring it.
 
 Two sync points per ticket. **Fan-in** at ticket start: an authoring session
-decomposes the Jira ticket into work items. **Fan-out** at ticket end: the
-agent drafts Jira tickets from the surviving items, the owner iterates, the
+decomposes the Jira ticket into cards. **Fan-out** at ticket end: the
+agent drafts Jira tickets from the surviving cards, the owner iterates, the
 agreed versions are filed; everything else closes with the reason it did not
 survive. A ticket ends with none of its own cards open — the rule is per
 ticket rather than per deck, because more than one ticket can be in flight at
@@ -96,10 +96,10 @@ than anything the workflow needs to function.
 Two rules follow, and both are load-bearing:
 
 - **References are one-directional.** Items cite the public tier's keys
-  freely; nothing public ever cites an item id. This rule is the entire
+  freely; nothing public ever cites a card id. This rule is the entire
   privacy boundary, and it is checkable.
 - **Authoring must sweep the closed corpus for prior art.** Under ticket-scoped
-  lifetimes, a deferral too small for Jira survives only as a closed item; if
+  lifetimes, a deferral too small for Jira survives only as a closed card; if
   the next ticket's authoring step does not search `closed/`, it is
   functionally deleted.
 
@@ -109,7 +109,7 @@ Not a CLI with documentation around it. In agentpane the workflow lives in four
 committed files — the format spec in `docs/TRACKING.md`, the landing and
 evidence rules in `AGENTS.md`, and the two skills under `.claude/skills/`. A
 corporate repo can hold none of them: a checked-in skill file describing a
-private work-item corpus discloses the workflow as surely as the corpus would.
+private card corpus discloses the workflow as surely as the corpus would.
 So this repository holds all of it, and the tool is how a session reaches it.
 
 **`card status` is the entry point and the only discovery mechanism.** With
@@ -146,7 +146,7 @@ advice to one model reads as a mandate to another: agentpane's "ask which mode
 before doing anything else" is followed literally by GPT, which insists the
 owner choose, and loosely by Claude, which does not — the sentence was a
 miscommunication that only one reader exposed. OW-59 records a second instance,
-where a Codex session built a work-item path by hand from a sentence that had
+where a Codex session built a card's path by hand from a sentence that had
 never misled anyone else. The literal reader is the normal case, not the edge
 one, and prompts here are written for it. This is the same discipline as
 pricing a card for a cold reader, applied to instructions rather than to cost.
@@ -189,7 +189,7 @@ reverse question, what does closing this unblock, is a grep for the id.
 
 **Labels become a field, uninterpreted.** The tool stores them, matches them,
 and has no opinion about what any of them mean. The motivating case is resource
-gating: agentpane marks the items that can only be done on the work laptop,
+gating: agentpane marks the cards that can only be done on the work laptop,
 where the agents they need are installed, and OW-59 records what it costs for
 that marker to live in prose — the survey prints forty headlines and never
 shows it, the grep prints five paths and never shows what they are. Filtering
@@ -394,40 +394,37 @@ instructions into the project's `AGENTS.md` — installation being exactly what
 
 ## Sequencing
 
-1. Minimal tool: corpus resolution, `status`, `init`, `new`, `show`,
-   `list --ready`, `close`, `exec`, `worktree`.
-2. Write the guidance `status` prints and the `author` and `execute` prompts it
-   points at, ported from agentpane's skills with the Jira fan-in/fan-out
-   added; dress-rehearse once on a synthetic ticket — fan a fake ticket into
-   three items, work one, decline one, promote one.
-3. First real ticket, chosen for low stakes rather than size.
+Three phases: build the verbs, write the payload and the two mode prompts
+`status` points at, then run a first real ticket chosen for low stakes rather
+than size. `PLAN.md` holds the ordered work and what each stop has to
+demonstrate; what follows is why the phases have that shape.
 
-Steps 1 and 2 are less separable than they look. **The payload specifies the
+The first two are less separable than they look. **The payload specifies the
 verb surface.** Writing the sentence a model has to follow — close a card with
 `card close`, and it will not let you close without saying how it ended — is
 what shows whether a verb's shape is right, so the guidance is drafted
-alongside the verbs rather than wrapped around them afterwards. And nothing in
-step 1 is usable alone: a tool no session is instructed to call is
-indistinguishable from a tool that is not installed. The stops inside step 1
+alongside the verbs rather than wrapped around them afterwards. And the verbs
+are not usable alone: a tool no session is instructed to call is
+indistinguishable from a tool that is not installed. The stops along the way
 are checkpoints for catching design mistakes cheaply, not deliverables.
 
 The trial is safe because the workflow fails soft: it is a private overlay on
-how the work already gets done. A badly authored item means doing the work the
+how the work already gets done. A badly authored card means doing the work the
 ordinary way; abandoning mid-ticket leaves the public record looking exactly
 as it would have anyway. The blast radius is the owner's own time.
 
 ## Costs accepted with eyes open
 
-- **Legacy grounding is front-loaded.** Early items in an old codebase will be
+- **Legacy grounding is front-loaded.** Early cards in an old codebase will be
   slower to write and worse than agentpane's, because the archaeology has to
   happen first. The corpus compounds; the first month will not feel like the
   greenfield did.
 - **Items can go stale against code the owner does not control** while a
-  ticket is in flight. Checking the item against the source before starting
+  ticket is in flight. Checking the card against the source before starting
   it stops being hygiene and becomes load-bearing.
 - **One-tree atomicity is gone.** In agentpane, retiring every copy of an
   overturned fact is one grep over one tree. Split across repo and corpus, the
   sweep is two runs — tree, then `card exec -- rg` — and nothing reminds you of
   the second.
-- **Closed items go stale like all documentation.** They are dated evidence,
+- **Closed cards go stale like all documentation.** They are dated evidence,
   not living docs, and are read the way git history is read.

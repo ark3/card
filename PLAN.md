@@ -166,8 +166,14 @@ sandbox's mounts — that description drifts from `sbox` and belongs in personal
 instructions, which are on the same machine as the mount list. The rest is
 thin at first — deck location, counts — and filled once the payload exists.
 
-Then the payload and the two mode prompts, then the synthetic-ticket rehearsal
-the brief's sequencing describes.
+Then the payload and the two mode prompts, then a synthetic-ticket rehearsal:
+fan a fake ticket into three cards, work one, decline one, promote one, so
+that decline and promote are exercised before a real ticket leans on them.
+
+This section is a stand-in for a deck. Once `init` runs, whichever checkpoints
+are still open become cards and the section goes away, leaving `PLAN.md` with
+only the settled decisions above it. That is card's first real use, and this
+project's own bootstrap rather than a rehearsal.
 
 ## Verifying
 
