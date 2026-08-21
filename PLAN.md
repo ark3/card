@@ -43,6 +43,18 @@ about. Three sources, in order:
 the convention path yields "no deck here", which is what `status` reports and
 what `init` answers. Only `init` creates anything.
 
+**A deck is a directory holding `open/`, `closed/`, and `deck.toml`.** That
+file carries one key, the prefix, and its presence is what tells a deck from a
+directory that happens to sit where a deck would. The prefix lives there rather
+than in user config because a deck reached through `CARD_ROOT` arrives as a
+bare path with nothing else supplied, and the agent holding it still has to be
+able to name a new card.
+
+**User config has one job**: pointing at decks that are not where the
+convention would put them. A conventional deck needs no entry at all.
+Agentpane's `docs/work/` is the only entry that exists today; card's own deck
+is conventional, at `~/.local/share/card/decks/card/`, prefix `card`.
+
 **Repository identity is the main checkout's root, not the working directory.**
 Verified on 2026-08-21: inside a worktree, `git rev-parse --show-toplevel`
 returns the worktree's own path, so keying on it gives a worktree its own deck
@@ -82,11 +94,14 @@ reassessing, not a deliverable — nothing is usable until the payload exists,
 because until then nothing tells a session the verbs are there.
 
 **1. Resolution and `init`.** Demonstrable when `init` creates a deck for this
-repository under a chosen prefix, a second `init` refuses rather than
-clobbering, and resolution finds that deck from a subdirectory, from a worktree
-cut off this repo, and via `CARD_ROOT` pointing somewhere else entirely. Also
-when a repo with no deck reports exactly that, and a directory outside any repo
-reports nothing at all.
+repository — the two directories and `deck.toml` carrying a chosen prefix — a
+second `init` refuses rather than clobbering, and resolution finds that deck
+from a subdirectory, from a worktree cut off this repo, and via `CARD_ROOT`
+pointing somewhere else entirely. The prefix comes back from the deck in all of
+those cases, including the `CARD_ROOT` one, where user config is never
+consulted. Also when a repo with no deck reports exactly that, a directory at
+the convention path without `deck.toml` is not mistaken for a deck, and a
+directory outside any repo reports nothing at all.
 
 **2. `new` and `show`.** `new` takes the headline as an argument, the body on
 stdin, and any number of `--label` and `--blocked-by` values; it draws an id,
@@ -103,23 +118,31 @@ filter includes and excludes the right cards, and a blocker naming an id that
 exists in neither directory is reported rather than silently treated as
 satisfied.
 
-**4. `close`.** Moves the card and appends the explanation as one act, and
-refuses to run without an explanation. It is told separately whether the work
-actually got done, and when it did not, it names the cards that were blocked by
-this one — they are about to look ready and are not. Demonstrable when a close
-without an explanation fails, when an interrupted close leaves neither a card
-in `closed/` without its explanation nor an explanation on a card still in
-`open/`, and when promoting a card with two dependents names both.
+**4. `close`.** Moves the card and appends the explanation, read from stdin as
+a card body is, in one act; it refuses to run on empty input. It is told
+separately whether the work actually got done, and when it did not, it names
+the cards that were blocked by this one — they are about to look ready and are
+not. Demonstrable when a close with nothing on stdin fails, when an interrupted
+close leaves neither a card in `closed/` without its explanation nor an
+explanation on a card still in `open/`, and when promoting a card with two
+dependents names both.
 
 **5. `exec`.** Runs a command with the deck as the working directory, passing
 through arguments, stdout, stderr, and exit status unaltered. Demonstrable when
 `card exec -- rg '^blocked-by:' open` behaves exactly as the same command run
 by hand in the deck.
 
-**6. `worktree`.** Cuts the tree, fast-forwards to local main, reports the sha
-it started at, runs the project's setup command from per-project config. A
-failed fast-forward stops and reports; it is never forced.
-`reference/execute-skill.md` carries the procedure this replaces.
+**6. `worktree`.** Cuts the tree into `.worktrees/` in the repo, fast-forwards
+to local main, reports the sha it started at. Nothing project-specific runs, so
+no verb reads per-project settings and card has none. A failed fast-forward
+stops and reports; it is never forced. `reference/execute-skill.md` carries the
+procedure this replaces.
+
+`.worktrees/` is safe inside a corporate repo only because `.worktrees` is
+ignored globally, in `~/.config/git/ignore` — a machine-level fact, not
+something the repo or the tool guarantees. That file travels between the
+owner's machines; one without it would leave agent worktrees showing up as
+untracked in a repo they must never be committed to.
 
 **7. `status`.** Thin at first — sandbox probe, deck location, counts — and
 filled once the payload exists. A failed sandbox probe warns and stops the
@@ -154,9 +177,8 @@ changed — authors edit cards, the tool does not do it on their behalf.
 
 ## Open
 
-- The prefix for card's own deck, once this repo becomes its first consumer.
-- Where per-project settings live — the setup command `worktree` runs is the
-  first one that needs a home, and it is not yet decided whether that is the
-  same config file as deck resolution or something in the deck itself.
-- Whether the close explanation arrives on stdin like a card body. It will
-  often run to several paragraphs; agentpane's OW-74 close note is four.
+- What the sandbox probe actually checks. `status` runs it first, a failure
+  stops the session, and it is the one part of `status` that is useful in a
+  repo with no deck — but its content is written down nowhere here, nowhere in
+  `reference/`, and no longer in the owner's personal instructions. Checkpoint
+  7 cannot be built until that text arrives.

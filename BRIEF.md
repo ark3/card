@@ -146,9 +146,11 @@ pricing a card for a cold reader, applied to instructions rather than to cost.
 
 ## Requirements carried over from agentpane
 
-- **No hardcoded prefix.** Derive it from filenames already present, or read
-  it from per-project config. (Owner requirement recorded in OW-59,
-  2026-08-17.)
+- **No hardcoded prefix.** It is chosen when the deck is created, recorded in
+  the deck, and read thereafter — never inferred. (Owner requirement recorded
+  in OW-59, 2026-08-17.) Deriving it from the filenames present was
+  agentpane's workaround for having no way to create a deck, and it guesses
+  wrong the day a deck holds a card copied in from somewhere else.
 - **Corpus root by convention or config, never assumed in-repo.** This is what
   makes the tool load-bearing here where it was optional in agentpane: with
   the corpus outside the repo, location abstraction is a missing capability,
@@ -224,10 +226,14 @@ Build now:
   repo, guidance has to be delivered rather than stored, and there is no other
   delivery.
 - **`init`** — establish that a deck exists for this project, under a chosen
-  prefix. That is the whole of it, and what changes afterwards is what `status`
-  reports. Evidence: a prefix cannot be derived from the filenames in the one
-  deck that has none, which is a new one; and `status` reporting that a project
-  has no deck is only useful if something answers it.
+  prefix: the two directories and a marker file carrying the prefix. That is
+  the whole of it, and what changes afterwards is what `status` reports. The
+  marker is what tells a deck from a directory that happens to sit where a
+  deck would, and it lives in the deck rather than in user config so that a
+  deck handed to an agent as a bare path can still name a new card. Evidence:
+  a prefix cannot be derived from the filenames in the one deck that has none,
+  which is a new one; and `status` reporting that a project has no deck is only
+  useful if something answers it.
 - **`new`** — draw an id, check `open/` and `closed/`, and write the card from
   a headline given as an argument and a body supplied on stdin, exclusively,
   in one call. The headline is a separate input because it is the one line
@@ -254,19 +260,22 @@ Build now:
 - **`close`** — move to `closed/` and append the explanation, in one act that
   cannot be half-done: a card in `closed/` with no explanation, or an
   explanation appended to a card still in `open/`, are both states the verb
-  exists to prevent. It cannot run without an explanation. What is *recorded*
-  and what is *passed for validation* are different things — the prose is
-  written for a later reader, while the tool separately needs to know whether
-  this card's work actually got done, which is what lets it warn about
-  dependents. Evidence: see "How a card ends" below.
+  exists to prevent. It cannot run without one, and the explanation arrives on
+  stdin exactly as a card body does — it is prose for a later reader and often
+  runs to several paragraphs. What is *recorded* and what is *passed for
+  validation* are different things — the prose is written for that reader,
+  while the tool separately needs to know whether this card's work actually got
+  done, which is what lets it warn about dependents. Evidence: see "How a card
+  ends" below.
 - **`exec -- <cmd>`** — run the given command in the corpus directory. The
   escape hatch: arbitrary power to the user, grep-first workflows preserved,
   the corpus location deliberately leaked to whoever asks.
-- **`worktree`** — create and set up an agent worktree: cut it, fast-forward
-  to local main, report the starting sha, run the project's setup command
-  (per-project config — `bun install` in one project is `mvn` in another).
-  Evidence: agentpane's execute skill carries all of this as remembered prompt
-  procedure today, including the fast-forward that exists because worktree
+- **`worktree`** — create an agent worktree: cut it, fast-forward to local
+  main, report the starting sha. Nothing project-specific: installing
+  dependencies is left to the agent that was going to run the build anyway, so
+  no verb reads per-project settings and there are none to keep. Evidence:
+  agentpane's execute skill carries all of this as remembered prompt procedure
+  today, including the fast-forward that exists because worktree
   baselines were observed stale. The sandbox probe this verb was first
   sketched with belongs to `status` instead: it is a fact about the session,
   not about a tree just cut.
