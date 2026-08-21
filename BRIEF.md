@@ -30,9 +30,9 @@ it is a tool whose commands need translating.
 ## What is being carried, and why it is worth carrying
 
 The workflow: one file per work item, status is the containing directory
-(`open/` or `closed/`), flat frontmatter (`kind`, `where`), a single `# `
-headline, prose body priced for a cold agent reader. Closing is a move plus a
-dated note. The list is a grep.
+(`open/` or `closed/`), flat frontmatter, a single `# ` headline, prose body
+priced for a cold agent reader. Closing is a move plus a dated note. The list
+is a grep. Which frontmatter fields survive is settled below.
 
 The benefits, experienced in agentpane rather than predicted:
 
@@ -76,10 +76,11 @@ public. That produces a two-tier model:
   note. **Ticket** below means one such unit, whatever issues it. Commits and
   PRs cite its keys, like everyone else's.
 - **The corpus is the private, agent-resolution tier.** Fine-grained, full
-  reasoning, priced for cold model readers. It lives outside the repo and is
-  keyed by repository — every clone and every worktree of one repo resolving
-  to one deck — and the tool resolves that location rather than the repo
-  declaring it.
+  reasoning, priced for cold model readers. It is never committed, and it is
+  keyed by repository — every worktree of one repo resolving to one deck — and
+  the tool resolves that location rather than the repo declaring it. A second
+  clone is a second deck, which is accepted: worktrees are what this workflow
+  cuts.
 
 Two sync points per ticket. **Fan-in** at ticket start: an authoring session
 decomposes the Jira ticket into cards. **Fan-out** at ticket end: the
@@ -165,10 +166,15 @@ pricing a card for a cold reader, applied to instructions rather than to cost.
   in OW-59, 2026-08-17.) Deriving it from the filenames present was
   agentpane's workaround for having no way to create a deck, and it guesses
   wrong the day a deck holds a card copied in from somewhere else.
-- **Corpus root by convention or config, never assumed in-repo.** This is what
-  makes the tool load-bearing here where it was optional in agentpane: with
-  the corpus outside the repo, location abstraction is a missing capability,
-  not a nicer rendering of an existing one.
+- **Corpus root resolved by the tool, never declared by the repo.** The corpus
+  sits at a fixed path the tool computes, so resolution is short — which means
+  the tool is not load-bearing for the reason it first appeared to be. Location
+  abstraction turns out to be a small part of it. What makes the tool necessary
+  rather than merely convenient is that `card status` is the only way the
+  workflow can be delivered to a session at all, per "What the deliverable is"
+  below, and that three operations cannot be done safely by hand: drawing an id
+  and creating the card as one act, closing a card as one act, and joining open
+  cards against `closed/` to answer what is ready.
 - **The format stays the API.** Files remain greppable — one `# ` headline per
   file, one line per frontmatter field and no block sequences, so `^labels:`
   matches a line that shows its values — and the tool is a resolver plus
@@ -286,15 +292,22 @@ Build now:
 - **`exec -- <cmd>`** — run the given command in the corpus directory. The
   escape hatch: arbitrary power to the user, grep-first workflows preserved,
   the corpus location deliberately leaked to whoever asks.
-- **`worktree`** — create an agent worktree: cut it, fast-forward to local
-  main, report the starting sha. Nothing project-specific: installing
-  dependencies is left to the agent that was going to run the build anyway, so
-  no verb reads per-project settings and there are none to keep. Evidence:
+- **`worktree`** — create an agent worktree: cut it on a temporary branch and
+  report the starting sha. The base is the main checkout's current branch —
+  `main` in agentpane, the ticket's branch at work — so the tool needs neither
+  an argument nor a setting. Bringing the work back to that branch is the
+  session's job and not the verb's: review routinely amends the implementer's
+  commits, so what lands is a judgment about which commits to take, and that is
+  precisely what the tool does not automate. Nothing project-specific:
+  installing dependencies is left to the agent that was going to run the build
+  anyway, so no verb reads per-project settings and there are none to keep.
+  Evidence:
   agentpane's execute skill carries all of this as remembered prompt procedure
-  today, including the fast-forward that exists because worktree
-  baselines were observed stale. The sandbox probe this verb was first
-  sketched with belongs to `status` instead: it is a fact about the session,
-  not about a tree just cut.
+  today. Its fast-forward, which existed because worktree baselines were
+  observed stale, is not carried: a tree cut from the current branch's tip
+  cannot be stale. The sandbox probe this verb was first sketched with belongs
+  to `status` instead: it is a fact about the session, not about a tree just
+  cut.
 
 Deliberately not built yet:
 
@@ -303,15 +316,17 @@ Deliberately not built yet:
   remaining backlog queries agentpane wanted have little to work on in a deck
   of five to ten fresh cards. Wait for usage to name one the raw grep cannot
   express.
-- **`check`** — of the two invariants run by hand in agentpane on 2026-08-19,
-  one is mis-specified and the other no longer exists. Documentation examples
-  produce 100% false positives on the cited-id check, so it needs a way to tell
-  a citation from an illustration. The closed-sha check has nothing left to
-  check: no card claims a sha. The
-  automatic-versus-portable tension — a check nobody types wants to live in a
-  repo's build, but the tool is cross-project — is recorded in OW-59 and
-  unresolved. The one-directional reference rule above is a candidate third
-  invariant.
+- **`check`** — as a standalone verb. Where checks run is settled: with every
+  command, not only when someone types `check`. That dissolves the
+  automatic-versus-portable tension recorded in OW-59 — a check nobody types
+  wanted to live in a repo's build, but the tool is cross-project, and a check
+  that runs on every command needs neither. What is undecided is which
+  invariants are worth running. Of the two agentpane ran by hand on 2026-08-19,
+  one is mis-specified — documentation examples produce 100% false positives on
+  the cited-id check, which needs a way to tell a citation from an illustration
+  — and the other has nothing left to check, since no card claims a sha. The
+  one-directional reference rule above is a candidate. A standalone verb earns
+  its place once there is something worth sweeping the whole deck for.
 - **Anything Jira-shaped** — fan-in, promote, filing via API. No usage
   evidence exists yet; guessing verbs before living without them is the
   failure mode the parent project's method exists to avoid.
@@ -319,6 +334,11 @@ Deliberately not built yet:
   works the same way today. Whether a project ever needs its own variant is
   unanswered — none has wanted one yet — and the question is who owns the
   procedure, not where its text is kept.
+- **A counterpart to `worktree` that removes one.** Cleanup is `git worktree
+  remove` and a branch delete, with none of the half-done state that justifies
+  `close` — nothing is left inconsistent if it stops between the two. If it
+  ever earns a verb it will be for the branch delete refusing when the work has
+  not been brought back, which is a check rather than a placement.
 - **A `status` that knows it is inside a worktree** and prints a shorter
   payload there. Proposed to stop a dispatched subagent from being asked to
   pick a mode, then left unbuilt when the mode question stopped being a

@@ -28,58 +28,62 @@ something forces one.
 ## Deck resolution
 
 This is the capability the tool exists for, so it is the part worth being exact
-about. Three sources, in order:
+about. Two sources:
 
-1. `CARD_ROOT` in the environment, which wins outright. This is what lets a
-   dispatched agent be told where the deck is without inheriting anything.
-2. An entry for this repository in `~/.config/card/config.toml`, honouring
-   `XDG_CONFIG_HOME`. This is what points agentpane's deck at `docs/work/`
-   inside its own repo, and what handles any deck that is not where the
-   convention would put it.
-3. The convention: `~/.local/share/card/decks/<name>/`, honouring
-   `XDG_DATA_HOME`.
+1. `CARD_ROOT` in the environment, which wins outright.
+2. `<git-common-dir>/card`, which is `.git/card/` in an ordinary checkout.
 
-**A deck that does not exist is not created by resolution.** Falling through to
-the convention path yields "no deck here", which is what `status` reports and
+Both name a **card directory**, not a deck. It holds `card-config.toml`, which
+carries the prefix and the deck's path. The deck is a directory holding `open/`
+and `closed/`, and it sits at `deck/` beside the config unless the config says
+otherwise. Outside a git repository, with `CARD_ROOT` unset, there is no deck
+and nothing to report.
+
+**A deck that does not exist is not created by resolution.** A repository with
+no card directory yields "no deck here", which is what `status` reports and
 what `init` answers. Only `init` creates anything.
 
-**A deck is a directory holding `open/`, `closed/`, and `deck.toml`.** That
-file carries one key, the prefix, and its presence is what tells a deck from a
-directory that happens to sit where a deck would. The prefix lives there rather
-than in user config because a deck reached through `CARD_ROOT` arrives as a
-bare path with nothing else supplied, and the agent holding it still has to be
-able to name a new card.
+**Living inside `.git/` is what makes the rest of this short.** Verified on
+2026-08-21: `git status` and `git clean` never traverse `.git/`, so the deck is
+invisible with no ignore rule written anywhere, and it survives `git clean
+-xdf` and even `-xdff`. Nothing is added to the repository's `.gitignore` and
+nothing is committed, so the brief's privacy boundary is untouched — what
+matters is that the corpus never enters the repository's history, not which
+directory it sits in. The hazard accepted in exchange is that `rm -rf .git`
+now destroys the deck.
 
-**The convention path is read-only inside the sandbox by default.** `sbox`
-ro-binds `/` and grants read-write to the workspace, `~/.cache`, and the
-entries in its `COMMON_RW_MOUNTS`; `~/.local/share` was not among them, so
-`init` failed with EROFS from any agent session. `~/.local/share/card` was
-added to that list on 2026-08-21. It has to exist before sbox runs, because a
-mount path that is missing is skipped with a warning.
+**Every worktree resolves to one deck structurally.** `git rev-parse
+--path-format=absolute --git-common-dir` returns the main checkout's `.git`
+from anywhere — a subdirectory, a worktree, or inside the deck itself — so the
+careful keying this section used to require is gone. Verified on 2026-08-21,
+including from inside `.worktrees/`. Two clones of one repository have two
+`.git` directories and so two decks; that is accepted, because worktrees are
+what this workflow cuts.
 
-**User config has one job**: pointing at decks that are not where the
-convention would put them. A conventional deck needs no entry at all.
-Agentpane's `docs/work/` is the only entry that exists today; card's own deck
-is conventional, at `~/.local/share/card/decks/card/`, prefix `card`.
+**The prefix is recorded in `card-config.toml`, never derived** from the
+filenames present. Deriving it was agentpane's workaround for having no way to
+create a deck, and it guesses wrong the day a deck holds a card copied in from
+somewhere else.
 
-**Card's own deck sits outside its repo, unlike agentpane's, on purpose.** The
-out-of-repo path is the one the tool exists for and the one carrying every
-trap — the worktree split, the sandbox mount — and card-on-card is where it
-gets daily exercise before a corporate repo has to depend on it. Agentpane
-keeps the config path honest from the other side, so both resolution paths
-have a real consumer. The cost accepted is that card's own working cards are
-not in the public repository, which holds the brief, the plan and the commit
-messages and nothing more.
+**The deck path is relative to the card directory.** The default is `deck`; a
+deck kept in the repository's own tree is `../../docs/work`. One rule, and no
+scheme survives the data moving anyway. It is wrong inside a submodule, where
+the card directory is `<super>/.git/modules/<name>/card` and `../../` lands in
+`.git/modules` rather than the submodule's root — verified 2026-08-21. Only an
+in-tree redirect inside a submodule is affected; the default is not.
 
-**Repository identity is the main checkout's root, not the working directory.**
-Verified on 2026-08-21: inside a worktree, `git rev-parse --show-toplevel`
-returns the worktree's own path, so keying on it gives a worktree its own deck
-and silently splits the corpus. `git rev-parse --path-format=absolute
---git-common-dir` returns the main checkout's `.git`, whose parent is the
-repository root. Key the config on that absolute path; take `<name>` for the
-convention from its basename.
+**The deck carries `.ignore` holding `!*`.** Ripgrep and `fd` walk up from the
+working directory and apply the repository's root `.gitignore`, so a repository
+that ignores `*.md` or `open/` makes `card exec -- rg` find nothing. Verified
+on 2026-08-21, and it applies to an in-tree deck's tracked files too. `.ignore`
+beats `.gitignore` in both tools, and git never reads it.
 
-Outside a git repository at all, there is no deck and nothing to report.
+**Agentpane needs no `CARD_ROOT`.** It gets an ordinary `.git/card/` whose
+config points its deck at the committed `docs/work/`, which keeps the redirect
+path honest with a real consumer and leaves agentpane's corpus the only one
+anywhere with git history behind it. Card's own deck is the default, prefix
+`card`. Its working cards are still absent from the public repository, which
+holds the brief, the plan and the commit messages and nothing more.
 
 ## What a card is, after the brief's changes
 
@@ -114,13 +118,12 @@ reassessing, not a deliverable — nothing is usable until the payload exists,
 because until then nothing tells a session the verbs are there.
 
 **1. Resolution and `init`.** Demonstrable when `init` creates a deck for this
-repository — the two directories and `deck.toml` carrying a chosen prefix — a
-second `init` refuses rather than clobbering, and resolution finds that deck
-from a subdirectory, from a worktree cut off this repo, and via `CARD_ROOT`
-pointing somewhere else entirely. The prefix comes back from the deck in all of
-those cases, including the `CARD_ROOT` one, where user config is never
-consulted. Also when a repo with no deck reports exactly that, a directory at
-the convention path without `deck.toml` is not mistaken for a deck, and a
+repository — `card-config.toml` carrying a chosen prefix, the two directories,
+and `.ignore` — a second `init` refuses rather than clobbering, and resolution
+finds that deck from a subdirectory, from a worktree cut off this repo, and via
+`CARD_ROOT` pointing somewhere else entirely. The prefix comes back in all of
+those cases. Also when a repo with no card directory reports exactly that, a
+`.git/card/` without `card-config.toml` is not mistaken for one, and a
 directory outside any repo reports nothing at all.
 
 **2. `new` and `show`.** `new` takes the headline as an argument, the body on
@@ -150,19 +153,25 @@ dependents names both.
 **5. `exec`.** Runs a command with the deck as the working directory, passing
 through arguments, stdout, stderr, and exit status unaltered. Demonstrable when
 `card exec -- rg '^blocked-by:' open` behaves exactly as the same command run
-by hand in the deck.
+by hand in the deck, including inside a repository whose root `.gitignore`
+ignores `*.md` — which is what the deck's `.ignore` exists to defeat.
 
-**6. `worktree`.** Cuts the tree into `.worktrees/` in the repo, fast-forwards
-to local main, reports the sha it started at. Nothing project-specific runs, so
-no verb reads per-project settings and card has none. A failed fast-forward
-stops and reports; it is never forced. `reference/execute-skill.md` carries the
-procedure this replaces.
+**6. `worktree`.** Cuts the tree into `.worktrees/` in the repo on a temporary
+branch and reports the sha it started at. The base is the main checkout's
+current branch, resolved explicitly rather than taken from `HEAD` — verified
+2026-08-21 that cutting a worktree from inside another worktree follows that
+worktree's HEAD instead, which would stack temporary branches on each other.
+A detached HEAD in the main checkout has no base: stop and report. There is no
+freshness step, because a tree cut from the current tip cannot be stale.
+`reference/execute-skill.md` carries the procedure this replaces, including the
+`git merge --ff-only main` this makes unnecessary.
 
-`.worktrees/` is safe inside a corporate repo only because `.worktrees` is
-ignored globally, in `~/.config/git/ignore` — a machine-level fact, not
-something the repo or the tool guarantees. That file travels between the
-owner's machines; one without it would leave agent worktrees showing up as
-untracked in a repo they must never be committed to.
+`card worktree` writes `.worktrees/.gitignore` holding `*` before cutting the
+first tree, so the directory hides itself and the tool relies on nothing
+machine-level. Verified on 2026-08-21 that this keeps worktrees out of `git
+status` even though each holds a `.git` file, and that `rg` inside a worktree
+is unaffected. The `.worktrees` entry in `~/.config/git/ignore` becomes
+belt-and-braces rather than the thing being depended on.
 
 **7. `status`.** Probes the sandbox first and prints nothing else unless it
 passes. The probe attempts to create a file in `$HOME`, which always exists
@@ -196,7 +205,9 @@ design turns on:
 - `close` cannot leave a half-finished state.
 - The ready query joins across both directories, and dangling blockers surface.
 - A worktree resolves to its repository's deck, not to one of its own.
-- Resolution precedence: `CARD_ROOT` over config over convention.
+- Resolution precedence: `CARD_ROOT` over `<git-common-dir>/card`.
+- `exec` reaches the deck's files from a repository whose root `.gitignore`
+  would otherwise hide them.
 
 A test that has never failed has not been shown to test anything. For anything
 that fixes a defect, watch it go red first.
