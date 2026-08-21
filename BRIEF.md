@@ -208,10 +208,10 @@ Deliberately not built yet:
 - **Anything Jira-shaped** — fan-in, promote, filing via API. No usage
   evidence exists yet; guessing verbs before living without them is the
   failure mode the parent project's method exists to avoid.
-- **Per-deck copies of the `author` and `execute` prompts**, so that a project
-  could amend its own procedure without changing the tool. Plausible and
-  cheap to add later; nothing yet says any project needs its own, so the
-  prompts ship in the tool.
+- **A project amending its own `author` or `execute` procedure.** Every deck
+  works the same way today. Whether a project ever needs its own variant is
+  unanswered — none has wanted one yet — and the question is who owns the
+  procedure, not where its text is kept.
 - **A `status` that knows it is inside a worktree** and prints a shorter
   payload there. Proposed to stop a dispatched subagent from being asked to
   pick a mode, then left unbuilt when the mode question stopped being a
