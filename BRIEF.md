@@ -72,8 +72,10 @@ That produces a two-tier model:
 - **Jira is the public, human-resolution record.** Coarse, compressed for
   colleagues. Commits and PRs cite Jira keys, like everyone else's.
 - **The corpus is the private, agent-resolution tier.** Fine-grained, full
-  reasoning, priced for cold model readers. It lives outside the repo, keyed
-  by project, and the tool resolves its location by convention.
+  reasoning, priced for cold model readers. It lives outside the repo and is
+  keyed by repository — every clone and every worktree of one repo resolving
+  to one deck — and the tool resolves that location rather than the repo
+  declaring it.
 
 Two sync points per ticket. **Fan-in** at ticket start: an authoring session
 decomposes the Jira ticket into work items. **Fan-out** at ticket end: the
@@ -190,6 +192,12 @@ present it is a mandatory label drawn from a closed set, and that set had
 already drifted once. Anything worth classifying can be a label chosen when
 there is a reason to choose one.
 
+**`where:` is dropped for the same reason.** It named the code a card
+concerns, which the body says in more detail and at greater length. What is
+left is frontmatter of exactly two list-valued fields, blockers and labels,
+both present because something computes over them. Every other fact about a
+card is prose.
+
 **The ticket a card belongs to is a label too.** That is what lets two tickets
 share a deck, which happens whenever one is halted for the other — the common
 case at work, where hitting a load-bearing bug means filing a ticket for it and
@@ -221,7 +229,11 @@ Build now:
   deck that has none, which is a new one; and `status` reporting that a project
   has no deck is only useful if something answers it.
 - **`new`** — draw an id, check `open/` and `closed/`, and write the card from
-  a body supplied on stdin, exclusively, in one call. Evidence: agentpane's
+  a headline given as an argument and a body supplied on stdin, exclusively,
+  in one call. The headline is a separate input because it is the one line
+  every survey shows and the format permits exactly one of them: taking it as
+  an argument makes "one `# ` line, never wrapped" structural instead of
+  something the writer has to remember. Evidence: agentpane's
   OW-70/OW-71 silent overwrite (two sessions, one clone, no signal from git),
   and a three-step manual procedure that agents demonstrably half-do. Creating
   a skeleton and then editing it is that same half-done shape, one layer down.
@@ -371,6 +383,15 @@ instructions into the project's `AGENTS.md` — installation being exactly what
    added; dress-rehearse once on a synthetic ticket — fan a fake ticket into
    three items, work one, decline one, promote one.
 3. First real ticket, chosen for low stakes rather than size.
+
+Steps 1 and 2 are less separable than they look. **The payload specifies the
+verb surface.** Writing the sentence a model has to follow — close a card with
+`card close`, and it will not let you close without saying how it ended — is
+what shows whether a verb's shape is right, so the guidance is drafted
+alongside the verbs rather than wrapped around them afterwards. And nothing in
+step 1 is usable alone: a tool no session is instructed to call is
+indistinguishable from a tool that is not installed. The stops inside step 1
+are checkpoints for catching design mistakes cheaply, not deliverables.
 
 The trial is safe because the workflow fails soft: it is a private overlay on
 how the work already gets done. A badly authored item means doing the work the
