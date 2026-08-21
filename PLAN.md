@@ -62,6 +62,15 @@ convention would put them. A conventional deck needs no entry at all.
 Agentpane's `docs/work/` is the only entry that exists today; card's own deck
 is conventional, at `~/.local/share/card/decks/card/`, prefix `card`.
 
+**Card's own deck sits outside its repo, unlike agentpane's, on purpose.** The
+out-of-repo path is the one the tool exists for and the one carrying every
+trap — the worktree split, the sandbox mount — and card-on-card is where it
+gets daily exercise before a corporate repo has to depend on it. Agentpane
+keeps the config path honest from the other side, so both resolution paths
+have a real consumer. The cost accepted is that card's own working cards are
+not in the public repository, which holds the brief, the plan and the commit
+messages and nothing more.
+
 **Repository identity is the main checkout's root, not the working directory.**
 Verified on 2026-08-21: inside a worktree, `git rev-parse --show-toplevel`
 returns the worktree's own path, so keying on it gives a worktree its own deck

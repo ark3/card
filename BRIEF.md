@@ -88,10 +88,17 @@ agreed versions are filed; everything else closes with the reason it did not
 survive. A ticket ends with none of its own cards open — the rule is per
 ticket rather than per deck, because more than one ticket can be in flight at
 once. Open cards are ticket-scoped and short-lived; the closed pile is the
-durable asset. A project with no public tier at all — this one — collapses to
-a single tier: the deck is the durable record, fan-out has nowhere to file
-to, and what is given up is the ability to hand work to a colleague rather
-than anything the workflow needs to function.
+durable asset. Where there is no public tier the model collapses to a single
+tier: the deck is the durable record, fan-out has nowhere to file to, and what
+is given up is the ability to hand work to a colleague rather than anything
+the workflow needs to function. This project runs a degenerate version instead
+— larger work is written up in an ephemeral planning document, that document's
+name is the ticket label, and cards are fanned in from it as the work
+proceeds. It satisfies the first two properties and not the third, so when the
+document goes, a promoted card's trail ends at a name that no longer resolves
+and the closed card is all that survives. Both arrangements are worth
+practising here: one of the owner's work projects has a tracker and the other
+does not.
 
 Two rules follow, and both are load-bearing:
 
