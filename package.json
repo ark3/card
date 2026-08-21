@@ -1,0 +1,12 @@
+{
+  "name": "card",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "card": "src/card.ts"
+  },
+  "scripts": {
+    "check": "bun test"
+  }
+}
