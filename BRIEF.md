@@ -442,6 +442,16 @@ as it would have anyway. The blast radius is the owner's own time.
 
 ## Costs accepted with eyes open
 
+- **The corpus has one copy.** The deck sits in `<git-common-dir>/card/`, which
+  nothing syncs, no clone carries, and `rm -rf .git` destroys — and the closed
+  pile it holds is the durable asset everything else here is arranged around.
+  Relocating it into a synced directory is not the fix: a shared decks
+  directory is what gives every project write access to every other project's
+  deck, which is the arrangement this design exists to prevent. The workaround
+  is `card exec -- tar czf <path> .`, the escape hatch reaching the deck as it
+  was built to. It has to run on the host rather than in a session, because the
+  sandbox keeps `$HOME` read-only and holds no SSH keys, so nothing under it
+  can write a copy anywhere that outlives the machine.
 - **Legacy grounding is front-loaded.** Early cards in an old codebase will be
   slower to write and worse than agentpane's, because the archaeology has to
   happen first. The corpus compounds; the first month will not feel like the
