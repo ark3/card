@@ -152,12 +152,49 @@ pricing a card for a cold reader, applied to instructions rather than to cost.
   not a nicer rendering of an existing one.
 - **The format stays the API.** Files remain greppable — one `# ` headline per
   file, flat one-line frontmatter scalars — and the tool is a resolver plus
-  verbs, not the owner of a query language. `card exec` keeps the raw files
-  reachable on purpose.
+  verbs, not the owner of a query language. It interprets exactly one relation
+  between cards, matches labels as opaque strings, and has no opinion about
+  anything else a card says. `card exec` keeps the raw files reachable on
+  purpose.
 - **Ids are drawn at random**, consonant-vowel syllables, because writers are
   unbounded even on one machine (concurrent sessions, dispatched agents).
   Draw, check both directories, create exclusively — as one step that cannot
   be half-done.
+
+## What this project changes about the format
+
+The format arrived whole from agentpane and is not up for redesign. Three
+changes are decided anyway, each because the deck was being asked a question
+its files could not answer.
+
+**Blockers become a field.** Every blocking relation in agentpane's corpus is
+prose — OW-59's own "blocked on OW-54 landing", OW-vezipo's "waits on OW-66
+landing", OW-21's deferral to D13 — and nothing can query any of them. A card
+lists the cards it waits on, and only that direction is stored: the cold reader
+about to start a card is the one who most needs to be told it is stuck, and the
+reverse question, what does closing this unblock, is a grep for the id.
+
+**Labels become a field, uninterpreted.** The tool stores them, matches them,
+and has no opinion about what any of them mean. The motivating case is resource
+gating: agentpane marks the items that can only be done on the work laptop,
+where the agents they need are installed, and OW-59 records what it costs for
+that marker to live in prose — the survey prints forty headlines and never
+shows it, the grep prints five paths and never shows what they are. Filtering
+happens at the call site, so "what can I do on this machine" is a question the
+caller asks rather than something the tool knows about machines.
+
+**`kind:` is under review.** Five kinds came from the table that preceded the
+files, and the owner reports the field has not been useful. With labels
+present, `kind` is a mandatory label drawn from a closed set whose vocabulary
+already drifted once. Deciding late costs little while the corpus is small.
+
+Two properties hold across all of it, and they are why the changes take this
+shape. **No card is rewritten because another card changed.** Authors sharpen
+cards deliberately; the tool never does it on their behalf, and a blocker
+closing alters nothing in the cards that were waiting — status is the
+directory, and a close is an append. **So every relation is computed at read
+time**, never maintained as an index. That is not a performance choice; it is
+what keeps the corpus something a person can edit with an editor and a grep.
 
 ## Verbs, with the evidence behind each
 
@@ -171,10 +208,25 @@ Build now:
   prefix cannot be derived from the filenames present in the one corpus that
   has none, which is a new one; and `status` reporting that a project has no
   deck is only useful if something answers it.
-- **`new`** — draw an id, check `open/` and `closed/`, create the skeleton
-  file exclusively. Evidence: agentpane's OW-70/OW-71 silent overwrite
-  (two sessions, one clone, no signal from git), and a three-step manual
-  procedure that agents demonstrably half-do.
+- **`new`** — draw an id, check `open/` and `closed/`, and write the card from
+  a body supplied on stdin, exclusively, in one call. Evidence: agentpane's
+  OW-70/OW-71 silent overwrite (two sessions, one clone, no signal from git),
+  and a three-step manual procedure that agents demonstrably half-do. Creating
+  a skeleton and then editing it is that same half-done shape, one layer down.
+- **`show <id>`** — resolve a bare id against both directories and print the
+  card. Evidence: a Codex session was given a bare id, built the path by hand
+  from the one shape the documentation stated, found the card had closed, and
+  reported it missing. `exec -- cat` still reaches the raw file for anyone who
+  wants it.
+- **`list --ready`** — the cards that can be worked now: open, with every
+  blocker in `closed/`, narrowed by whatever labels the caller filters on.
+  Evidence: this is the first question of every execution session, so frequency
+  rather than deck size is the argument. No grep answers it, because the join
+  is between what a card says and which directory each blocker sits in; and the
+  alternative, editing blocked cards when a blocker closes, is the rewrite the
+  format exists to avoid. A blocker naming an id that exists in neither
+  directory surfaces here too, which is a piece of `check` arriving through the
+  door rather than being specified in advance.
 - **`close`** — move to `closed/`, append the note, resolve `HEAD` to a sha
   when the note is a `Fixed in`. Two close shapes: fixed-with-evidence, and
   declined/deferred-with-reason. Evidence: two tool calls to one, plus a sha
@@ -193,10 +245,11 @@ Build now:
 
 Deliberately not built yet:
 
-- **`list`** — its strongest arguments in agentpane (query by kind, what is
-  unblocked, resource gating) are backlog queries over ~40 open items of
-  mixed age. A ticket-scoped corpus is five to ten fresh items; wait for
-  usage to name a query the raw grep cannot express.
+- **The rest of `list`** — grouping, a rendered survey, queries by age or
+  kind. The ready query above is built because it is asked constantly; the
+  remaining backlog queries agentpane wanted have little to work on in a deck
+  of five to ten fresh cards. Wait for usage to name one the raw grep cannot
+  express.
 - **`check`** — both invariants were run by hand in agentpane on 2026-08-19
   and both are mis-specified (documentation examples produce 100% false
   positives on the cited-id check; the closed-sha check does not know about
@@ -218,10 +271,40 @@ Deliberately not built yet:
   question. The remaining content — which card, which sha — is already stated
   inline by the prompt that dispatched the agent.
 
+## The opposed design, kept on hand
+
+`reference/beads-rust-readme.md` is the README of `br`, a Rust port that
+freezes the "classic beads" architecture its author's own tooling was built
+around. It is the only document in `reference/` this project argues with rather
+than carries, and it is kept because it is the same problem solved the other
+way, at maturity: a database as the store with a git-friendly export beside it,
+a status machine, and a scheduler that answers what to work on next.
+
+Card takes two things from it — the dependency edge and labels — and declines
+the rest for one recurring reason. Every declined feature is either selection
+metadata for a backlog large enough that choosing is hard, or arbitration
+between workers competing over one queue:
+
+- **Statuses beyond open and closed** and **assignee** exist so a second worker
+  does not pick up what a first is holding. One card at a time, held by the
+  agent that dispatched it, needs neither.
+- **Priority** ranks a pile. A ticket-scoped deck of five to ten fresh cards is
+  not a pile.
+- **Parent and epic rollups** duplicate a fact that already lives in the public
+  tier. The Jira ticket is the parent, cards are fanned in from it, and a
+  private copy of that link would point the wrong way across the privacy
+  boundary.
+
+Two of its choices are worth keeping in view precisely because card cannot copy
+them. Cross-workspace resolution is a routing table committed inside the repo,
+which is the one place card may not write. And `br agents` installs its own
+instructions into the project's `AGENTS.md` — installation being exactly what
+`card status` exists to replace.
+
 ## Sequencing
 
-1. Minimal tool: corpus resolution, `status`, `init`, `new`, `close`, `exec`,
-   `worktree`.
+1. Minimal tool: corpus resolution, `status`, `init`, `new`, `show`,
+   `list --ready`, `close`, `exec`, `worktree`.
 2. Write the guidance `status` prints and the `author` and `execute` prompts it
    points at, ported from agentpane's skills with the Jira fan-in/fan-out
    added; dress-rehearse once on a synthetic ticket — fan a fake ticket into
