@@ -40,10 +40,12 @@ and `--work-not-done` says the work itself never happened — the card was
 promoted, declined or found moot. The tool then names the cards this one was
 blocking, which are about to look ready and are not; what happens to those is
 the owner's decision, not yours. The explanation is written for one reader: the
-next authoring session, sweeping the closed pile for prior art. Say what was
-built and how it was verified, or what was decided against and why, or where the
-work went if it went somewhere else. Name a public ticket key if the card has
-one — that still resolves in a year, where a commit sha dies at the next squash.
+next authoring session, sweeping the closed pile for prior art. Begin by saying
+whether the work landed: the flag records that nowhere, so this prose is the
+only place it survives. Then what was built and how it was verified, or what was
+decided against and why, or where the work went if it went somewhere else. Name
+a public ticket key if the card has one — that still resolves in a year, where a
+commit sha dies at the next squash.
 
 `card worktree <id>` cuts an isolated tree for a dispatched agent, at
 `.worktrees/<id>` on a temporary branch, and reports the path and the sha it
