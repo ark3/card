@@ -2,8 +2,8 @@
 
 `BRIEF.md` records what card is and why. This document records how the first
 implementation gets built: the decisions that are settled but are not design
-rationale, what each checkpoint has to demonstrate, and what is deliberately
-left out. Where the two disagree, the brief wins and this file is stale.
+rationale, and what is deliberately left out. Where the two disagree, the brief
+wins and this file is stale.
 
 Written 2026-08-21, from a design conversation whose reasoning is in the brief.
 `reference/` holds the agentpane documents the workflow is carried from; read
@@ -109,89 +109,6 @@ says why.
 Ids are `<PREFIX>-` plus three consonant-vowel syllables drawn at random, from
 eighteen consonants and five vowels. `reference/tracking.md`, "Ids are drawn at
 random", is the specification and carries the generator.
-
-## Checkpoints
-
-Vertical slice: build enough of each verb to walk one card through the whole
-loop, then deepen. Each checkpoint below is a stop for trying it and
-reassessing, not a deliverable — nothing is usable until the payload exists,
-because until then nothing tells a session the verbs are there.
-
-**1. Resolution and `init`.** Demonstrable when `init` creates a deck for this
-repository — `card-config.toml` carrying a chosen prefix, the two directories,
-and `.ignore` — a second `init` refuses rather than clobbering, and resolution
-finds that deck from a subdirectory, from a worktree cut off this repo, and via
-`CARD_ROOT` pointing somewhere else entirely. The prefix comes back in all of
-those cases. Also when a repo with no card directory reports exactly that, a
-`.git/card/` without `card-config.toml` is not mistaken for one, and a
-directory outside any repo reports nothing at all.
-
-**2. `new` and `show`.** `new` takes the headline as an argument, the body on
-stdin, and any number of `--label` and `--blocked-by` values; it draws an id,
-checks it against both directories, and creates the file exclusively, in one
-step that cannot be half-done. `show` resolves a bare id against both
-directories. Demonstrable when a forced collision fails rather than overwrites,
-when an id already in `closed/` is not reused, and when `show` finds a card
-that has closed since it was cited.
-
-**3. `list --ready`.** Open cards whose blockers are all in `closed/`, narrowed
-by labels the caller passes. Demonstrable when a card blocked by an open card
-is absent, the same card appears once its blocker moves to `closed/`, a label
-filter includes and excludes the right cards, and a blocker naming an id that
-exists in neither directory is reported rather than silently treated as
-satisfied.
-
-**4. `close`.** Moves the card and appends the explanation, read from stdin as
-a card body is, in one act; it refuses to run on empty input. It is told
-separately whether the work actually got done, and when it did not, it names
-the cards that were blocked by this one — they are about to look ready and are
-not. Demonstrable when a close with nothing on stdin fails, when an interrupted
-close leaves neither a card in `closed/` without its explanation nor an
-explanation on a card still in `open/`, and when promoting a card with two
-dependents names both.
-
-**5. `exec`.** Runs a command with the deck as the working directory, passing
-through arguments, stdout, stderr, and exit status unaltered. Demonstrable when
-`card exec -- rg '^blocked-by:' open` behaves exactly as the same command run
-by hand in the deck, including inside a repository whose root `.gitignore`
-ignores `*.md` — which is what the deck's `.ignore` exists to defeat.
-
-**6. `worktree`.** Cuts the tree into `.worktrees/` in the repo on a temporary
-branch and reports the sha it started at. The base is the main checkout's
-current branch, resolved explicitly rather than taken from `HEAD` — verified
-2026-08-21 that cutting a worktree from inside another worktree follows that
-worktree's HEAD instead, which would stack temporary branches on each other.
-A detached HEAD in the main checkout has no base: stop and report. There is no
-freshness step, because a tree cut from the current tip cannot be stale.
-`reference/execute-skill.md` carries the procedure this replaces, including the
-`git merge --ff-only main` this makes unnecessary.
-
-`card worktree` writes `.worktrees/.gitignore` holding `*` before cutting the
-first tree, so the directory hides itself and the tool relies on nothing
-machine-level. Verified on 2026-08-21 that this keeps worktrees out of `git
-status` even though each holds a `.git` file, and that `rg` inside a worktree
-is unaffected. The `.worktrees` entry in `~/.config/git/ignore` becomes
-belt-and-braces rather than the thing being depended on.
-
-**7. `status`.** Probes the sandbox first and prints nothing else unless it
-passes. The probe attempts to create a file in `$HOME`, which always exists
-and is read-only whenever the sandbox is on: EROFS or EACCES means sandboxed
-and `status` continues; success means the sandbox is off, so remove the file,
-warn, and stop; any other error is inconclusive, which also warns and stops.
-Three outcomes rather than two, because a probe path that is merely missing
-must not read as a pass. Card reports the verdict and never describes the
-sandbox's mounts — that description drifts from `sbox` and belongs in personal
-instructions, which are on the same machine as the mount list. The rest is
-thin at first — deck location, counts — and filled once the payload exists.
-
-Then the payload and the two mode prompts, then a synthetic-ticket rehearsal:
-fan a fake ticket into three cards, work one, decline one, promote one, so
-that decline and promote are exercised before a real ticket leans on them.
-
-This section is a stand-in for a deck. Once `init` runs, whichever checkpoints
-are still open become cards and the section goes away, leaving `PLAN.md` with
-only the settled decisions above it. That is card's first real use, and this
-project's own bootstrap rather than a rehearsal.
 
 ## Verifying
 
