@@ -78,10 +78,11 @@ That produces a two-tier model:
 Two sync points per ticket. **Fan-in** at ticket start: an authoring session
 decomposes the Jira ticket into work items. **Fan-out** at ticket end: the
 agent drafts Jira tickets from the surviving items, the owner iterates, the
-agreed versions are filed; everything else closes as `declined: <reason>` or
-`deferred: <reason>`. The end state of every ticket is zero open items — open
-items are ticket-scoped and short-lived; the closed corpus is the durable
-asset.
+agreed versions are filed; everything else closes with the reason it did not
+survive. A ticket ends with none of its own cards open — the rule is per
+ticket rather than per deck, because more than one ticket can be in flight at
+once. Open cards are ticket-scoped and short-lived; the closed pile is the
+durable asset.
 
 Two rules follow, and both are load-bearing:
 
@@ -183,10 +184,18 @@ shows it, the grep prints five paths and never shows what they are. Filtering
 happens at the call site, so "what can I do on this machine" is a question the
 caller asks rather than something the tool knows about machines.
 
-**`kind:` is under review.** Five kinds came from the table that preceded the
-files, and the owner reports the field has not been useful. With labels
-present, `kind` is a mandatory label drawn from a closed set whose vocabulary
-already drifted once. Deciding late costs little while the corpus is small.
+**`kind:` is dropped.** Five kinds came from the table that preceded the
+files, and the owner reports the field never did any work for him. With labels
+present it is a mandatory label drawn from a closed set, and that set had
+already drifted once. Anything worth classifying can be a label chosen when
+there is a reason to choose one.
+
+**The ticket a card belongs to is a label too.** That is what lets two tickets
+share a deck, which happens whenever one is halted for the other — the common
+case at work, where hitting a load-bearing bug means filing a ticket for it and
+stopping the first until it lands. Filtering on the ticket key gives back the
+single-ticket view, hides the halted ticket's cards for the duration, and is
+the reason no stash or second deck is needed.
 
 Two properties hold across all of it, and they are why the changes take this
 shape. **No card is rewritten because another card changed.** Authors sharpen
@@ -201,13 +210,16 @@ what keeps the corpus something a person can edit with an editor and a grep.
 Build now:
 
 - **`status`** — probe the sandbox, resolve the deck, print the guidance above.
-  Read-only, cheap, run at the start of every session. Evidence: with nothing
-  installable in a corporate repo, guidance has to be delivered rather than
-  stored, and there is no other delivery.
-- **`init`** — create a deck for a project and fix its prefix. Evidence: the
-  prefix cannot be derived from the filenames present in the one corpus that
-  has none, which is a new one; and `status` reporting that a project has no
-  deck is only useful if something answers it.
+  Read-only, cheap, run at the start of every session. A failed sandbox probe
+  is where the session stops: warn the owner and do nothing further, rather
+  than working unsandboxed. Evidence: with nothing installable in a corporate
+  repo, guidance has to be delivered rather than stored, and there is no other
+  delivery.
+- **`init`** — establish that a deck exists for this project, under a chosen
+  prefix. That is the whole of it, and what changes afterwards is what `status`
+  reports. Evidence: a prefix cannot be derived from the filenames in the one
+  deck that has none, which is a new one; and `status` reporting that a project
+  has no deck is only useful if something answers it.
 - **`new`** — draw an id, check `open/` and `closed/`, and write the card from
   a body supplied on stdin, exclusively, in one call. Evidence: agentpane's
   OW-70/OW-71 silent overwrite (two sessions, one clone, no signal from git),
@@ -227,10 +239,14 @@ Build now:
   format exists to avoid. A blocker naming an id that exists in neither
   directory surfaces here too, which is a piece of `check` arriving through the
   door rather than being specified in advance.
-- **`close`** — move to `closed/`, append the note, resolve `HEAD` to a sha
-  when the note is a `Fixed in`. Two close shapes: fixed-with-evidence, and
-  declined/deferred-with-reason. Evidence: two tool calls to one, plus a sha
-  only knowable after committing, plus two shapes to get right by hand.
+- **`close`** — move to `closed/` and append the explanation, in one act that
+  cannot be half-done: a card in `closed/` with no explanation, or an
+  explanation appended to a card still in `open/`, are both states the verb
+  exists to prevent. It cannot run without an explanation. What is *recorded*
+  and what is *passed for validation* are different things — the prose is
+  written for a later reader, while the tool separately needs to know whether
+  this card's work actually got done, which is what lets it warn about
+  dependents. Evidence: see "How a card ends" below.
 - **`exec -- <cmd>`** — run the given command in the corpus directory. The
   escape hatch: arbitrary power to the user, grep-first workflows preserved,
   the corpus location deliberately leaked to whoever asks.
@@ -246,14 +262,15 @@ Build now:
 Deliberately not built yet:
 
 - **The rest of `list`** — grouping, a rendered survey, queries by age or
-  kind. The ready query above is built because it is asked constantly; the
+  label. The ready query above is built because it is asked constantly; the
   remaining backlog queries agentpane wanted have little to work on in a deck
   of five to ten fresh cards. Wait for usage to name one the raw grep cannot
   express.
-- **`check`** — both invariants were run by hand in agentpane on 2026-08-19
-  and both are mis-specified (documentation examples produce 100% false
-  positives on the cited-id check; the closed-sha check does not know about
-  the second close shape). Respecify before automating. The
+- **`check`** — of the two invariants run by hand in agentpane on 2026-08-19,
+  one is mis-specified and the other no longer exists. Documentation examples
+  produce 100% false positives on the cited-id check, so it needs a way to tell
+  a citation from an illustration. The closed-sha check has nothing left to
+  check: no card claims a sha. The
   automatic-versus-portable tension — a check nobody types wants to live in a
   repo's build, but the tool is cross-project — is recorded in OW-59 and
   unresolved. The one-directional reference rule above is a candidate third
@@ -270,6 +287,50 @@ Deliberately not built yet:
   pick a mode, then left unbuilt when the mode question stopped being a
   question. The remaining content — which card, which sha — is already stated
   inline by the prompt that dispatched the agent.
+
+## How a card ends
+
+A card ends one way: it moves to `closed/` and gains an explanation. There are
+no close shapes and no vocabulary of outcomes, because the distinctions that
+matter are ones only prose can carry — what was built and how it was verified,
+what was decided against and why, what turned out to be moot, where the work
+went if it went somewhere else.
+
+**The explanation is written for a specific reader**: the next ticket's
+authoring session, sweeping `closed/` for prior art before it writes anything.
+That is the whole reason closed cards are kept. It also settles what a close
+note should name. A commit sha is a working handle that dies at the next
+squash-and-merge, so it is worth little; a Jira key, on a card that was
+promoted, still resolves in a year and is the one identifier that outlives the
+work.
+
+**Closing is not the same as satisfying.** A card promoted to a Jira ticket, or
+declined, or found moot, closes without its work being done — and every card
+blocked by it is now reported ready when it is not. This is why `close` is told
+whether the work got done: so it can name the cards about to be affected. The
+warning arrives most often mid-execution rather than at fan-out, because that
+is when a load-bearing bug surfaces, gets a card, and turns out to deserve a
+ticket of its own.
+
+**The dependents then get one of four dispositions**, decided by the owner and
+not by the tool: folded into the same Jira ticket, given their own ticket that
+depends on it, declined because they only mattered if the blocker went a
+certain way, or re-examined — the edge may have been overstated, in which case
+the card can simply be worked. Leaving them open is also legitimate when the
+whole ticket is being halted, since the ticket-key filter hides them until the
+blocker's work has actually landed.
+
+**Promotion cannot carry dependencies out with it.** Nothing public may cite a
+card, so a promoted card's blocked-by edges have to be restated in the new
+ticket's own words, or the blocker gets promoted too and the two tickets link
+to each other. The trail in the other direction stays private and takes two
+hops: a card names the card it waits on, that card's close note names the Jira
+ticket it became. No structured field ever points at Jira.
+
+**And a promoted card is not re-filed.** Working the new ticket begins with an
+ordinary fan-in, which is required to sweep `closed/` — where the promoted card
+is sitting with its full text. It is the grounding for that fan-in rather than
+something to duplicate.
 
 ## The opposed design, kept on hand
 
