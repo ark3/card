@@ -95,8 +95,8 @@ the card filed, the document written and committed here. If the answer does not
 fit the branch as the card wrote it, that is a new card, never a skip.
 
 Only then close the card, writing the evidence on stdin:
-`card close <id> --work-done` where the work is at rest, `--work-not-done`
-where it turned out to belong to a ticket of its own — the usual case when a
+`card close <id> --done` where the work is at rest, `--promoted` where it
+turned out to belong to a ticket of its own — the usual case when a
 load-bearing bug surfaces mid-execution, where the work never happened here and
 the cards this one was blocking are the owner's to dispose of.
 

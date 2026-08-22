@@ -33,19 +33,18 @@ an id.
 closed, which is the first question of an execution session. A blocker naming a
 card that exists nowhere is reported here rather than passed over.
 
-`card close <id> --work-done|--work-not-done`, explanation on stdin. Moves the
-card and appends the explanation as one act, and refuses to run on empty input.
-The flag is about the work, not about the card: every close finishes the card,
-and `--work-not-done` says the work itself never happened — the card was
-promoted, declined or found moot. The tool then names the cards this one was
-blocking, which are about to look ready and are not; what happens to those is
-the owner's decision, not yours. The explanation is written for one reader: the
-next authoring session, sweeping the closed pile for prior art. Begin by saying
-whether the work landed: the flag records that nowhere, so this prose is the
-only place it survives. Then what was built and how it was verified, or what was
-decided against and why, or where the work went if it went somewhere else. Name
-a public ticket key if the card has one — that still resolves in a year, where a
-commit sha dies at the next squash.
+`card close <id> --done|--promoted|--declined|--moot`, explanation on stdin.
+Moves the card and appends the explanation as one act, and refuses to run on
+empty input. The flag is about the work, not about the card: every close
+finishes the card, and `--promoted`, `--declined` and `--moot` all say the work
+itself never happened. The tool then names the cards this one was blocking,
+which are about to look ready and are not; what happens to those is the owner's
+decision, not yours. The explanation is written for one reader: the next
+authoring session, sweeping the closed pile for prior art. The flag records
+what happened; the prose carries why — what was built and how it was verified,
+or what was decided against and why, or where the work went if it went
+somewhere else. Name a public ticket key if the card has one — that still
+resolves in a year, where a commit sha dies at the next squash.
 
 `card worktree <id>` cuts an isolated tree for a dispatched agent, at
 `.worktrees/<id>` on a temporary branch, and reports the path and the sha it

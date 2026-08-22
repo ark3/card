@@ -77,7 +77,7 @@ test("one card walks the whole loop, through the real executable", async () => {
   expect(first.stdout).toContain(blocker);
   expect(first.stdout).not.toContain(waiting);
 
-  const closed = await run(["close", blocker, "--work-done"], "Landed in abc1234.\n");
+  const closed = await run(["close", blocker, "--done"], "Landed in abc1234.\n");
   expect(closed.code).toBe(0);
 
   const second = await run(["list", "--ready"]);
@@ -95,7 +95,7 @@ test("one card walks the whole loop, through the real executable", async () => {
   // the counts rather than describing them.
   const warm = await run(["status"]);
   expect(warm.stdout).toContain("1 open, 1 closed");
-  expect(warm.stdout).toContain("card close <id> --work-done|--work-not-done");
+  expect(warm.stdout).toContain("card close <id> --done|--promoted|--declined|--moot");
 
   chmodSync(home, 0o700);
 });

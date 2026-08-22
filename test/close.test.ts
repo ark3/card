@@ -48,7 +48,7 @@ test("moves the card and appends the explanation, in one act", async () => {
   await open(deck, "proj-behilo", CARD);
   onStdin(`${NOTE}\n`);
 
-  await close(["proj-behilo", "--work-done"], repo);
+  await close(["proj-behilo", "--done"], repo);
 
   expect(await Bun.file(path.join(deck.openDir, "proj-behilo.md")).exists()).toBe(false);
   expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(`${CARD}\n${NOTE}\n`);
@@ -61,7 +61,7 @@ test("appends without reformatting a card the owner hand-wrote", async () => {
   await open(deck, "proj-behilo", byHand);
   onStdin(`${NOTE}\n`);
 
-  await close(["proj-behilo", "--work-done"], repo);
+  await close(["proj-behilo", "--done"], repo);
 
   expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(`${byHand}\n${NOTE}\n`);
 });
@@ -71,9 +71,9 @@ test("nothing on stdin refuses and leaves the card untouched in open/", async ()
   const file = await open(deck, "proj-behilo", CARD);
 
   onStdin("");
-  await expect(close(["proj-behilo", "--work-done"], repo)).rejects.toThrow(/needs an explanation on stdin/);
+  await expect(close(["proj-behilo", "--done"], repo)).rejects.toThrow(/needs an explanation on stdin/);
   onStdin("  \n\t\n");
-  await expect(close(["proj-behilo", "--work-done"], repo)).rejects.toThrow(/needs an explanation on stdin/);
+  await expect(close(["proj-behilo", "--done"], repo)).rejects.toThrow(/needs an explanation on stdin/);
 
   expect(await Bun.file(file).text()).toBe(CARD);
   expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).exists()).toBe(false);
@@ -88,7 +88,7 @@ test("an interruption before the move leaves the open card whole and closed/ emp
   // staged copy. Nothing has been renamed and nothing has been unlinked.
   await chmod(deck.closedDir, 0o555);
   try {
-    await expect(close(["proj-behilo", "--work-done"], repo)).rejects.toThrow(/EACCES/);
+    await expect(close(["proj-behilo", "--done"], repo)).rejects.toThrow(/EACCES/);
   } finally {
     await chmod(deck.closedDir, 0o755);
   }
@@ -106,7 +106,7 @@ test("an interruption after the move leaves the closed card whole, explanation a
   // `closed/`, then stops the verb at the unlink.
   await chmod(deck.openDir, 0o555);
   try {
-    await expect(close(["proj-behilo", "--work-done"], repo)).rejects.toThrow(/EACCES/);
+    await expect(close(["proj-behilo", "--done"], repo)).rejects.toThrow(/EACCES/);
   } finally {
     await chmod(deck.openDir, 0o755);
   }
@@ -117,41 +117,44 @@ test("an interruption after the move leaves the closed card whole, explanation a
   expect(await Bun.file(file).text()).toBe(CARD);
 });
 
-test("--work-not-done names every open card this one was blocking", async () => {
-  const { repo, deck } = await deckIn();
-  await open(deck, "proj-behilo", CARD);
-  await open(deck, "proj-vezipo", "---\nblocked-by: [proj-behilo]\n---\n\n# First dependent\n\nBody.\n");
-  await open(deck, "proj-dumoka", "---\nblocked-by: [proj-behilo, proj-nosuch]\n---\n\n# Second dependent\n\nBody.\n");
-  await open(deck, "proj-lakito", "---\nblocked-by: [proj-vezipo]\n---\n\n# Not a dependent\n\nBody.\n");
-  onStdin("Promoted to PROJ-42, which is where the work will happen.\n");
+for (const flag of ["--promoted", "--declined", "--moot"]) {
+  test(`${flag} names every open card this one was blocking`, async () => {
+    const { repo, deck } = await deckIn();
+    await open(deck, "proj-behilo", CARD);
+    await open(deck, "proj-vezipo", "---\nblocked-by: [proj-behilo]\n---\n\n# First dependent\n\nBody.\n");
+    await open(deck, "proj-dumoka", "---\nblocked-by: [proj-behilo, proj-nosuch]\n---\n\n# Second dependent\n\nBody.\n");
+    await open(deck, "proj-lakito", "---\nblocked-by: [proj-vezipo]\n---\n\n# Not a dependent\n\nBody.\n");
+    onStdin("Went elsewhere; PROJ-42 is where the work will happen.\n");
 
-  await close(["proj-behilo", "--work-not-done"], repo);
+    await close(["proj-behilo", flag], repo);
 
-  const printed = logged.join("\n");
-  expect(printed).toContain("proj-vezipo  First dependent");
-  expect(printed).toContain("proj-dumoka  Second dependent");
-  expect(printed).not.toContain("proj-lakito");
-});
+    const printed = logged.join("\n");
+    expect(printed).toContain("proj-vezipo  First dependent");
+    expect(printed).toContain("proj-dumoka  Second dependent");
+    expect(printed).not.toContain("proj-lakito");
+  });
+}
 
-test("--work-done says nothing about the cards it was blocking", async () => {
+test("--done says nothing about the cards it was blocking", async () => {
   const { repo, deck } = await deckIn();
   await open(deck, "proj-behilo", CARD);
   await open(deck, "proj-vezipo", "---\nblocked-by: [proj-behilo]\n---\n\n# First dependent\n\nBody.\n");
   onStdin(`${NOTE}\n`);
 
-  await close(["proj-behilo", "--work-done"], repo);
+  await close(["proj-behilo", "--done"], repo);
 
   expect(logged).toEqual(["closed proj-behilo"]);
 });
 
-test("refuses without the flag, and with both forms of it", async () => {
+test("refuses without a flag, with two flags, and with the retired spellings", async () => {
   const { repo, deck } = await deckIn();
   const file = await open(deck, "proj-behilo", CARD);
   onStdin(`${NOTE}\n`);
 
-  await expect(close(["proj-behilo"], repo)).rejects.toThrow(/whether the work got done/);
-  await expect(close(["proj-behilo", "--work-done", "--work-not-done"], repo)).rejects.toThrow(/pass one of/);
-  await expect(close(["proj-behilo", "--promoted"], repo)).rejects.toThrow(/no such option as `--promoted`/);
+  await expect(close(["proj-behilo"], repo)).rejects.toThrow(/how the card ended/);
+  await expect(close(["proj-behilo", "--done", "--moot"], repo)).rejects.toThrow(/pass one of/);
+  await expect(close(["proj-behilo", "--work-done"], repo)).rejects.toThrow(/no such option as `--work-done`/);
+  await expect(close(["proj-behilo", "--work-not-done"], repo)).rejects.toThrow(/no such option as `--work-not-done`/);
 
   expect(await Bun.file(file).text()).toBe(CARD);
 });
@@ -161,12 +164,12 @@ test("refuses an id that is nowhere, and one that has already closed", async () 
   await Bun.write(path.join(deck.closedDir, "proj-behilo.md"), CARD);
   onStdin(`${NOTE}\n`);
 
-  await expect(close(["proj-nosuch", "--work-done"], repo)).rejects.toThrow(/no card proj-nosuch/);
-  await expect(close(["proj-behilo", "--work-done"], repo)).rejects.toThrow(/already closed/);
+  await expect(close(["proj-nosuch", "--done"], repo)).rejects.toThrow(/no card proj-nosuch/);
+  await expect(close(["proj-behilo", "--done"], repo)).rejects.toThrow(/already closed/);
   expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(CARD);
 });
 
 test("refuses when there is no deck", async () => {
   const repo = await tempRepo();
-  await expect(close(["proj-behilo", "--work-done"], repo)).rejects.toThrow(/no deck here/);
+  await expect(close(["proj-behilo", "--done"], repo)).rejects.toThrow(/no deck here/);
 });

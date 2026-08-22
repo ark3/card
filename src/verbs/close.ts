@@ -4,16 +4,17 @@ import { readCard } from "../cardfile.ts";
 import { requireDeck } from "../deck.ts";
 import { locate } from "./show.ts";
 
-const USAGE = "usage: card close <id> --work-done|--work-not-done, explanation on stdin";
+const USAGE = "usage: card close <id> --done|--promoted|--declined|--moot, explanation on stdin";
+const FLAGS = ["--done", "--promoted", "--declined", "--moot"];
 
 export async function run(args: string[], cwd: string): Promise<void> {
-  let workDone: boolean | undefined;
+  let outcome: string | undefined;
   const positional: string[] = [];
 
   for (const arg of args) {
-    if (arg === "--work-done" || arg === "--work-not-done") {
-      if (workDone !== undefined) throw new Error(`pass one of --work-done or --work-not-done\n${USAGE}`);
-      workDone = arg === "--work-done";
+    if (FLAGS.includes(arg)) {
+      if (outcome !== undefined) throw new Error(`pass one of ${FLAGS.join(", ")}\n${USAGE}`);
+      outcome = arg;
     } else if (arg.startsWith("--")) {
       throw new Error(`no such option as \`${arg}\`\n${USAGE}`);
     } else {
@@ -23,11 +24,12 @@ export async function run(args: string[], cwd: string): Promise<void> {
 
   const id = positional[0];
   if (id === undefined || positional.length > 1) throw new Error(USAGE);
-  if (workDone === undefined) {
+  if (outcome === undefined) {
     throw new Error(
-      `whether the work got done is what says which cards to warn about\n${USAGE}`,
+      `how the card ended is what says which cards to warn about\n${USAGE}`,
     );
   }
+  const workDone = outcome === "--done";
 
   const deck = await requireDeck(cwd);
   const found = await locate(deck, id);
