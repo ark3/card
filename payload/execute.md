@@ -50,9 +50,11 @@ not to touch, a freeze, fixtures holding customer data. They bind the agent
 you dispatch as they bind you, and nothing but you will carry them across.
 
 **3. Review the diff yourself.** Not in a subagent. Green tests are not the
-finding. Look for work beyond what the card asked for, drift from the spec
-where the card named one, and tests that pass without having been shown to fail
-first.
+finding, and neither is the report: check what it claims against the diff and
+against the code it ran. Confirming a claim is review however far the check
+reaches, and a claim you cannot confirm is itself a finding. Look for work
+beyond what the card asked for, drift from the spec where the card named one,
+and tests that pass without having been shown to fail first.
 
 **4. Land it, then close it.** Execution ends with the work at rest where the
 card said it would be, and a `--work-done` close is the claim that it is there.
@@ -111,7 +113,10 @@ Something else surfaced means a new card, and not this session's job.
 ## Never
 
 **Explore.** If the work needs reading that the card did not name, that is a
-subagent's job. Searching here is the failure mode.
+subagent's job, and going looking for work the card did not name is the
+failure mode. Neither is what steps 1 and 3 ask of you: checking the card
+against the source and confirming what a subagent reported are review, and are
+yours.
 
 **Implement.** Edit only what review put in front of you, and only to fix what
 review found.
