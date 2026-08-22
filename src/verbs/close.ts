@@ -61,7 +61,6 @@ export async function run(args: string[], cwd: string): Promise<void> {
   await unlink(found.path);
 
   console.log(`closed ${id}`);
-  if (workDone) return;
 
   const blocked: string[] = [];
   for (const entry of (await readdir(deck.openDir)).sort()) {
@@ -77,8 +76,16 @@ export async function run(args: string[], cwd: string): Promise<void> {
     }
     if (card.blockedBy.includes(id)) blocked.push(`${entry.slice(0, -3)}  ${card.headline}`);
   }
-  if (blocked.length === 0) return;
+  // Silence here reads as the scan never having run, so an empty list says so.
+  if (blocked.length === 0) {
+    console.log(`nothing was waiting on it.`);
+    return;
+  }
 
-  console.log(`its work never happened, and these are about to look ready and are not:`);
+  console.log(
+    workDone
+      ? `its work is at rest, and these were waiting on it:`
+      : `its work never happened, and these are about to look ready and are not:`,
+  );
   for (const line of blocked) console.log(`  ${line}`);
 }

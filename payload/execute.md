@@ -93,7 +93,9 @@ What the clause calls for comes to rest first: the card filed, the document writ
 An answer that fits neither branch of the card's conditional is a new card, never a skip.
 
 Only then close, writing the close note on stdin: `card close <id> --done` where the work is at rest, and otherwise the flag that says how the card ended — `--promoted` where the work went to a ticket of its own, the usual case when a load-bearing bug surfaces mid-execution, and the public ticket itself is the owner's to file, never this session's; `--declined` where it was decided against; `--moot` where the reason for it is gone.
-On any of those three the tool names the cards this one was blocking, and those are the owner's to dispose of, not yours.
+On every close the tool names the cards this one was blocking.
+On `--done` they have just come free: they belong in the hand-back, not in this session's work, because which card comes next is the owner's call.
+On the other three they are about to look ready and are not: they belong in the hand-back too, and their disposition is the owner's, not yours.
 
 **5. Hand back.**
   Say what changed and how to see it: what to run, what to look at, what would count as working.

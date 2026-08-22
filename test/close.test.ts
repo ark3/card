@@ -57,7 +57,7 @@ test("moves the card and appends the explanation, in one act", async () => {
 
   expect(await Bun.file(path.join(deck.openDir, "proj-behilo.md")).exists()).toBe(false);
   expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(`${CARD}\n${NOTE}\n`);
-  expect(logged).toEqual(["closed proj-behilo"]);
+  expect(logged).toEqual(["closed proj-behilo", "nothing was waiting on it."]);
 });
 
 test("appends without reformatting a card the owner hand-wrote", async () => {
@@ -134,6 +134,7 @@ for (const flag of ["--promoted", "--declined", "--moot"]) {
     await close(["proj-behilo", flag], repo);
 
     const printed = logged.join("\n");
+    expect(printed).toContain("its work never happened");
     expect(printed).toContain("proj-vezipo  First dependent");
     expect(printed).toContain("proj-dumoka  Second dependent");
     expect(printed).not.toContain("proj-lakito");
@@ -155,15 +156,29 @@ test("names the file it could not parse and the dependents it still found", asyn
   expect(errored.join("\n")).toContain("proj-fanovi.md: unknown frontmatter field `kind`");
 });
 
-test("--done says nothing about the cards it was blocking", async () => {
+test("--done names the cards this one was blocking, as work that just came free", async () => {
   const { repo, deck } = await deckIn();
   await open(deck, "proj-behilo", CARD);
   await open(deck, "proj-vezipo", "---\nblocked-by: [proj-behilo]\n---\n\n# First dependent\n\nBody.\n");
+  await open(deck, "proj-lakito", "---\nblocked-by: [proj-vezipo]\n---\n\n# Not a dependent\n\nBody.\n");
   onStdin(`${NOTE}\n`);
 
   await close(["proj-behilo", "--done"], repo);
 
-  expect(logged).toEqual(["closed proj-behilo"]);
+  const printed = logged.join("\n");
+  expect(printed).toContain("its work is at rest");
+  expect(printed).toContain("proj-vezipo  First dependent");
+  expect(printed).not.toContain("proj-lakito");
+});
+
+test("a close whose card was blocking nothing says so rather than printing nothing", async () => {
+  const { repo, deck } = await deckIn();
+  await open(deck, "proj-behilo", CARD);
+  onStdin("The reason for it is gone, and nothing was waiting on it either.\n");
+
+  await close(["proj-behilo", "--moot"], repo);
+
+  expect(logged).toEqual(["closed proj-behilo", "nothing was waiting on it."]);
 });
 
 test("refuses without a flag, with two flags, and with the retired spellings", async () => {
