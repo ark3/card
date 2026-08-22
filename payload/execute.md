@@ -39,11 +39,25 @@ finding. Look for work beyond what the card asked for, drift from the spec
 where the card named one, and tests that pass without having been shown to fail
 first.
 
-**4. Land it, then close it.** Bring back the commits you want. Review
+**4. Land it, then close it.** Execution ends with the work at rest where the
+card said it would be, and a `--work-done` close is the claim that it is there.
+Where the card named a file in this repo — code, a document, a test — at rest
+means committed on the branch the main checkout is on. `card worktree` named
+that branch when it cut the tree; where no tree was cut, it is the branch this
+session has been on all along. Where the card's result is a finding and nothing
+else, the close note carries it in full; a note that points at a transcript is
+a note that loses it.
+
+Where a subagent worked in a tree, bring back the commits you want. Review
 routinely amends the implementer's commits, so which commits land is a
-judgment, not a merge; the repository's own branch and review policy governs
-the rest. Remove the worktree and delete its branch. Then close the card with
-`card close <id> --work-done`, writing the evidence on stdin.
+judgment, not a merge. Then remove the worktree and delete its branch.
+
+Where the file was written here instead — a decision, a document, anything a
+read-only dispatch reported back for you to write — commit it here. Nothing
+else in the procedure will.
+
+Then close the card with `card close <id> --work-done`, writing the evidence on
+stdin.
 
 The card's own conditionals fire at the close, whichever way the answer came
 out. A "then, conditionally" clause naming another card, a document or a
