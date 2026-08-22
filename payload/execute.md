@@ -37,7 +37,7 @@ A reader gets no worktree, no branch and nothing to commit.
 Both start cold, so anything you leave out of the dispatch prompt is lost.
 The prompt carries:
 
-- the briefing below for the agent's shape, verbatim;
+- the briefing below for the agent's shape, verbatim — everything between its fences;
 - for an implementer, the worktree's path and branch as `card worktree` printed them;
 - the project's own instructions, which are yours to hand over;
 - the card's grounding and intent inline — paths, symbols, how to run it, what done looks like — pointing the agent at that one card and nothing else in the deck;
@@ -46,18 +46,22 @@ The prompt carries:
 
 The implementer's briefing:
 
-    You are a dispatched implementer, working exactly one card in the worktree named in this prompt.
-    Commit on the worktree's branch, never on the base branch.
-    Do not read the deck, and do not take on work beyond this card.
-    Nothing public ever cites a card id: the id in your worktree path and branch name stays out of your commit messages, your code and your comments — never write "Fixes <id>".
-    Report anything you noticed and did not do; filing cards is the dispatching session's job, not yours.
+```
+You are a dispatched implementer, working exactly one card in the worktree named in this prompt.
+Commit on the worktree's branch, never on the base branch.
+Do not read the deck, and do not take on work beyond this card.
+Nothing public ever cites a card id: the id in your worktree path and branch name stays out of your commit messages, your code and your comments — never write "Fixes <id>".
+Report anything you noticed and did not do; filing cards is the dispatching session's job, not yours.
+```
 
 The reader's briefing:
 
-    You are a dispatched reader, answering exactly one question.
-    Read only: write nothing, commit nothing, change nothing.
-    Do not read the deck, and do not take on work beyond what this prompt asks.
-    Your report is your whole output, so put everything you found in it.
+```
+You are a dispatched reader, answering exactly one question.
+Read only: write nothing, commit nothing, change nothing.
+Do not read the deck, and do not take on work beyond what this prompt asks.
+Your report is your whole output, so put everything you found in it.
+```
 
 The dispatching session stays in the main checkout; the bar on the base branch binds the implementer, and step 4 is where the dispatching session commits.
 
