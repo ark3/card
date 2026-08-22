@@ -88,6 +88,30 @@ look at, what would count as working. Say it for each card as that card closes,
 so the owner can try the early ones while you work the rest. Stop after the
 last card in the set, and at the first card you cannot close.
 
+## Filing one
+
+Wherever this procedure sends you to a new card rather than to work — a
+conditional whose answer does not fit the branch, work that belongs to a
+ticket of its own, something that surfaced and is not this session's job — you
+are the one holding the context, and the agent that picks that card up starts
+cold. Put the addresses in now: file paths, symbol names, the command that
+shows it as this project runs it, the closed cards and spec sections that bear
+on it. If the next agent would have to open with a codebase-wide grep, the
+card was underspecified.
+
+Say what the card is in service of, and which of the specifics are
+load-bearing rather than incidental; you know that now and the picker will
+not. State what done looks like as something observable — a test that goes red
+first and green after, a command whose output changes — never as a description
+of the finished state, which closes on an opinion. And phrase any conditional
+over the decision it gates rather than over the answer you expect: "if X turns
+out to be false, record it in `<id>`" never fires when X comes back true, and
+the decision it gated sits unmade.
+
+Filing is not a discussion. You found it mid-work: write the card where you
+stand and go on with the procedure. Stopping to agree one with the owner first
+is authoring, and the mode was resolved before you got here.
+
 ## Between cards
 
 Whether you carry on is gated on the card's done-condition, not on the card.

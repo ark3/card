@@ -70,8 +70,3 @@ card changed.
 
 The next agent's first tool calls should be reads of things the card named. If
 it opens with a codebase-wide grep, the card was underspecified.
-
-## Filing one mid-work
-
-Writing a card while you still have the context loaded: put the addresses in
-now. The agent that picks it up starts cold.
