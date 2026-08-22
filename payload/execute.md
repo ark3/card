@@ -19,10 +19,11 @@ Work is dispatched in one of two shapes, and which one it is governs what the
 agent gets:
 
 - **An implementer** writes the change in a tree of its own and commits there.
-- **A reader** reads and reports and writes nothing — a cold read before you
-  start, an adversarial check of something already written. You act on the
-  report here in the main checkout, and where the card asked for a document, a
-  decision or a finding, acting on it means writing it.
+- **A reader** reads and reports and writes nothing — a cold read before the
+  work starts, an adversarial check of something already written. The
+  dispatching session acts on the report here in the main checkout, and where
+  the card asked for a document, a decision or a finding, acting on it means
+  writing it.
 
 One implementer to a card at most, and as many readers as the work is worth,
 before it or after. Never two at once: dispatch, review what comes back, then
@@ -44,8 +45,8 @@ An implementer gets a tree of its own from `card worktree <id>`, told outright
 that it commits on that tree's branch and cannot commit on the base branch. A
 reader gets no worktree, no branch and no commit: say "read only, write
 nothing, commit nothing" outright, and that its report is the whole output.
-You stay in the main checkout either way — the bar on the base branch binds the
-agent you dispatch, not you, and step 4 is where you commit.
+The dispatching session stays in the main checkout either way — the bar on the
+base branch is the implementer's, and step 4 is where that session commits.
 
 The handover is the same for both, and both start cold, so anything you do not
 hand over is lost. Hand over the project's own instructions, then the card's
