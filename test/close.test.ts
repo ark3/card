@@ -71,9 +71,9 @@ test("nothing on stdin refuses and leaves the card untouched in open/", async ()
   const file = await open(deck, "proj-behilo", CARD);
 
   onStdin("");
-  await expect(close(["proj-behilo", "--done"], repo)).rejects.toThrow(/needs an explanation on stdin/);
+  await expect(close(["proj-behilo", "--done"], repo)).rejects.toThrow(/needs a close note on stdin/);
   onStdin("  \n\t\n");
-  await expect(close(["proj-behilo", "--done"], repo)).rejects.toThrow(/needs an explanation on stdin/);
+  await expect(close(["proj-behilo", "--done"], repo)).rejects.toThrow(/needs a close note on stdin/);
 
   expect(await Bun.file(file).text()).toBe(CARD);
   expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).exists()).toBe(false);

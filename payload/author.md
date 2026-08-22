@@ -19,7 +19,9 @@ Write each card as its observation settles; do not hold cards back waiting
 for the owner to approve each one. Where an observation is yours rather than
 the owner's — something the ticket does not state, a judgment call you made —
 flag it when you hand the cards back, so the owner sees the inference without
-having been the gate on it. That flag is not optional. The asymmetry is what
+having been the gate on it. That flag is not optional, and a session with no
+conversation to put it in puts it in its final output, which is that
+session's hand-back. The asymmetry is what
 decides this: a card the owner did not want costs one close, and closed cards
 can be amended, while a finding not written is gone. When the owner is
 present and still discovering what they want, authoring is a conversation —
@@ -34,10 +36,11 @@ ticket's cards for the duration.
 
 **Grounding.** File paths, symbol names, the command that shows the problem
 as this project runs it, and pointers to the spec sections or closed cards
-that matter. Address prose by a quoted phrase plus the section that holds it,
-never by a bare line number: lines move, and a stale line number still
-resolves, to the wrong text. Prefer a pointer over re-explaining what the
-next agent can re-derive cheaply from a file you named.
+that matter. Address prose by a quoted phrase plus the section that holds it
+— a line number may follow as decoration, never as the address, because lines
+move and a stale line number still resolves, to the wrong text. Prefer a
+pointer over re-explaining what the next agent can re-derive cheaply from a
+file you named.
 
 **Intent.** What done looks like, what the card is in service of, and which
 specifics are load-bearing rather than incidental.
@@ -67,7 +70,7 @@ The headline is the card's lead claim, not a vague title — specific enough to
 stand on its own in a listing. Inside the body there is no template: no
 required sections, nothing padded to fill a heading.
 
-`--blocked-by` names only the cards this one waits on. The cold reader about
+`--blocked-by` names only the cards this one waits on. The cold agent about
 to start a card is the one who needs telling it is stuck; the reverse
 question, what closing this unblocks, is a grep for the id and is never
 stored.

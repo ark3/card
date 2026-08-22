@@ -23,11 +23,13 @@ class; these rules are what keep a later edit from reintroducing one.
 - **Every imperative names its actor.** No agentless passives: "the card is
   amended" hid who amends and stalled real sessions. Say "amend the card
   yourself" or "the dispatching session commits".
-- **A sentence that licenses or exempts names a role, never "you".** Every
-  reader of a payload file parses itself as "you", including dispatched
-  agents the file is not addressed to. "You may commit here" read by an
-  implementer inverts the one bar the payload puts on it. "The dispatching
-  session" is safe: an agent knows it did not dispatch itself.
+- **A sentence that grants what another role is denied names the granted
+  role, never "you".** Every reader of a payload file parses itself as
+  "you", including dispatched agents the file is not addressed to, so "you
+  may commit here" read by an implementer inverts the one bar the payload
+  puts on it. "The dispatching session" is safe: an agent knows it did not
+  dispatch itself. A duty no role is denied — amending a card, filing one —
+  may say "you"; the role form is owed wherever a bar exists for someone.
 - **One term per concept, and one concept per term.** "Cold read" once named
   both a dispatched reader and an owner-held stopping condition, with
   opposite consequences. Before reusing a term, check what it already names.

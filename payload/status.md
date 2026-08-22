@@ -9,7 +9,8 @@ whatever the project already uses for tracking stays the public one.
 Resolve this from what has already been asked. Do not put the choice to the
 owner.
 
-- Deciding what to build, or writing or sharpening cards: run `card author`.
+- Deciding what to build, or asked to write or sharpen cards as the task
+  itself: run `card author`.
 - Landing a card that already exists: run `card execute`.
 - Anything else: neither. Carry on, under the rules below.
 
@@ -19,9 +20,10 @@ Each prints the procedure for its mode. Run it before you act, not after.
 
 `card new '<headline>' [--label L]... [--blocked-by <id>]...`, body on stdin.
 Draws an id, checks it against the open and closed cards, and writes the file,
-as one act. Never choose an id, never write a card file by hand, and never
-create a skeleton to fill in afterwards — a card half-written is the failure
-this verb replaces. The headline is an argument because a card has exactly one
+as one act. Never choose an id, never create a new card's file by hand, and
+never create a skeleton to fill in afterwards — a card half-written is the
+failure this verb replaces. Editing a card that already exists is ordinary
+and is done by hand. The headline is an argument because a card has exactly one
 `# ` line and that line never wraps.
 
 `card show <id>` prints a card wherever it is, and `card show <id> --path`
@@ -33,15 +35,15 @@ of an id.
 all closed, which is the first question of an execution session. A blocker
 naming a card that exists nowhere is reported here rather than passed over.
 
-`card close <id> --done|--promoted|--declined|--moot`, explanation on stdin.
-Moves the card and appends the explanation as one act, and refuses to run on
+`card close <id> --done|--promoted|--declined|--moot`, close note on stdin.
+Moves the card and appends the close note as one act, and refuses to run on
 empty input. Exactly one flag: the flag records what happened, and the prose
 carries why. `--done` says the work is at rest where the card said it would
 be. The other three all say the work never happened. `--promoted`: the work
 went to a public ticket. `--declined`: someone chose not to do the work, and
 the reasoning is live again if the tradeoff changes. `--moot`: the reason the
 card existed is gone, and re-filing it would be an error — a card that turns
-out to duplicate another is moot, with the other card's id in the note.
+out to duplicate another is moot, with the other card's id in the close note.
 
 On any of those three the tool names the cards this one was blocking, which
 are about to look ready and are not. A card can wait only on another card,
@@ -52,7 +54,7 @@ them their own ticket that depends on it; decline them, because they only
 mattered if the blocker went a certain way; or re-examine them — the edge may
 have been overstated, and the card can simply be worked.
 
-Write the explanation for one reader: the next authoring session, sweeping
+Write the close note for one reader: the next authoring session, sweeping
 the closed pile for prior art. Say what was built and how it was verified, or
 what was decided against and why, or where the work went if it went somewhere
 else. Name a public ticket key if the card has one — that still resolves in a
@@ -83,7 +85,8 @@ branches, commits — freely. Nothing public ever cites a card id: not a commit
 message, not a pull request, not a comment in the code. That rule is the
 whole privacy boundary.
 
-**Dispatch the reading.** Reading happens in dispatched subagents, and what
-they find lands in a card rather than in the session that dispatched them.
-Exploring in the session that is landing a card is the failure mode. Writing
-is that session's own only where `card execute` hands it over.
+**Dispatch the reading.** Reading beyond what the card at hand names happens
+in dispatched subagents, and what must survive of what they find goes into a
+card, not into the transcript. Exploring in the session that is landing a
+card is the failure mode. Writing is that session's own only where
+`card execute` hands it over.

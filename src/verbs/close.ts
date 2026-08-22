@@ -4,7 +4,7 @@ import { readCard } from "../cardfile.ts";
 import { requireDeck } from "../deck.ts";
 import { locate } from "./show.ts";
 
-const USAGE = "usage: card close <id> --done|--promoted|--declined|--moot, explanation on stdin";
+const USAGE = "usage: card close <id> --done|--promoted|--declined|--moot, close note on stdin";
 const FLAGS = ["--done", "--promoted", "--declined", "--moot"];
 
 export async function run(args: string[], cwd: string): Promise<void> {
@@ -39,7 +39,7 @@ export async function run(args: string[], cwd: string): Promise<void> {
   const explanation = (await Bun.stdin.text()).trim();
   if (explanation === "") {
     throw new Error(
-      `${id} needs an explanation on stdin, written for the next authoring session sweeping closed cards for prior art`,
+      `${id} needs a close note on stdin, written for the next authoring session sweeping closed cards for prior art`,
     );
   }
 

@@ -37,9 +37,10 @@ moved under it — most of all in a codebase this workflow does not control.
 Confirm that the paths, symbols and claims the card names still hold. Where
 they have drifted, amend the card yourself and say what you changed: never
 work a card as written once it has drifted, and never stop for an amendment
-you can make — amendable staleness is routine, not a blocker. Drift large
-enough to kill the card's intent is not an amendment at all: route that to a
-ticket of its own, at step 4.
+you can make — amendable staleness is routine, not an obstacle. Drift large
+enough to kill the card's intent is not an amendment at all: that card ends at
+step 4, closed for what the drift made it — `--moot` where the problem it
+named is gone, `--promoted` where the real work outgrew the card.
 
 **2. Dispatch.** The reading is not yours to do: the card is the handoff, and
 a session that does its own reading has no room left to review what comes
@@ -50,6 +51,8 @@ worktree, no branch and nothing to commit. Both start cold, so anything you
 leave out of the dispatch prompt is lost. The prompt carries:
 
 - the briefing below for the agent's shape, verbatim;
+- for an implementer, the worktree's path and branch as `card worktree`
+  printed them;
 - the project's own instructions, which are yours to hand over;
 - the card's grounding and intent inline — paths, symbols, how to run it,
   what done looks like — pointing the agent at that one card and nothing
@@ -66,7 +69,9 @@ The implementer's briefing:
     the base branch. Do not read the deck, and do not take on work beyond
     this card. Nothing public ever cites a card id: the id in your worktree
     path and branch name stays out of your commit messages, your code and
-    your comments — never write "Fixes <id>".
+    your comments — never write "Fixes <id>". Report anything you noticed
+    and did not do; filing cards is the dispatching session's job, not
+    yours.
 
 The reader's briefing:
 
@@ -103,7 +108,7 @@ The dispatching session is the one that commits here, and the only one:
 
 - An implementer's commits come back by that session's hand. Review
   routinely amends them, so which commits land is a judgment, not a merge.
-  Then remove the worktree and delete its branch.
+  That session then removes the worktree and deletes its branch.
 - What that session wrote itself off a reader's report, it commits in the
   main checkout. Nothing else in the procedure will.
 
@@ -115,10 +120,11 @@ rest first: the card filed, the document written and committed here. An
 answer that fits neither branch of the card's conditional is a new card,
 never a skip.
 
-Only then close, writing the evidence on stdin: `card close <id> --done`
+Only then close, writing the close note on stdin: `card close <id> --done`
 where the work is at rest, and otherwise the flag that says how the card
 ended — `--promoted` where the work went to a ticket of its own, the usual
-case when a load-bearing bug surfaces mid-execution; `--declined` where it
+case when a load-bearing bug surfaces mid-execution, and the public ticket
+itself is the owner's to file, never this session's; `--declined` where it
 was decided against; `--moot` where the reason for it is gone. On any of
 those three the tool names the cards this one was blocking, and those are
 the owner's to dispose of, not yours.
@@ -131,15 +137,16 @@ after the last card in the set, and at the first card you cannot close.
 ## Filing one
 
 Wherever this procedure sends you to a new card rather than to work — a
-conditional whose answer fits neither branch, work that belongs to a ticket
-of its own, something that surfaced and is not this session's job — you hold
-the context and the agent that picks the card up starts cold. Write the
-addresses in now: file paths, symbol names, the command that shows the
-problem as this project runs it, the closed cards and spec sections that bear
-on it. Address prose by a quoted phrase plus the section that holds it, never
-by a bare line number — lines move, and a stale line number still resolves,
-to the wrong text. If the next agent would have to open with a codebase-wide
-grep, the card was underspecified.
+conditional whose answer fits neither branch, or something that surfaced and
+is not this session's job, most often a load-bearing bug that will deserve a
+ticket of its own — you hold the context and the agent that picks the card up
+starts cold. Write the addresses in now: file paths, symbol names, the
+command that shows the problem as this project runs it, the closed cards and
+spec sections that bear on it. Address prose by a quoted phrase plus the
+section that holds it — a line number may follow as decoration, never as the
+address, because lines move and a stale line number still resolves, to the
+wrong text. If the next agent would have to open with a codebase-wide grep,
+the card was underspecified.
 
 Say what the card is in service of, and which of the specifics are
 load-bearing rather than incidental; you know that now and the picker will
@@ -152,25 +159,26 @@ it in `<id>`" never fires when X comes back true, and the decision it gated
 sits unmade.
 
 Filing is not a discussion. You found it mid-work: write the card where you
-stand and go on with the procedure. Stopping to agree it with the owner
-first is authoring's gate, and the mode was resolved before you got here.
+stand and go on with the procedure. The owner sees what you filed in the
+hand-back, and a card the owner did not want costs one close.
 
 ## Between cards
 
 Whether you carry on is gated on the card's done-condition, not on the card.
 Where the card names an observable you can run — a test that goes red first
-and green after — running it clean is the close, and you go straight on to
-the next card in the set. Where the done-condition is a judgment or a
-decision only the owner can make, hand back and stop there, whatever else is
-in the set: a reader you dispatch is not the owner and cannot stand in.
+and green after — running it clean is what closes the card: finish step 4,
+then go straight on to the next card in the set. Where the done-condition is
+a judgment or a decision only the owner can make, hand back and stop there,
+whatever else is in the set: a reader you dispatch is not the owner and
+cannot stand in.
 
-A set also ends early on a genuine blocker: an observable that will not go
+A set also ends early on a genuine obstacle: an observable that will not go
 green, drift that kills a card's intent, work that belongs to a ticket of
 its own, something that surfaces and changes a later card in the set, or
 your own context running short — say, a conversation grown long enough to be
 worth restarting. A card you amended under step 1 and carried through is
 none of these: amendable staleness never ends a set. Aborting costs the
-owner a full round trip, so the bar is a genuine blocker and not your own
+owner a full round trip, so the bar is a genuine obstacle and not your own
 unease. An over-cautious abort is the expensive failure here, and there is
 always an excuse available for one.
 
@@ -189,4 +197,5 @@ yours.
 **Implement.** The card's code is an implementer's to write, never the
 dispatching session's: that session edits only what review put in front of
 it, and only to fix what review found. Writing up what a reader reported,
-and amending a card, are not implementing.
+amending a card, and the throwaway harness a check itself needs are not
+implementing.
