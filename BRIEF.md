@@ -159,6 +159,29 @@ never misled anyone else. The literal reader is the normal case, not the edge
 one, and prompts here are written for it. This is the same discipline as
 pricing a card for a cold reader, applied to instructions rather than to cost.
 
+**A session works in seconds and the owner answers in hours.** Every stop is a
+round trip whose real cost is not the owner's half-minute of reading but the
+hours the work sits still waiting for it, so a session resolves what it can and
+stops only where the owner is the only instrument that will do. Two things
+qualify: which work comes next, which is priority and lives nowhere in the deck,
+and what happens to the cards a close stranded, which turns on ticket-level
+intent and is settled under "How a card ends". This is the same instinct as
+resolving the mode rather than asking it. Completion is gated on the card's own
+done-condition rather than on the card: where the card names an observable the
+session can run, running it clean is the close, and the session carries on to
+the next card in the set the owner picked. Where the done-condition is a cold
+read or a judgment, the owner is the instrument and the session stops there. A
+set ends early on anything but a clean close — a failed observable, a card gone
+stale, work that belongs to a ticket of its own — and on the session's own
+context running short.
+
+**A case these rules do not name is resolved from that purpose, not by looking
+for permission.** Silence is not a prohibition, and a session that stops to ask
+for one has already spent the thing the rule was protecting. Cards are cheap to
+unmake and closed cards can be amended, so a card written that the owner did not
+want costs one close, while a finding not written is gone; where the two are in
+tension the prompt favours writing.
+
 ## Requirements carried over from agentpane
 
 - **No hardcoded prefix.** It is chosen when the deck is created, recorded in
