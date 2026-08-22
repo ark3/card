@@ -31,9 +31,11 @@ decide on the next.
 **1. Check the card against the source.** It was written by whoever found the
 problem and has not been re-verified since, and the code may have moved under
 it — most of all in a codebase this workflow does not control. Confirm the
-paths, symbols and claims it names still hold, and say so if they have drifted.
-A card that has gone stale is amended before it is worked, never worked as
-written.
+paths, symbols and claims it names still hold. Where they have drifted, amend
+the card yourself and say what you changed — never work it as written, and
+never stop for an amendment you can make. Drift large enough to kill the card's
+intent is not an amendment at all — that one belongs to a ticket of its own, at
+step 4.
 
 **2. Dispatch.** The reading is not yours: the card is the handoff, and a
 session that does the reading has no room left to review what comes back.
