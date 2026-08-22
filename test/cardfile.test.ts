@@ -12,7 +12,7 @@ blocked-by: [PROJ-behilo]
 
 # One headline, never wrapped, the only \`# \` line in the file.
 
-Body, wrapped at eighty columns, \`##\` for any subheading.
+Body, one sentence per line, \`##\` for any subheading.
 
 ## A subheading
 
@@ -29,7 +29,7 @@ test("reads the two fields, the headline and the body", () => {
   expect(card.labels).toEqual(["PROJ-123", "work-laptop"]);
   expect(card.blockedBy).toEqual(["PROJ-behilo"]);
   expect(card.headline).toBe("One headline, never wrapped, the only `# ` line in the file.");
-  expect(card.body).toStartWith("Body, wrapped at eighty columns");
+  expect(card.body).toStartWith("Body, one sentence per line");
   expect(card.body).toEndWith("More prose.\n");
 });
 
