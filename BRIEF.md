@@ -169,11 +169,14 @@ intent and is settled under "How a card ends". This is the same instinct as
 resolving the mode rather than asking it. Completion is gated on the card's own
 done-condition rather than on the card: where the card names an observable the
 session can run, running it clean is the close, and the session carries on to
-the next card in the set the owner picked. Where the done-condition is a cold
-read or a judgment, the owner is the instrument and the session stops there. A
-set ends early on anything but a clean close — a failed observable, a card gone
-stale, work that belongs to a ticket of its own — and on the session's own
-context running short.
+the next card in the set the owner picked. Where the done-condition is a judgment
+or decision only the owner can make, the session stops there. A set ends early
+on a genuine blocker — a failed observable, work that belongs to a ticket of
+its own — and on the session's own context running short. A stale card is not
+on that list: staleness the session can amend is routine and is amended in
+place, and drift large enough to kill a card's intent already ends the set as
+work belonging to a ticket of its own. Every set run so far has hit amendable
+staleness at its first card, which is what taught the distinction.
 
 **A case these rules do not name is resolved from that purpose, not by looking
 for permission.** Silence is not a prohibition, and a session that stops to ask
