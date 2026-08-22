@@ -27,7 +27,7 @@ session that does the reading has no room left to review what comes back.
 
 If it writes code, give it a tree of its own from `card worktree <id>`, and
 tell it outright that it commits on that tree's branch and cannot commit on the
-base branch. Then the project's own instructions, which it does not inherit.
+base branch. Then the project's own instructions, which are yours to hand over.
 Then the card's grounding and intent inline — paths, symbols, how to run it,
 what done looks like. Point it at that one card and nothing else in the deck:
 it works the card it was given and does not go shopping.
@@ -38,6 +38,16 @@ and no commit. Say "read only, write nothing, commit nothing" outright. Its
 report is the whole output, and you act on it here. Either way you stay in the
 main checkout: the bar on the base branch binds the agent you dispatch, not
 you, and step 4 is where you commit.
+
+Both kinds start cold, so anything you do not hand over is lost. Carry the
+one-directional rule in its own words — nothing public ever cites a card id:
+not a commit message, not a pull request, not a comment in the code. An
+implementer reads the id off its worktree path and its branch name, and
+"Fixes <id>" is the sentence every issue tracker has trained it to write; a
+read-only agent quotes one into its report as easily. Carry too the
+constraints you were given in conversation and no file records — a repository
+not to touch, a freeze, fixtures holding customer data. They bind the agent
+you dispatch as they bind you, and nothing but you will carry them across.
 
 **3. Review the diff yourself.** Not in a subagent. Green tests are not the
 finding. Look for work beyond what the card asked for, drift from the spec
