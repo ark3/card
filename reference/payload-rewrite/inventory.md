@@ -364,7 +364,9 @@ Legitimately declinable per its own text: card-yufisi.
    generally, and git shares `.git/hooks` across worktrees so a per-worktree
    hook needs worktree-scoped config, while a repo-wide one touches machinery
    a corporate repo may own. Instead a verb, `card lint-commit`, checks a
-   message for card ids; filed as its own card.
+   message for card ids; filed as card-vateva. When that verb lands, the
+   sentence that points at it goes in execute.md step 4, in the paragraph
+   that names the dispatching session as the one that commits.
 7. **card-yufisi.** Open — the owner asked for its context again before
    deciding; recommendation stands to decline per the card's own reasoning.
 8. **Id citations in committed artifacts.** Decided: commit the inventory
