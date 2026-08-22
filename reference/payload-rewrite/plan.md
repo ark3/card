@@ -24,7 +24,7 @@ Two structural problems ride along and get fixed by the same rewrite:
   reads, relayed by paraphrase. Those rules move to a briefing file handed to
   the agent verbatim.
 - The rule that nothing public cites a card id is prose against a trained
-  reflex. It becomes a commit-msg hook installed by `card worktree`.
+  reflex. It gains mechanical enforcement — a lint verb, per step 5.
 
 ## The process
 
@@ -61,8 +61,12 @@ check that the new text resolves it.
 the payload files specifically — not BRIEF.md, not close notes. This is what
 keeps future patches from regenerating the bug classes.
 
-**5. The hook.** `card worktree` installs a commit-msg hook in the tree it
-cuts, rejecting messages that contain a card id. Test goes red first.
+**5. The lint verb.** Not a hook — the owner declines hooks, and git shares
+`.git/hooks` across worktrees, so hook installation is either invasive or
+needs worktree-scoped config. Instead `card lint-commit` checks a proposed
+commit message for card ids, exiting nonzero and naming what it found. Filed
+as a card of its own; the payload rewrite refers to it wherever the rewrite
+decides a commit gets checked. Test goes red first.
 
 ## Ground rules for the effort
 
