@@ -32,7 +32,9 @@ it works the card it was given and does not go shopping.
 If it only reads and reports — a cold read of a card before you start it, an
 adversarial check of something already written — it gets no worktree, no branch
 and no commit. Say "read only, write nothing, commit nothing" outright. Its
-report is the whole output, and you act on it here.
+report is the whole output, and you act on it here. Either way you stay in the
+main checkout: the bar on the base branch binds the agent you dispatch, not
+you, and step 4 is where you commit.
 
 **3. Review the diff yourself.** Not in a subagent. Green tests are not the
 finding. Look for work beyond what the card asked for, drift from the spec
@@ -42,11 +44,9 @@ first.
 **4. Land it, then close it.** Execution ends with the work at rest where the
 card said it would be, and a `--work-done` close is the claim that it is there.
 Where the card named a file in this repo — code, a document, a test — at rest
-means committed on the branch the main checkout is on. `card worktree` named
-that branch when it cut the tree; where no tree was cut, it is the branch this
-session has been on all along. Where the card's result is a finding and nothing
-else, the close note carries it in full; a note that points at a transcript is
-a note that loses it.
+means committed on the branch the main checkout is on. Where the card's result
+is a finding and nothing else, the close note carries it in full; a note that
+points at a transcript is a note that loses it.
 
 Where a subagent worked in a tree, bring back the commits you want. Review
 routinely amends the implementer's commits, so which commits land is a
