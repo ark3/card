@@ -1,11 +1,16 @@
 import { readdir, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { Card } from "../cardfile.ts";
 import { readCard } from "../cardfile.ts";
 import { requireDeck } from "../deck.ts";
 import { locate } from "./show.ts";
 
 const USAGE = "usage: card close <id> --done|--promoted|--declined|--moot, close note on stdin";
 const FLAGS = ["--done", "--promoted", "--declined", "--moot"];
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export async function run(args: string[], cwd: string): Promise<void> {
   let outcome: string | undefined;
@@ -61,7 +66,15 @@ export async function run(args: string[], cwd: string): Promise<void> {
   const blocked: string[] = [];
   for (const entry of (await readdir(deck.openDir)).sort()) {
     if (!entry.endsWith(".md")) continue;
-    const card = await readCard(path.join(deck.openDir, entry));
+    let card: Card;
+    try {
+      card = await readCard(path.join(deck.openDir, entry));
+    } catch (error) {
+      // The close has already happened, so one bad file leaves the scan
+      // incomplete rather than failing the command; this line is what says so.
+      console.error(`card: skipped ${message(error)}`);
+      continue;
+    }
     if (card.blockedBy.includes(id)) blocked.push(`${entry.slice(0, -3)}  ${card.headline}`);
   }
   if (blocked.length === 0) return;

@@ -11,12 +11,17 @@ const NOTE = "Landed as PROJ-1. Verified by the suite in test/close.test.ts.";
 
 const realStdin = Bun.stdin;
 let logged: string[] = [];
+let errored: string[] = [];
 
 beforeEach(() => {
   clearCardRoot();
   logged = [];
+  errored = [];
   spyOn(console, "log").mockImplementation((...parts: unknown[]) => {
     logged.push(parts.join(" "));
+  });
+  spyOn(console, "error").mockImplementation((...parts: unknown[]) => {
+    errored.push(parts.join(" "));
   });
 });
 afterEach(() => mock.restore());
@@ -134,6 +139,21 @@ for (const flag of ["--promoted", "--declined", "--moot"]) {
     expect(printed).not.toContain("proj-lakito");
   });
 }
+
+test("names the file it could not parse and the dependents it still found", async () => {
+  const { repo, deck } = await deckIn();
+  await open(deck, "proj-behilo", CARD);
+  await open(deck, "proj-vezipo", "---\nblocked-by: [proj-behilo]\n---\n\n# First dependent\n\nBody.\n");
+  await open(deck, "proj-fanovi", "---\nkind: [chore]\n---\n\n# Typo in its frontmatter\n\nBody.\n");
+  onStdin("Went elsewhere; PROJ-42 is where the work will happen.\n");
+
+  // The scan is advisory and the close has already happened, so one bad file
+  // must not turn a completed close into a reported failure.
+  await close(["proj-behilo", "--moot"], repo);
+
+  expect(logged.join("\n")).toContain("proj-vezipo  First dependent");
+  expect(errored.join("\n")).toContain("proj-fanovi.md: unknown frontmatter field `kind`");
+});
 
 test("--done says nothing about the cards it was blocking", async () => {
   const { repo, deck } = await deckIn();
