@@ -27,7 +27,7 @@ Dispatch one agent at a time, and review what it sent back before you decide the
   The card was written by whoever found the problem and has not been re-verified since, and the code may have moved under it — most of all in a codebase this workflow does not control.
   Confirm that the paths, symbols and claims the card names still hold.
   Where they have drifted, amend the card yourself and say what you changed: never work a card as written once it has drifted, and never stop for an amendment you can make — amendable staleness is routine, not an obstacle.
-  Drift large enough to kill the card's intent is not an amendment at all: that card ends at step 4, closed for what the drift made it — `--moot` where the problem it named is gone, `--promoted` where the real work outgrew the card.
+  Drift large enough to kill the card's intent is not an amendment at all: skip dispatch and review and take that card straight to step 4, where you close it for what the drift made it — `--moot` where the problem it named is gone, `--promoted` where the real work outgrew the card.
 
 **2. Dispatch.**
   The reading is not yours to do: the card is the handoff, and a session that does its own reading has no room left to review what comes back.
@@ -63,7 +63,7 @@ Do not read the deck, and do not take on work beyond what this prompt asks.
 Your report is your whole output, so put everything you found in it.
 ```
 
-The dispatching session stays in the main checkout; the bar on the base branch binds the implementer, and step 4 is where the dispatching session commits.
+The dispatching session stays in the main checkout; the briefing's "never on the base branch" binds the implementer it is addressed to, and step 4 is where the dispatching session commits.
 
 **3. Review what came back, yourself.**
   The judgment is never a subagent's — dispatching a reader is not delegating the judgment, which stays yours.

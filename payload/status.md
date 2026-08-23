@@ -43,7 +43,7 @@ The other three all say the work never happened.
 `--moot`: the reason the card existed is gone, and re-filing it would be an error — a card that turns out to duplicate another is moot, with the other card's id in the close note.
 
 On every close the tool names the cards this one was blocking: on `--done` this close is what they were waiting for, and on any of the other three they are about to look ready and are not.
-A card can wait only on another card, never on a public ticket, so the deck cannot hold a dependent shut once its blocker is promoted out.
+A card can wait only on another card, never on a public ticket, so once a blocker closes `--promoted` its dependents look ready even though the work they were waiting for is still open in the ticket.
 What happens to the cards named on the other three is the owner's decision.
 Two dispositions are open on any of the three: decline them, because they only mattered if the blocker went a certain way; or re-examine them — the edge may have been overstated, and the card can simply be worked.
 `--promoted` opens two more, because the work now has a public ticket: fold them into that ticket, or give them their own ticket that depends on it.
