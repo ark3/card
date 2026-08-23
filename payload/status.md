@@ -55,7 +55,7 @@ Name a public ticket key if the card has one — that still resolves in a year, 
 `card worktree <id>` cuts an isolated tree for a dispatched agent at `.worktrees/<id>`, on a temporary branch cut from the branch the main checkout is on, and prints the tree's path, then its branch with the base branch and sha it was cut from.
 `card execute` says when to use it.
 
-`card exec -- <cmd>` runs a command with the deck as the working directory.
+`card cmd -- <command>` runs a command with the deck as the working directory.
 The cards are plain markdown; grep them.
 
 ## Rules, in any mode

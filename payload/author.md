@@ -5,7 +5,7 @@ This session does not change code.
 
 ## Sweep the closed pile first, before writing anything
 
-    card exec -- rg -l '<term>' closed
+    card cmd -- rg -l '<term>' closed
 
 A deferral too small for the public tier survives only as a closed card, and an authoring session that skips this search deletes it.
 Search for the terms the new work turns on, and read what comes back with `card show`.

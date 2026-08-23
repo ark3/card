@@ -47,7 +47,7 @@ async function fixture(): Promise<{ repo: string; deck: Deck }> {
 
 test("the command runs with the deck as its working directory", async () => {
   const { repo, deck } = await fixture();
-  const result = await card(["exec", "--", "pwd"], repo);
+  const result = await card(["cmd", "--", "pwd"], repo);
   expect(result.code).toBe(0);
   expect(result.stdout).toBe(`${deck.deckDir}\n`);
 });
@@ -55,34 +55,34 @@ test("the command runs with the deck as its working directory", async () => {
 test("stdout, stderr and stdin pass through unaltered", async () => {
   const { repo } = await fixture();
 
-  const streams = await card(["exec", "--", "sh", "-c", "echo to-out; echo to-err >&2"], repo);
+  const streams = await card(["cmd", "--", "sh", "-c", "echo to-out; echo to-err >&2"], repo);
   expect(streams.stdout).toBe("to-out\n");
   expect(streams.stderr).toBe("to-err\n");
 
-  const piped = await card(["exec", "--", "cat"], repo, "from the caller\n");
+  const piped = await card(["cmd", "--", "cat"], repo, "from the caller\n");
   expect(piped.stdout).toBe("from the caller\n");
 });
 
 test("an exit status other than 0 or 1 survives the round trip", async () => {
   const { repo } = await fixture();
-  expect((await card(["exec", "--", "sh", "-c", "exit 42"], repo)).code).toBe(42);
-  expect((await card(["exec", "--", "sh", "-c", "exit 2"], repo)).code).toBe(2);
-  expect((await card(["exec", "--", "true"], repo)).code).toBe(0);
+  expect((await card(["cmd", "--", "sh", "-c", "exit 42"], repo)).code).toBe(42);
+  expect((await card(["cmd", "--", "sh", "-c", "exit 2"], repo)).code).toBe(2);
+  expect((await card(["cmd", "--", "true"], repo)).code).toBe(0);
 });
 
 test("a command that does not exist fails as a shell would", async () => {
   const { repo } = await fixture();
-  const result = await card(["exec", "--", "no-such-command-anywhere"], repo);
+  const result = await card(["cmd", "--", "no-such-command-anywhere"], repo);
   expect(result.code).toBe(127);
   expect(result.stdout).toBe("");
   expect(result.stderr).toContain("no-such-command-anywhere");
 });
 
-test("exec with no command is a usage error", async () => {
+test("cmd with no command is a usage error", async () => {
   const { repo } = await fixture();
-  const result = await card(["exec"], repo);
+  const result = await card(["cmd"], repo);
   expect(result.code).toBe(1);
-  expect(result.stderr).toContain("usage: card exec -- <cmd>");
+  expect(result.stderr).toContain("usage: card cmd -- <command>");
 });
 
 test("rg reaches the cards from a repository whose .gitignore hides *.md", async () => {
@@ -99,7 +99,7 @@ test("rg reaches the cards from a repository whose .gitignore hides *.md", async
   await Bun.write(path.join(deck.openDir, "proj-bbbbbb.md"), "# free\n");
 
   const command = ["rg", "^blocked-by:", "open"];
-  const result = await card(["exec", "--", ...command], repo);
+  const result = await card(["cmd", "--", ...command], repo);
   expect(result.stdout).toBe("open/proj-aaaaaa.md:blocked-by: [proj-bbbbbb]\n");
   expect(result).toEqual(await byHand(command, deck.deckDir));
 });

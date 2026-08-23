@@ -148,7 +148,7 @@ Cards are cheap to unmake and closed cards can be amended, so a card written tha
 - **The format stays the API.**
   Files remain greppable — one `# ` headline per file, one line per frontmatter field and no block sequences, so `^labels:` matches a line that shows its values — and the tool is a resolver plus verbs, not the owner of a query language.
   It interprets exactly one relation between cards, matches labels as opaque strings, and has no opinion about anything else a card says.
-  `card exec` keeps the raw files reachable on purpose.
+  `card cmd` keeps the raw files reachable on purpose.
 - **Ids are drawn at random**, consonant-vowel syllables, because writers are unbounded even on one machine (concurrent sessions, dispatched agents).
   Draw, check both directories, create exclusively — as one step that cannot be half-done.
 
@@ -198,7 +198,7 @@ Build now:
   Creating a skeleton and then editing it is that same half-done shape, one layer down.
 - **`show <id>`** — resolve a bare id against both directories and print the card.
   Evidence: a Codex session was given a bare id, built the path by hand from the one shape the documentation stated, found the card had closed, and reported it missing.
-  `exec -- cat` still reaches the raw file for anyone who wants it.
+  `cmd -- cat` still reaches the raw file for anyone who wants it.
 - **`list --ready`** — the cards that can be worked now: open, with every blocker in `closed/`, narrowed by whatever labels the caller filters on.
   Evidence: this is the first question of every execution session, so frequency rather than deck size is the argument.
   No grep answers it, because the join is between what a card says and which directory each blocker sits in; and the alternative, editing blocked cards when a blocker closes, is the rewrite the format exists to avoid.
@@ -207,7 +207,7 @@ Build now:
   It cannot run without one, and the explanation arrives on stdin exactly as a card body does — it is prose for a later reader and often runs to several paragraphs.
   What is *recorded* and what is *passed for validation* are different things — the prose is written for that reader, while the tool separately needs to know whether this card's work actually got done, which is what lets it warn about dependents.
   Evidence: see "How a card ends" below.
-- **`exec -- <cmd>`** — run the given command in the corpus directory.
+- **`cmd -- <command>`** — run the given command in the corpus directory.
   The escape hatch: arbitrary power to the user, grep-first workflows preserved, the corpus location deliberately leaked to whoever asks.
 - **`worktree`** — create an agent worktree: cut it on a temporary branch and report the starting sha.
   The base is the main checkout's current branch — `main` in agentpane, the ticket's branch at work — so the tool needs neither an argument nor a setting.
@@ -303,7 +303,7 @@ The blast radius is the owner's own time.
 - **The corpus has one copy.**
   The deck sits in `<git-common-dir>/card/`, which nothing syncs, no clone carries, and `rm -rf .git` destroys — and the closed pile it holds is the durable asset everything else here is arranged around.
   Relocating it into a synced directory is not the fix: a shared decks directory is what gives every project write access to every other project's deck, which is the arrangement this design exists to prevent.
-  The workaround is `card exec -- tar czf <path> .`, the escape hatch reaching the deck as it was built to.
+  The workaround is `card cmd -- tar czf <path> .`, the escape hatch reaching the deck as it was built to.
   It has to run on the host rather than in a session, because the sandbox keeps `$HOME` read-only and holds no SSH keys, so nothing under it can write a copy anywhere that outlives the machine.
 - **Legacy grounding is front-loaded.**
   Early cards in an old codebase will be slower to write and worse than agentpane's, because the archaeology has to happen first.
@@ -312,6 +312,6 @@ The blast radius is the owner's own time.
   Checking the card against the source before starting it stops being hygiene and becomes load-bearing.
 - **One-tree atomicity is gone.**
   In agentpane, retiring every copy of an overturned fact is one grep over one tree.
-  Split across repo and corpus, the sweep is two runs — tree, then `card exec -- rg` — and nothing reminds you of the second.
+  Split across repo and corpus, the sweep is two runs — tree, then `card cmd -- rg` — and nothing reminds you of the second.
 - **Closed cards go stale like all documentation.**
   They are dated evidence, not living docs, and are read the way git history is read.

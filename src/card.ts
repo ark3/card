@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import * as author from "./verbs/author.ts";
 import * as close from "./verbs/close.ts";
-import * as exec from "./verbs/exec.ts";
+import * as cmd from "./verbs/cmd.ts";
 import * as execute from "./verbs/execute.ts";
 import * as init from "./verbs/init.ts";
 import * as list from "./verbs/list.ts";
@@ -19,7 +19,7 @@ const VERBS: Record<string, Verb> = {
   show: show.run,
   list: list.run,
   close: close.run,
-  exec: exec.run,
+  cmd: cmd.run,
   worktree: worktree.run,
   author: author.run,
   execute: execute.run,

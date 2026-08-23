@@ -52,7 +52,7 @@ One rule, and no scheme survives the data moving anyway.
 It is wrong inside a submodule, where the card directory is `<super>/.git/modules/<name>/card` and `../../` lands in `.git/modules` rather than the submodule's root — verified 2026-08-21.
 Only an in-tree redirect inside a submodule is affected; the default is not.
 
-**The deck carries `.ignore` holding `!*`.** Ripgrep and `fd` walk up from the working directory and apply the repository's root `.gitignore`, so a repository that ignores `*.md` or `open/` makes `card exec -- rg` find nothing.
+**The deck carries `.ignore` holding `!*`.** Ripgrep and `fd` walk up from the working directory and apply the repository's root `.gitignore`, so a repository that ignores `*.md` or `open/` makes `card cmd -- rg` find nothing.
 Verified on 2026-08-21, and it applies to an in-tree deck's tracked files too.
 `.ignore` beats `.gitignore` in both tools, and git never reads it.
 
@@ -93,7 +93,7 @@ The behaviours worth pinning are the ones agentpane was burned by or the ones th
 - The ready query joins across both directories, and dangling blockers surface.
 - A worktree resolves to its repository's deck, not to one of its own.
 - Resolution precedence: `CARD_ROOT` over `<git-common-dir>/card`.
-- `exec` reaches the deck's files from a repository whose root `.gitignore` would otherwise hide them.
+- `cmd` reaches the deck's files from a repository whose root `.gitignore` would otherwise hide them.
 
 A test that has never failed has not been shown to test anything.
 For anything that fixes a defect, watch it go red first.

@@ -4,7 +4,7 @@ export async function run(args: string[], cwd: string): Promise<void> {
   // The `--` is documented and normally present, but bun eats a `--` in some
   // argv positions, so its absence is not worth failing over.
   const command = args[0] === "--" ? args.slice(1) : args;
-  if (command.length === 0) throw new Error("usage: card exec -- <cmd> [args...]");
+  if (command.length === 0) throw new Error("usage: card cmd -- <command> [args...]");
 
   const deck = await requireDeck(cwd);
 
