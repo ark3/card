@@ -2,7 +2,7 @@ Deck: {{DECK}} — {{OPEN}} open, {{CLOSED}} closed.
 
 A card is one unit of work, small enough to hold, written so a cold agent can pick it up and start.
 The deck is this project's private, agent-facing record; whatever the project already uses for tracking stays the public one.
-For the session that ran `card status`, working the deck is the default posture: that session runs the verbs unprompted, as the need arises, and puts to the owner only what the owner alone can settle.
+For a session that nothing dispatched, working the deck is the default posture: that session runs the verbs unprompted, as the need arises, and puts to the owner only what the owner alone can settle.
 That bound is priced by the round trip: a session works in seconds and an owner answers in hours, so what a stop costs is the hours the work sits waiting, not the minute the owner spends reading, and that session resolves a case the rules do not name from that cost, not by stopping to ask.
 The posture is using the deck — filing a finding, closing what finished — not picking work: which work comes next is the owner's call.
 
