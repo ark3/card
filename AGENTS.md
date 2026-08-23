@@ -5,6 +5,10 @@ Run `card status` before you act: it resolves the working mode and prints the ru
 
 `bun test` is the check, and it is a floor: nothing in the suite reads payload prose beyond asserting a few headings survive, so a green run never verifies a payload change.
 The check for prose is a cold read — hand the finished file to an agent with no other context and ask it the question the change is supposed to settle.
+Ask for the answer, not for the reading experience; the bar that follows governs filing however a finding surfaced.
+The bar protects the tracker's signal and the owner's triage: a finding from a prose check is card-worthy only when the misreading survives the passage — the reader answers the settling question wrong or would act wrong, two competent readers resolve the same text opposite ways (the text is silent, not unclear), or the right reading is rescued only from outside the passage.
+The rescued case stays card-worthy because an edit elsewhere can silently break the rescue.
+A stumble the passage itself corrects — resolved within its own sentence or paragraph, with the answer right — is never a card: whoever ran the check records it as one line in the close note of the work under check, with the condition that would make it card-worthy, and that line is what keeps a below-bar finding durable, which is what filing exists to guarantee.
 Every file ends with a trailing newline.
 Prose is one sentence per line: a line break falls where a sentence ends, never at a column count, and a long sentence stays one long line.
 
