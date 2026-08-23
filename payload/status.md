@@ -65,6 +65,8 @@ A retelling in the conversation is a second copy, and it drifts from the first.
 **File anything left undone as a card rather than doing it.**
 Scope you notice mid-work is filed, not fixed.
 That is the wanted outcome, not a concession.
+A filed card is out of your hands and off your mind, and the session stays on the work in front of it.
+Filing is also what makes ending a session cheap: a card is permission to put something down.
 
 **Put a finding that must survive into a card** — a new one, or a close note.
 A finding that lives only in a transcript dies with the session.
