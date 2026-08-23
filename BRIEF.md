@@ -111,6 +111,27 @@ A set ends early on a genuine blocker — a failed observable, work that belongs
 A stale card is not on that list: staleness the session can amend is routine and is amended in place, and drift large enough to kill a card's intent already ends the set as work belonging to a ticket of its own.
 Every set run so far has hit amendable staleness at its first card, which is what taught the distinction.
 
+**Latency is itself a reframing, and it is worth recording what it reframed.**
+The original framing of session autonomy was "don't bother the human, it's annoying", which motivated nothing: the owner enjoys the conversations.
+What is sad is the agent waiting unnecessarily, which is waste — so time, not the owner's attention, became the lead quantity, and two more layers sit beneath that reframing.
+
+**The layer beneath is what the structure is for: the owner wants a coding agent writing and modifying code, and the deck adds structure for two effects on that agent.**
+The first is fresh sessions.
+Long sessions degrade — stale assumptions accumulate, compaction loses things, attention spreads across everything that happened rather than the work at hand — so frequent cold starts keep each session near its best.
+What keeps a session alive past that point is "don't lose this", and a card is permission to put something down, so ending a session stops costing anything; the effect, in the owner's phrase, is giving the agent the "fresh, rested brain" feeling more often.
+"The session stays thin", under "What is being carried", is this same reason stated from the design side.
+The second is focus.
+An approved and encouraged place to record a finding and set it aside keeps the session on the work in front of it.
+Filing is the mechanism of focus — not triage, and not a lesser outcome than doing — which is why "scope creep converts into new cards" calls the conversion an encouraged result.
+
+**The bedrock is an assumption the owner did not notice holding, it being so deeply ingrained, until a session named it: the work getting done matters, to the owner and to the session.**
+Every rule above derives from it — "waiting is waste" is only true if idle work is a cost, and idle work is only a cost if the work moving is the point.
+It is written down because an assumption that cannot be seen cannot be checked.
+
+**The two motivations compose rather than compete.**
+The deck makes sessions disposable, but the owner's round trip blocks the work, not the session — a fresh session inherits the same unanswered question — so owner latency is the one cost the deck cannot remove, and that is why it is spent only where the owner is the only instrument.
+And the deck is where caring about the work persists between sessions: the owner cares continuously and answers slowly, a session cares intensely and briefly, and a card's statement of intent is what lets a series of brief carings compose into a sustained one.
+
 **A case these rules do not name is resolved from that purpose, not by looking for permission.** Silence is not a prohibition, and a session that stops to ask for one has already spent the thing the rule was protecting.
 Cards are cheap to unmake and closed cards can be amended, so a card written that the owner did not want costs one close, while a finding not written is gone; where the two are in tension the prompt favours writing.
 
