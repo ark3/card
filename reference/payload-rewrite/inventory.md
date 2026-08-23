@@ -364,9 +364,35 @@ Legitimately declinable per its own text: card-yufisi.
    generally, and git shares `.git/hooks` across worktrees so a per-worktree
    hook needs worktree-scoped config, while a repo-wide one touches machinery
    a corporate repo may own. Instead a verb, `card lint-commit`, checks a
-   message for card ids; filed as card-vateva. When that verb lands, the
-   sentence that points at it goes in execute.md step 4, in the paragraph
-   that names the dispatching session as the one that commits.
+   message for card ids; filed as card-vateva. Landed: the verb reads the
+   message on stdin and exits nonzero naming each cited id, matching the
+   deck's own prefix plus the id shape and not cross-checking that the id
+   names a real card, because a citation-shaped string leaks a card id
+   whether or not this deck still holds it.
+
+   The sentence that points at it did not go after the two bullets of
+   execute.md step 4's "The dispatching session is the one that commits
+   here" paragraph, as this decision first said it would. It went into that
+   paragraph's own opening sentence, which now reads "and it runs every
+   message it lands through `card lint-commit` first, handing the verb that
+   message on stdin", with the moment the check falls stated inside each of
+   the two bullets: the implementer's, "before the commit carrying it
+   lands", and the session's own, "before the commit, on the message as it
+   is drafted".
+
+   Four cold reads on 2026-08-23 drove it there, each finding a reader who
+   answered the timing question wrong. A draft reading "Before a message
+   becomes a commit, either way" cannot be carried out on the implementer
+   route at all, because those commits are already made by the time the
+   dispatching session sees them. A draft anchoring the check to the
+   worktree's branch collided with the same bullet's "That session then
+   removes the worktree and deletes its branch". And any wording placed
+   after the bullets stated its deadline later than the actions it
+   constrains, so a reader walking the step in order had already landed the
+   commits before being told to check them. The lesson for a later editor
+   is placement, not phrasing: a constraint on an action belongs in the
+   sentence that names the action, and a paragraph that follows a bullet
+   list will be read as happening after it.
 7. **card-yufisi.** Open — the owner asked for its context again before
    deciding; recommendation stands to decline per the card's own reasoning.
 8. **Id citations in committed artifacts.** Decided: commit the inventory

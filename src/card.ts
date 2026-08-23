@@ -4,6 +4,7 @@ import * as close from "./verbs/close.ts";
 import * as cmd from "./verbs/cmd.ts";
 import * as execute from "./verbs/execute.ts";
 import * as init from "./verbs/init.ts";
+import * as lintCommit from "./verbs/lint-commit.ts";
 import * as list from "./verbs/list.ts";
 import * as neu from "./verbs/new.ts";
 import * as show from "./verbs/show.ts";
@@ -20,6 +21,7 @@ const VERBS: Record<string, Verb> = {
   list: list.run,
   close: close.run,
   cmd: cmd.run,
+  "lint-commit": lintCommit.run,
   worktree: worktree.run,
   author: author.run,
   execute: execute.run,

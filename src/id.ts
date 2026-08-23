@@ -13,3 +13,15 @@ export function drawId(prefix: string): string {
   for (let i = 0; i < 3; i++) drawn += pick(CONSONANTS) + pick(VOWELS);
   return `${prefix}-${drawn}`;
 }
+
+/**
+ * Matches every citation of a `prefix` deck's ids in arbitrary text, built from
+ * the same alphabets `drawId` draws from so the shape is stated once. Neither
+ * neighbour may be a letter or a digit, so a longer word that merely contains
+ * an id shape is not a citation.
+ */
+export function idPattern(prefix: string): RegExp {
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
+  const syllable = `[${CONSONANTS}][${VOWELS}]`;
+  return new RegExp(`(?<![0-9A-Za-z])${escaped}-(?:${syllable}){3}(?![0-9A-Za-z])`, "g");
+}
