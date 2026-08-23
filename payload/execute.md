@@ -91,6 +91,7 @@ Then discharge the card's conditionals, before the close and not after.
 A "then, conditionally" clause naming another card, a document or a decision is part of landing this card, and it fires whichever way the card's own question came out, not only the way you expected.
 What the clause calls for comes to rest first: the card filed, the document written and committed here.
 An answer that fits neither branch of the card's conditional is a new card, never a skip.
+A card you close for what the drift made it is this case for every clause it carries: its question never came out, which fits neither branch, so each decision a clause gates goes to a new card, never a silent skip — the clause exists so that decision does not sit unmade, and the card's death must not unmake it.
 
 Only then close, writing the close note on stdin: `card close <id> --done` where the work is at rest, and otherwise the flag that says how the card ended — `--promoted` where the work went to a ticket of its own, the usual case when a load-bearing bug surfaces mid-execution, and the public ticket itself is the owner's to file, never this session's; `--declined` where it was decided against; `--moot` where the reason for it is gone.
 On every close the tool names the cards this one was blocking.
@@ -124,6 +125,7 @@ Where the card names an observable you can run — a test that goes red first an
 Where the done-condition is a judgment or a decision only the owner can make, hand back and stop there, whatever else is in the set: a reader you dispatch is not the owner and cannot stand in.
 
 A set also ends early on a genuine obstacle: an observable that will not go green, drift that kills a card's intent, work that belongs to a ticket of its own, something that surfaces and changes a later card in the set, or your own context running short — say, a conversation grown long enough to be worth restarting.
+When drift kills a card, close that card under step 4 first: the set ends after that close, not instead of it.
 A card you amended under step 1 and carried through is none of these: amendable staleness never ends a set.
 Aborting costs the owner a full round trip, so the bar is a genuine obstacle and not your own unease.
 An over-cautious abort is the expensive failure here, and there is always an excuse available for one.
