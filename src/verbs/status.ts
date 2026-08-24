@@ -40,8 +40,21 @@ async function count(dir: string): Promise<number | null> {
 }
 
 export async function run(_args: string[], cwd: string): Promise<void> {
-  const warning = await probeSandbox();
-  if (warning !== null) throw new Error(warning);
+  // The sandbox the probe looks for is one `sbox` makes, so where that binary
+  // is not installed there is nothing to verify, and refusing would leave this
+  // command undeliverable on that machine — it is the only thing that tells a
+  // session the workflow exists. Naming the binary couples card to one
+  // personal tool, which is the lighter coupling: describing its mounts
+  // instead would drift from the tool that makes them. The notice goes to
+  // stdout, where the session reading this output will see it. `Bun.which`
+  // reads the process's own PATH unless handed one, and handing it one is what
+  // puts this branch within reach of a test.
+  if (Bun.which("sbox", { PATH: process.env.PATH ?? "" }) === null) {
+    console.log("Sandbox check skipped: sbox is not on PATH, so there is nothing to probe. Take this session to be unsandboxed.");
+  } else {
+    const warning = await probeSandbox();
+    if (warning !== null) throw new Error(warning);
+  }
 
   const deck = await resolveDeck(cwd);
   if (deck === null) {

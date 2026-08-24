@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
-import { chmodSync, existsSync } from "node:fs";
+import { chmodSync, existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveDeck } from "../src/deck.ts";
 import { run as author } from "../src/verbs/author.ts";
@@ -15,10 +15,27 @@ const HOME = process.env.HOME;
 const readOnlyHome = tempDir();
 chmodSync(readOnlyHome, 0o500);
 
-beforeEach(clearCardRoot);
+// Whether the probe runs at all turns on $PATH, so the tests hand over one
+// they built: an `sbox` of their own in front for every test that expects a
+// verdict, and the machine's own entries with each sbox-bearing one dropped
+// for the test that expects none. Both keep `git` reachable, which `status`
+// needs to find a deck at all.
+const PATH = process.env.PATH ?? "";
+const fakeBin = tempDir();
+writeFileSync(path.join(fakeBin, "sbox"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+const withSbox = `${fakeBin}${path.delimiter}${PATH}`;
+const withoutSbox = PATH.split(path.delimiter)
+  .filter((dir) => dir !== "" && !existsSync(path.join(dir, "sbox")))
+  .join(path.delimiter);
+
+beforeEach(() => {
+  clearCardRoot();
+  process.env.PATH = withSbox;
+});
 afterEach(() => {
   if (HOME === undefined) delete process.env.HOME;
   else process.env.HOME = HOME;
+  process.env.PATH = PATH;
 });
 afterAll(() => chmodSync(readOnlyHome, 0o700));
 afterAll(removeTempDirs);
@@ -80,6 +97,21 @@ test("nowhere to probe is not a pass either", async () => {
 
   expect(error?.message).toContain("HOME is unset");
   expect(out).toBe("");
+});
+
+test("no sbox on the machine skips the probe, and says so on stdout", async () => {
+  const repo = await tempRepo();
+  await init(["proj"], repo);
+  // Writable, which is the refusal above: without sbox it is never reached.
+  process.env.HOME = tempDir();
+  process.env.PATH = withoutSbox;
+
+  const { out, error } = await capture(() => status([], repo));
+
+  expect(error).toBeNull();
+  expect(out.split("\n")[0]).toContain("Sandbox check skipped: sbox is not on PATH");
+  expect(out).toContain("unsandboxed");
+  expect(out).toContain("## Mode");
 });
 
 test("says nothing about cards when there is no deck", async () => {
