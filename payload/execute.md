@@ -79,7 +79,7 @@ Dispatch the adversarial check at what was written, and review that report the s
   Where the card named a file in this repo — code, a document, a test — at rest means committed on the branch the main checkout is on.
   Where the card's result is a finding and nothing else, at rest means the close note carries the finding in full: a note that points at a transcript loses it.
 
-The dispatching session is the one that commits here, and the only one, and it runs every message it lands through `card lint-commit` first, handing the verb that message on stdin: the verb fails and names any card id the message cites.
+The dispatching session is the one that commits here, and the only one, and it runs every message it lands through `card lint-commit` first, handing the verb that message on stdin: the verb fails when the message cites a card id, naming each one.
 
 - An implementer's commits come back by that session's hand.
   Review routinely amends them, so which commits land is a judgment, not a merge.
