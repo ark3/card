@@ -86,7 +86,7 @@ The dispatching session is the one that commits here, and the only one, and it r
   They arrive already made, so the check falls on each message the implementer wrote, and that session rewrites every message that fails before the commit carrying it lands.
   That session then removes the worktree and deletes its branch.
 - What that session wrote itself off a reader's report, it commits in the main checkout.
-  Nothing else in the procedure will.
+  No agent that session dispatched commits there: a reader commits nothing at all, and an implementer commits only on its own branch.
   There the check falls before the commit, on the message as it is drafted.
 
 An implementer reads an id off its own worktree path and branch, and "Fixes <id>" is the sentence every issue tracker has trained it to write, so the rule against citing an id publicly needs a check and not a reader alone.
