@@ -171,6 +171,42 @@ test("--done names the cards this one was blocking, as work that just came free"
   expect(printed).not.toContain("proj-lakito");
 });
 
+test("--done passes over a dependent another open card still blocks", async () => {
+  const { repo, deck } = await deckIn();
+  await open(deck, "proj-behilo", CARD);
+  await open(deck, "proj-vezipo", "---\nblocked-by: [proj-behilo]\n---\n\n# Came free\n\nBody.\n");
+  await open(deck, "proj-dumoka", "---\nblocked-by: [proj-behilo, proj-lakito]\n---\n\n# Still shut\n\nBody.\n");
+  await open(deck, "proj-lakito", "---\n---\n\n# The other blocker, still open\n\nBody.\n");
+  // A blocker that is closed, and one that never existed, hold nothing shut.
+  await Bun.write(path.join(deck.closedDir, "proj-gonemo.md"), CARD);
+  await open(deck, "proj-fanovi", "---\nblocked-by: [proj-behilo, proj-gonemo]\n---\n\n# Last blocker closed\n\nBody.\n");
+  await open(deck, "proj-hitowa", "---\nblocked-by: [proj-behilo, proj-nosuch]\n---\n\n# Blocker never existed\n\nBody.\n");
+  onStdin(`${NOTE}\n`);
+
+  await close(["proj-behilo", "--done"], repo);
+
+  const printed = logged.join("\n");
+  expect(printed).toContain("its work is at rest");
+  expect(printed).toContain("proj-vezipo  Came free");
+  expect(printed).toContain("proj-fanovi  Last blocker closed");
+  expect(printed).toContain("proj-hitowa  Blocker never existed");
+  expect(printed).not.toContain("proj-dumoka");
+});
+
+test("--promoted names a dependent another open card still blocks, which is what it warns about", async () => {
+  const { repo, deck } = await deckIn();
+  await open(deck, "proj-behilo", CARD);
+  await open(deck, "proj-dumoka", "---\nblocked-by: [proj-behilo, proj-lakito]\n---\n\n# Still shut\n\nBody.\n");
+  await open(deck, "proj-lakito", "---\n---\n\n# The other blocker, still open\n\nBody.\n");
+  onStdin("Went elsewhere; PROJ-42 is where the work will happen.\n");
+
+  await close(["proj-behilo", "--promoted"], repo);
+
+  const printed = logged.join("\n");
+  expect(printed).toContain("about to look ready and are not");
+  expect(printed).toContain("proj-dumoka  Still shut");
+});
+
 test("a close whose card was blocking nothing says so rather than printing nothing", async () => {
   const { repo, deck } = await deckIn();
   await open(deck, "proj-behilo", CARD);

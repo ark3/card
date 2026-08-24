@@ -63,7 +63,12 @@ export async function run(args: string[], cwd: string): Promise<void> {
   console.log(`closed ${id}`);
 
   const blocked: string[] = [];
-  for (const entry of (await readdir(deck.openDir)).sort()) {
+  const entries = (await readdir(deck.openDir)).sort();
+  // The closing card's own file is gone by now, so it is not one of these.
+  const stillOpen = new Set(
+    entries.filter((entry) => entry.endsWith(".md")).map((entry) => entry.slice(0, -3)),
+  );
+  for (const entry of entries) {
     if (!entry.endsWith(".md")) continue;
     let card: Card;
     try {
@@ -74,7 +79,16 @@ export async function run(args: string[], cwd: string): Promise<void> {
       console.error(`card: skipped ${message(error)}`);
       continue;
     }
-    if (card.blockedBy.includes(id)) blocked.push(`${entry.slice(0, -3)}  ${card.headline}`);
+    if (!card.blockedBy.includes(id)) continue;
+    // `--done` says the work is at rest, which reads as a card having come
+    // free, so a card another open blocker still holds shut stays off that
+    // list. A blocker that is closed or was never a card holds nothing shut.
+    // The other outcomes only warn that a card is about to look ready, which
+    // is true of a co-blocked card too, so they name every dependent.
+    if (workDone && card.blockedBy.some((blocker) => blocker !== id && stillOpen.has(blocker))) {
+      continue;
+    }
+    blocked.push(`${entry.slice(0, -3)}  ${card.headline}`);
   }
   // Silence here reads as the scan never having run, so an empty list says so.
   if (blocked.length === 0) {
