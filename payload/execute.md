@@ -95,7 +95,7 @@ Then discharge the card's conditionals, before the close and not after.
 A "then, conditionally" clause naming another card, a document or a decision is part of landing this card, and it fires whichever way the card's own question came out, not only the way you expected.
 What the clause calls for comes to rest first: the card filed, the document written and committed here.
 An answer that fits neither branch of the card's conditional is a new card, never a skip.
-A card you close for what the drift made it is this case for every clause it carries: its question never came out, which fits neither branch, so each decision a clause gates goes to a new card, never a silent skip — the clause exists so that decision does not sit unmade, and the card's death must not unmake it.
+A drift-killed card's question never came out, so every clause it carries fits neither branch: each decision a clause gates goes to a new card, never a silent skip.
 
 Only then close, writing the close note on stdin: `card close <id> --done` where the work is at rest, and otherwise the flag that says how the card ended — `--promoted` where the work went to a ticket of its own, the usual case when a load-bearing bug surfaces mid-execution, and the public ticket itself is the owner's to file, never this session's; `--declined` where it was decided against; `--moot` where the reason for it is gone.
 On every close the tool names the cards this one was blocking.
