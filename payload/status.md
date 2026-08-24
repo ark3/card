@@ -30,7 +30,10 @@ The headline is an argument because a card has exactly one `# ` line and that li
 `card show <id>` prints a card wherever it is, and `card show <id> --path` prints the file's location instead, which is how you edit one.
 Ids are cited bare, and a card changes directory when it closes, so never build a path out of an id.
 
-`card list --ready [--label L]...` gives the open cards whose blockers have all closed, which is the first question of an execution session.
+`card list [--open | --ready | --closed] [--label L]...` prints one listing per run, and every listing shows each card's labels.
+Bare or with `--open` it gives the open cards, a blocked one marked with the blockers it still waits on.
+`--ready` narrows that to the open cards whose blockers have all closed, which is the first question of an execution session.
+`--closed` gives the closed cards, and `--label` narrows any listing to the cards carrying every label given: under a ticket's label, the open listing is what remains of the ticket and the closed listing is what has landed for it.
 A blocker naming a card that exists nowhere is reported here rather than passed over.
 
 `card close <id> --done|--promoted|--declined|--moot`, close note on stdin.

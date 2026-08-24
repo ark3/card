@@ -111,7 +111,7 @@ test("reports the deck, its counts, and then the payload", async () => {
   expect(error).toBeNull();
   expect(out.split("\n")[0]).toBe(`Deck: ${deck.deckDir} — 2 open, 1 closed.`);
   expect(out).toContain("## Mode");
-  expect(out).toContain("card list --ready");
+  expect(out).toContain("card list [--open | --ready | --closed]");
   expect(out).toContain("References are one-directional");
   expect(out).not.toContain("{{");
   expect(out).not.toContain("CARD_ROOT");
