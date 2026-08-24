@@ -2,7 +2,7 @@ import { readdir, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Card } from "../cardfile.ts";
 import { readCard } from "../cardfile.ts";
-import { requireDeck } from "../deck.ts";
+import { requireDeck, stagingName } from "../deck.ts";
 import { locate } from "./show.ts";
 
 const USAGE = "usage: card close <id> --done|--promoted|--declined|--moot, close note on stdin";
@@ -51,7 +51,7 @@ export async function run(args: string[], cwd: string): Promise<void> {
   // Appended to the card's own text rather than reformatted through
   // `formatCard`, which would rewrite frontmatter the owner hand-wrote.
   const text = await Bun.file(found.path).text();
-  const staging = path.join(deck.closedDir, `.${id}.md.closing`);
+  const staging = path.join(deck.closedDir, stagingName(id));
   await writeFile(staging, `${text.replace(/\n*$/, "\n")}\n${explanation}\n`);
   // The card arrives in `closed/` explanation and all, in one rename. Until
   // the unlink runs the open copy is still the card exactly as it was, so no

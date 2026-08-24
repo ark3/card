@@ -1,7 +1,7 @@
 import { readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import payload from "../../payload/status.md" with { type: "text" };
-import { resolveDeck } from "../deck.ts";
+import { resolveDeck, stagedId } from "../deck.ts";
 
 const PROBE = ".card-sandbox-probe";
 
@@ -30,13 +30,17 @@ export async function probeSandbox(): Promise<string | null> {
 }
 
 /** Null when the directory is not there, which a broken redirect can do. */
-async function count(dir: string): Promise<number | null> {
+async function entries(dir: string): Promise<string[] | null> {
   try {
-    return (await readdir(dir)).filter((name) => name.endsWith(".md")).length;
+    return await readdir(dir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
+}
+
+function count(names: string[] | null): number | null {
+  return names === null ? null : names.filter((name) => name.endsWith(".md")).length;
 }
 
 export async function run(_args: string[], cwd: string): Promise<void> {
@@ -64,11 +68,27 @@ export async function run(_args: string[], cwd: string): Promise<void> {
     return;
   }
 
-  const [open, closed] = await Promise.all([count(deck.openDir), count(deck.closedDir)]);
+  const [openNames, closedNames] = await Promise.all([entries(deck.openDir), entries(deck.closedDir)]);
+  const [open, closed] = [count(openNames), count(closedNames)];
   // A deck missing a directory is broken, but this is the only command that
   // tells a session the workflow exists, so it says so and carries on.
   for (const [dir, found] of [[deck.openDir, open], [deck.closedDir, closed]] as const) {
     if (found === null) console.error(`card: ${dir} is not there, so this deck is incomplete`);
+  }
+  // `close` stages under a name no listing shows and no count includes, so a
+  // close that died between its write and its rename leaves a file that is
+  // otherwise invisible to every verb, for good. This line is where a deck
+  // says it happened, on stderr beside the other report of a deck in
+  // disrepair; stdout is the payload a session reads as its instructions, and
+  // a leftover is not one. Named, never removed: the file is the only copy of
+  // a close note somebody typed, and unlinking one under a close still in
+  // flight would take out the rename that makes a close atomic.
+  for (const name of (closedNames ?? []).sort()) {
+    const id = stagedId(name);
+    if (id === null) continue;
+    console.error(
+      `card: ${path.join(deck.closedDir, name)} is a close that stopped before its rename, so ${id} is still open and its close note is in that file alone; close ${id} again to replace it, or delete it`,
+    );
   }
   // CARD_ROOT beats the structural resolution silently, and only ever means
   // "somewhere else entirely", so the line that names the deck says so.

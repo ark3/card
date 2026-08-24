@@ -40,12 +40,17 @@ afterEach(() => {
 afterAll(() => chmodSync(readOnlyHome, 0o700));
 afterAll(removeTempDirs);
 
-/** Everything the verb printed, and whatever it threw instead of printing. */
-async function capture(fn: () => Promise<void>): Promise<{ out: string; error: Error | null }> {
+/** Everything the verb printed, on either stream, and whatever it threw instead. */
+async function capture(
+  fn: () => Promise<void>,
+): Promise<{ out: string; err: string; error: Error | null }> {
   const chunks: string[] = [];
+  const complaints: string[] = [];
   const log = console.log;
+  const logError = console.error;
   const write = process.stdout.write.bind(process.stdout);
   console.log = (...parts: unknown[]) => chunks.push(`${parts.join(" ")}\n`);
+  console.error = (...parts: unknown[]) => complaints.push(`${parts.join(" ")}\n`);
   process.stdout.write = ((chunk: string) => {
     chunks.push(String(chunk));
     return true;
@@ -58,9 +63,10 @@ async function capture(fn: () => Promise<void>): Promise<{ out: string; error: E
     error = thrown as Error;
   } finally {
     console.log = log;
+    console.error = logError;
     process.stdout.write = write;
   }
-  return { out: chunks.join(""), error };
+  return { out: chunks.join(""), err: complaints.join(""), error };
 }
 
 test("a sandbox that is off stops the session, having printed nothing", async () => {
@@ -147,6 +153,30 @@ test("reports the deck, its counts, and then the payload", async () => {
   expect(out).toContain("References are one-directional");
   expect(out).not.toContain("{{");
   expect(out).not.toContain("CARD_ROOT");
+});
+
+// A close that dies between its write and its rename leaves a hidden staging
+// file that no listing shows and no count includes, so this line is the only
+// thing standing between a deck and a leftover nobody ever hears about.
+test("names a staging file a close died before renaming, and leaves it there", async () => {
+  const repo = await tempRepo();
+  await init(["proj"], repo);
+  const deck = (await resolveDeck(repo))!;
+  await Bun.write(path.join(deck.openDir, "proj-behilo.md"), "# one\n");
+  const leftover = path.join(deck.closedDir, ".proj-behilo.md.closing");
+  await Bun.write(leftover, "# one\n\nThe close note that never landed.\n");
+  process.env.HOME = readOnlyHome;
+
+  const { out, err, error } = await capture(() => status([], repo));
+
+  expect(error).toBeNull();
+  expect(err).toContain(leftover);
+  expect(err).toContain("stopped before its rename");
+  expect(err).toContain("proj-behilo is still open");
+  // Still a deck of one open card and no closed ones, and the file it named
+  // is still on disk with the note inside it.
+  expect(out.split("\n")[0]).toBe(`Deck: ${deck.deckDir} — 1 open, 0 closed.`);
+  expect(await Bun.file(leftover).text()).toContain("The close note that never landed.");
 });
 
 test("says so when the deck came from CARD_ROOT, which wins silently otherwise", async () => {

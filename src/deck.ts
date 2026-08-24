@@ -15,6 +15,20 @@ export type Deck = {
 };
 
 /**
+ * Where `close` stages a closed card before renaming it into place. Hidden and
+ * not ending `.md`, so no listing of the deck shows a close still in flight.
+ */
+export function stagingName(id: string): string {
+  return `.${id}.md.closing`;
+}
+
+/** The id a staged close is for, or null for any other name in `closed/`. */
+export function stagedId(name: string): string | null {
+  const match = /^\.(.+)\.md\.closing$/.exec(name);
+  return match === null ? null : match[1];
+}
+
+/**
  * Where a card directory would be, whether or not one is there. `CARD_ROOT`
  * wins outright; otherwise it is `<git-common-dir>/card`. Null outside a git
  * repository with `CARD_ROOT` unset, where there is nowhere for a deck to be.
