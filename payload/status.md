@@ -77,6 +77,7 @@ A finding that lives only in a transcript dies with the session.
 Cards cite public keys — tickets, branches, commits — freely.
 Nothing public ever cites a card id: not a commit message, not a pull request, not a comment in the code.
 That rule is the whole privacy boundary.
+Run every commit message through `card lint-commit`, message on stdin, before the commit carrying it lands: the verb fails when the message cites a card id, naming each one.
 
 **Dispatch the reading.**
 Reading beyond what the card at hand names happens in dispatched subagents, and what must survive of what they find goes into a card, not into the transcript.
