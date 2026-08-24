@@ -15,6 +15,13 @@ Prose is one sentence per line: a line break falls where a sentence ends, never 
 Nothing public ever cites a card id: not a commit message, not a pull request, not a comment in the code.
 This repo's own history is public tier.
 
+## Routing payload work
+
+Which session works payload prose is the owner's choice, and the `payload` label is how the deck carries that choice.
+File any card whose change lands in `payload/*.md` with `--label payload`.
+A session executing a card that lacks the label never edits `payload/*.md`, whatever the card turns out to need: stop and hand the card back, and the owner amends the label and picks the session to re-dispatch it to.
+That gate binds card execution only; a payload edit the owner asks a session for directly is authorized by the ask.
+
 ## The register for payload files
 
 The rules below bind `payload/*.md` — the prose that operates the workflow.
