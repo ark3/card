@@ -47,7 +47,7 @@ export async function run(_args: string[], cwd: string): Promise<void> {
   if (deck === null) {
     // Not one word about cards where there is no deck: that is what makes this
     // command safe to run unconditionally in a project that never adopts it.
-    console.log("No deck for this project. `card init <prefix>` starts one.");
+    console.log("No card deck for this project.");
     return;
   }
 

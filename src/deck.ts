@@ -56,6 +56,6 @@ export async function resolveDeck(cwd: string): Promise<Deck | null> {
 
 export async function requireDeck(cwd: string): Promise<Deck> {
   const deck = await resolveDeck(cwd);
-  if (deck === null) throw new Error("no deck here; run `card init <prefix>` to make one");
+  if (deck === null) throw new Error("no deck here");
   return deck;
 }

@@ -90,7 +90,7 @@ test("says nothing about cards when there is no deck", async () => {
   for (const cwd of [repo, loose]) {
     const { out, error } = await capture(() => status([], cwd));
     expect(error).toBeNull();
-    expect(out).toBe("No deck for this project. `card init <prefix>` starts one.\n");
+    expect(out).toBe("No card deck for this project.\n");
     for (const teaching of ["card new", "card list", "## Mode", "one-directional", "Deck:"]) {
       expect(out).not.toContain(teaching);
     }
