@@ -120,10 +120,80 @@ test("closed cards are never listed", async () => {
   expect((await run(["--ready"], repo)).out).toEqual(["nothing ready: no open cards"]);
 });
 
-test("a listing with no mode is an error rather than a default", async () => {
+test("a bare listing is the open one, and --open says the same thing aloud", async () => {
+  const { repo, deck } = await fixture();
+  await put(deck, "open", "proj-aaaaaa", { headline: "open one", labels: ["T-1"] });
+  await put(deck, "open", "proj-bbbbbb", { headline: "open two" });
+  await put(deck, "closed", "proj-cccccc", { headline: "done" });
+
+  const expected = ["proj-aaaaaa  open one  [T-1]", "proj-bbbbbb  open two"];
+  expect((await run([], repo)).out).toEqual(expected);
+  expect((await run(["--open"], repo)).out).toEqual(expected);
+});
+
+test("the open listing marks a blocked card, where --ready drops it", async () => {
+  const { repo, deck } = await fixture();
+  await put(deck, "open", "proj-aaaaaa", { headline: "the blocker" });
+  await put(deck, "open", "proj-bbbbbb", { headline: "the dependent", labels: ["T-1"], blockedBy: ["proj-aaaaaa"] });
+
+  expect((await run([], repo)).out).toEqual([
+    "proj-aaaaaa  the blocker",
+    "proj-bbbbbb  the dependent  [T-1]  (blocked by proj-aaaaaa)",
+  ]);
+  expect((await run(["--ready"], repo)).out).toEqual(["proj-aaaaaa  the blocker"]);
+});
+
+test("--closed lists the closed cards, and answers whether a ticket is finished", async () => {
+  const { repo, deck } = await fixture();
+  await put(deck, "closed", "proj-aaaaaa", { headline: "shipped", labels: ["T-14"] });
+  await put(deck, "closed", "proj-bbbbbb", { headline: "shipped too", labels: ["T-15"] });
+  await put(deck, "open", "proj-cccccc", { headline: "still going", labels: ["T-14"] });
+
+  expect((await run(["--closed"], repo)).out).toEqual([
+    "proj-aaaaaa  shipped  [T-14]",
+    "proj-bbbbbb  shipped too  [T-15]",
+  ]);
+  expect((await run(["--closed", "--label", "T-14"], repo)).out).toEqual(["proj-aaaaaa  shipped  [T-14]"]);
+  expect((await run(["--label", "T-14"], repo)).out).toEqual(["proj-cccccc  still going  [T-14]"]);
+});
+
+test("a blocker still open is not a ghost, and a closed one stops blocking", async () => {
+  const { repo, deck } = await fixture();
+  await put(deck, "closed", "proj-aaaaaa", { headline: "the blocker" });
+  await put(deck, "open", "proj-bbbbbb", { headline: "freed", blockedBy: ["proj-aaaaaa"] });
+
+  const { out, err } = await run([], repo);
+  expect(err).toEqual([]);
+  expect(out).toEqual(["proj-bbbbbb  freed"]);
+});
+
+test("each listing names its own kind of empty", async () => {
+  const { repo, deck } = await fixture();
+  expect((await run([], repo)).out).toEqual(["no open cards"]);
+  expect((await run(["--closed"], repo)).out).toEqual(["no closed cards"]);
+
+  await put(deck, "open", "proj-aaaaaa", { headline: "open one", labels: ["T-1"] });
+  await put(deck, "closed", "proj-bbbbbb", { headline: "done", labels: ["T-1"] });
+
+  expect((await run(["--label", "T-9"], repo)).out).toEqual(["no matching open cards"]);
+  expect((await run(["--closed", "--label", "T-9"], repo)).out).toEqual(["no matching closed cards"]);
+});
+
+test("a malformed closed card is named and the rest of the listing survives", async () => {
+  const { repo, deck } = await fixture();
+  await Bun.write(path.join(deck.closedDir, "proj-aaaaaa.md"), "---\nkind: chore\n---\n\n# dropped field\n");
+  await put(deck, "closed", "proj-bbbbbb", { headline: "fine" });
+
+  const { out, err } = await run(["--closed"], repo);
+  expect(out).toEqual(["proj-bbbbbb  fine"]);
+  expect(err).toHaveLength(1);
+  expect(err[0]).toContain("proj-aaaaaa.md");
+});
+
+test("two listings at once is an error, and so is a flag that names none", async () => {
   const { repo } = await fixture();
-  await expect(run([], repo)).rejects.toThrow(/--ready is the only listing/);
-  await expect(run(["--label", "T-1"], repo)).rejects.toThrow(/--ready is the only listing/);
+  await expect(run(["--open", "--closed"], repo)).rejects.toThrow(/pick one/);
+  await expect(run(["--ready", "--closed"], repo)).rejects.toThrow(/pick one/);
   await expect(run(["--stale"], repo)).rejects.toThrow(/not a listing card understands/);
   await expect(run(["--ready", "--label"], repo)).rejects.toThrow(/--label wants a label/);
 });
