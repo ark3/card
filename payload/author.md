@@ -7,7 +7,12 @@ This session does not change code.
 
     card cmd -- rg -l '<term>' closed
 
+<!--private-->
 A deferral too small for the public tier survives only as a closed card, and an authoring session that skips this search deletes it.
+<!--/private-->
+<!--public-->
+A deferral survives only as a closed card, and an authoring session that skips this search deletes it.
+<!--/public-->
 Search for the terms the new work turns on, and read what comes back with `card show`.
 What you find is grounding to cite, not text to copy: a promoted or declined card is already sitting there with its full reasoning, and the new card cites it rather than restating it.
 

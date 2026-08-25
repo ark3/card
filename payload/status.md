@@ -1,7 +1,12 @@
 Deck: {{DECK}} — {{OPEN}} open, {{CLOSED}} closed.
 
 A card is one unit of work, small enough to hold, written so a cold agent can pick it up and start.
+<!--private-->
 The deck is this project's private, agent-facing record; whatever the project already uses for tracking stays the public one.
+<!--/private-->
+<!--public-->
+The deck is this project's public, agent-facing tracker; there is no other record the work reports to.
+<!--/public-->
 For a session that nothing dispatched, working the deck is the default posture: that session runs the verbs unprompted, as the need arises, and puts to the owner only what the owner alone can settle.
 That bound is priced by the round trip: a session works in seconds and an owner answers in hours, so what a stop costs is the hours the work sits waiting, not the minute the owner spends reading, and a session that nothing dispatched resolves a case the rules do not name from that cost, not by stopping to ask.
 The posture is using the deck — filing a finding, closing what finished — not picking work: which work comes next is the owner's call.
@@ -76,11 +81,18 @@ Filing is also what makes ending a session cheap: a card is permission to put so
 **Put a finding that must survive into a card** — a new one, or a close note.
 A finding that lives only in a transcript dies with the session.
 
+<!--private-->
 **References are one-directional.**
 Cards cite public keys — tickets, branches, commits — freely.
 Nothing public ever cites a card id: not a commit message, not a pull request, not a comment in the code.
 That rule is the whole privacy boundary.
 Run every commit message through `card lint-commit`, message on stdin, before the commit carrying it lands: the verb fails when the message cites a card id, naming each one.
+<!--/private-->
+<!--public-->
+**References run both ways.**
+Cards cite tickets, branches and commits freely.
+The deck is public, so a commit message, a pull request or a comment in the code cites a card id just as freely.
+<!--/public-->
 
 **Dispatch the reading.**
 Reading beyond what the card at hand names happens in dispatched subagents, and what must survive of what they find goes into a card, not into the transcript.

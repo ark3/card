@@ -2,6 +2,7 @@ import { readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import payload from "../../payload/status.md" with { type: "text" };
 import { resolveDeck, stagedId } from "../deck.ts";
+import { renderPayload } from "../payload.ts";
 
 const PROBE = ".card-sandbox-probe";
 
@@ -98,5 +99,7 @@ export async function run(_args: string[], cwd: string): Promise<void> {
     OPEN: open === null ? "?" : String(open),
     CLOSED: closed === null ? "?" : String(closed),
   };
-  process.stdout.write(payload.replace(/\{\{(DECK|OPEN|CLOSED)\}\}/g, (_match: string, name: string) => values[name] ?? ""));
+  process.stdout.write(
+    renderPayload(payload, deck.public).replace(/\{\{(DECK|OPEN|CLOSED)\}\}/g, (_match: string, name: string) => values[name] ?? ""),
+  );
 }

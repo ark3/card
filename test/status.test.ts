@@ -192,6 +192,96 @@ test("says so when the deck came from CARD_ROOT, which wins silently otherwise",
   expect(out.split("\n")[0]).toBe(`Deck: ${deck.deckDir} (from CARD_ROOT) — 0 open, 0 closed.`);
 });
 
+/** Flips the deck at `repo` public, which `init` never writes. */
+async function makePublic(repo: string): Promise<void> {
+  const deck = (await resolveDeck(repo))!;
+  const configPath = path.join(deck.cardDir, "card-config.toml");
+  await Bun.write(configPath, `${await Bun.file(configPath).text()}public = true\n`);
+}
+
+// The payloads teach the privacy boundary, so each renders by `deck.public`:
+// a public deck's session is never told a rule the deck's own convention
+// violates, a private deck's text survives as it was, and the markers that
+// carry the two variants reach neither rendering.
+test("a private deck's payloads keep today's boundary text, with no marker residue", async () => {
+  const repo = await tempRepo();
+  await init(["proj"], repo);
+  process.env.HOME = readOnlyHome;
+
+  const { out } = await capture(() => status([], repo));
+  expect(out).toContain(
+    "The deck is this project's private, agent-facing record; whatever the project already uses for tracking stays the public one.",
+  );
+  expect(out).toContain("Nothing public ever cites a card id");
+  expect(out).toContain("Run every commit message through `card lint-commit`");
+  expect(out).not.toContain("References run both ways");
+  expect(out).not.toContain("<!--");
+
+  const executing = await capture(() => execute([], repo));
+  expect(executing.out).toContain('never write "Fixes <id>"');
+  expect(executing.out).toContain("through `card lint-commit` first");
+  expect(executing.out).toContain("needs a check and not a reader alone");
+  expect(executing.out).not.toContain("<!--");
+
+  const authoring = await capture(() => author([], repo));
+  expect(authoring.out).toContain(
+    "A deferral too small for the public tier survives only as a closed card",
+  );
+  expect(authoring.out).not.toContain("<!--");
+});
+
+test("a public deck's status calls the deck the tracker and lets commits cite ids", async () => {
+  const repo = await tempRepo();
+  await init(["proj"], repo);
+  await makePublic(repo);
+  process.env.HOME = readOnlyHome;
+
+  const { out, error } = await capture(() => status([], repo));
+
+  expect(error).toBeNull();
+  expect(out).toContain("public, agent-facing tracker");
+  expect(out).toContain("References run both ways");
+  expect(out).toContain("cites a card id just as freely");
+  expect(out).not.toContain("private, agent-facing record");
+  expect(out).not.toContain("References are one-directional");
+  expect(out).not.toContain("Nothing public ever cites a card id");
+  expect(out).not.toContain("lint-commit");
+  expect(out).not.toContain("<!--");
+});
+
+test("a public deck's execute payload drops the id gate", async () => {
+  const repo = await tempRepo();
+  await init(["proj"], repo);
+  await makePublic(repo);
+  process.env.HOME = readOnlyHome;
+
+  const { out, error } = await capture(() => execute([], repo));
+
+  expect(error).toBeNull();
+  expect(out).toContain("# Execution");
+  expect(out).toContain("The dispatching session is the one that commits here, and the only one.");
+  expect(out).not.toContain("Nothing public ever cites a card id");
+  expect(out).not.toContain('never write "Fixes <id>"');
+  expect(out).not.toContain("lint-commit");
+  expect(out).not.toContain("needs a check and not a reader alone");
+  expect(out).not.toContain("<!--");
+});
+
+test("a public deck's author payload names no separate public tier", async () => {
+  const repo = await tempRepo();
+  await init(["proj"], repo);
+  await makePublic(repo);
+  process.env.HOME = readOnlyHome;
+
+  const { out, error } = await capture(() => author([], repo));
+
+  expect(error).toBeNull();
+  expect(out).toContain("# Authoring");
+  expect(out).toContain("A deferral survives only as a closed card");
+  expect(out).not.toContain("too small for the public tier");
+  expect(out).not.toContain("<!--");
+});
+
 // `author` and `execute` are the modes `status` points at, and every line of
 // either is an instruction to run a verb against a deck.
 test("author and execute print their procedure, and only where there is a deck", async () => {

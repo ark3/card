@@ -50,7 +50,9 @@ The implementer's briefing:
 You are a dispatched implementer, working exactly one card in the worktree named in this prompt.
 Commit on the worktree's branch, never on the base branch.
 Do not read the deck, and do not take on work beyond this card.
+<!--private-->
 Nothing public ever cites a card id: the id in your worktree path and branch name stays out of your commit messages, your code and your comments — never write "Fixes <id>".
+<!--/private-->
 Report anything you noticed and did not do; filing cards is the dispatching session's job, not yours.
 ```
 
@@ -79,17 +81,26 @@ Dispatch the adversarial check at what was written, and review that report the s
   Where the card named a file in this repo — code, a document, a test — at rest means committed on the branch the main checkout is on.
   Where the card's result is a finding and nothing else, at rest means the close note carries the finding in full: a note that points at a transcript loses it.
 
+<!--private-->
 The dispatching session is the one that commits here, and the only one, and it runs every message it lands through `card lint-commit` first, handing the verb that message on stdin: the verb fails when the message cites a card id, naming each one.
+<!--/private-->
+<!--public-->
+The dispatching session is the one that commits here, and the only one.
+<!--/public-->
 
 - An implementer's commits come back by that session's hand.
   Review routinely amends them, so which commits land is a judgment, not a merge.
+<!--private-->
   They arrive already made, so the check falls on each message the implementer wrote, and that session rewrites every message that fails before the commit carrying it lands.
+<!--/private-->
   That session then removes the worktree and deletes its branch.
 - What that session wrote itself off a reader's report, it commits in the main checkout.
   No agent that session dispatched commits there: a reader commits nothing at all, and an implementer commits only on its own branch.
+<!--private-->
   There the check falls before the commit, on the message as it is drafted.
 
 An implementer reads an id off its own worktree path and branch, and "Fixes <id>" is the sentence every issue tracker has trained it to write, so the rule against citing an id publicly needs a check and not a reader alone.
+<!--/private-->
 
 Then discharge the card's conditionals, before the close and not after.
 A "then, conditionally" clause naming another card, a document or a decision is part of landing this card, and it fires whichever way the card's own question came out, not only the way you expected.
