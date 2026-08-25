@@ -7,6 +7,10 @@
     "card": "src/card.ts"
   },
   "scripts": {
-    "check": "bun test"
+    "check": "bun test && tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.0",
+    "typescript": "7.0.2"
   }
 }

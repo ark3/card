@@ -20,6 +20,11 @@ Confirmed by hand on 2026-08-21 rather than assumed — `Bun.TOML.parse("[decks]
 The tool has to be runnable from a work laptop and a home server with nothing built first, and from inside a dispatched agent's worktree.
 Keep it to one entry point and a small module per verb; do not add a build step unless something forces one.
 
+`check` runs the tests and then `tsc --noEmit`; settled 2026-08-24.
+Bun strips annotations rather than checking them, so the annotations are load-bearing in review, and the checker is what makes them true on lines tests never execute.
+The no-dependencies rule guards runtime simplicity and clone-and-run, and a dev-only static checker violates neither: nothing is built or emitted, `bun test` still runs on a fresh clone with no install, and only the typecheck half of `check` needs a one-time `bun install`.
+TypeScript is pinned to an exact version, because an unpinned checker starts failing when TypeScript releases, not when the code changes.
+
 ## Deck resolution
 
 This is the capability the tool exists for, so it is the part worth being exact about.

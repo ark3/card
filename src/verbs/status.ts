@@ -98,5 +98,5 @@ export async function run(_args: string[], cwd: string): Promise<void> {
     OPEN: open === null ? "?" : String(open),
     CLOSED: closed === null ? "?" : String(closed),
   };
-  process.stdout.write(payload.replace(/\{\{(DECK|OPEN|CLOSED)\}\}/g, (_match, name: string) => values[name] ?? ""));
+  process.stdout.write(payload.replace(/\{\{(DECK|OPEN|CLOSED)\}\}/g, (_match: string, name: string) => values[name] ?? ""));
 }
