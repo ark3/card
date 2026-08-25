@@ -43,6 +43,14 @@ test("a message citing a card id fails and names it", async () => {
   expect(result.stderr).toContain(id);
 });
 
+test("on a public deck a message citing a card id passes", async () => {
+  const repo = await fixture();
+  const configPath = path.join(repo, ".git", "card", "card-config.toml");
+  await Bun.write(configPath, `${await Bun.file(configPath).text()}public = true\n`);
+  const result = await card(["lint-commit"], repo, `Teach the reader to stop\n\nFixes ${drawId("proj")}\n`);
+  expect(result.code).toBe(0);
+});
+
 test("a message citing no card id passes silently", async () => {
   const repo = await fixture();
   const result = await card(["lint-commit"], repo, "Teach the reader to stop\n\nNo id here.\n");

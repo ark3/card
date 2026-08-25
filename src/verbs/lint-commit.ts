@@ -5,6 +5,10 @@ export async function run(_args: string[], cwd: string): Promise<void> {
   const deck = await requireDeck(cwd);
   const message = await Bun.stdin.text();
 
+  // A public deck is its repo's public tracker, and its convention cites ids
+  // in commit messages; there is no boundary here for the gate to hold.
+  if (deck.public) return;
+
   // The pattern alone, with no check that the id names a card in `open/` or
   // `closed/`: what the rule forbids is a public citation of a card id, and a
   // string shaped like one cites a card whether or not this deck still holds

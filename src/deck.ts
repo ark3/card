@@ -12,6 +12,8 @@ export type Deck = {
   openDir: string;
   closedDir: string;
   prefix: string;
+  /** The deck is its repo's public tracker, so citing an id is no leak. */
+  public: boolean;
 };
 
 /**
@@ -52,9 +54,16 @@ export async function resolveDeck(cwd: string): Promise<Deck | null> {
   const config = Bun.file(configPath);
   if (!(await config.exists())) return null;
 
-  const parsed = Bun.TOML.parse(await config.text()) as { prefix?: unknown; deck?: unknown };
+  const parsed = Bun.TOML.parse(await config.text()) as {
+    prefix?: unknown;
+    deck?: unknown;
+    public?: unknown;
+  };
   if (typeof parsed.prefix !== "string" || parsed.prefix === "") {
     throw new Error(`${configPath} carries no prefix`);
+  }
+  if (parsed.public !== undefined && typeof parsed.public !== "boolean") {
+    throw new Error(`${configPath} carries a non-boolean public`);
   }
   const relative = typeof parsed.deck === "string" ? parsed.deck : DEFAULT_DECK;
   const deckDir = path.resolve(cardDir, relative);
@@ -65,6 +74,7 @@ export async function resolveDeck(cwd: string): Promise<Deck | null> {
     openDir: path.join(deckDir, "open"),
     closedDir: path.join(deckDir, "closed"),
     prefix: parsed.prefix,
+    public: parsed.public === true,
   };
 }
 

@@ -107,6 +107,15 @@ describe("the config", () => {
     expect(deck?.deckDir).toBe(path.join(repo, "docs", "work"));
   });
 
+  test("with a non-boolean public is reported rather than guessed at", async () => {
+    const repo = await tempRepo();
+    const cardDir = path.join(repo, ".git", "card");
+    mkdirSync(cardDir, { recursive: true });
+    await Bun.write(path.join(cardDir, "card-config.toml"), 'prefix = "OW"\npublic = "true"\n');
+
+    await expect(resolveDeck(repo)).rejects.toThrow(/non-boolean public/);
+  });
+
   test("without a prefix is reported rather than guessed at", async () => {
     const repo = await tempRepo();
     const cardDir = path.join(repo, ".git", "card");
