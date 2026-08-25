@@ -68,6 +68,11 @@ export async function run(args: string[], cwd: string): Promise<void> {
   const stillOpen = new Set(
     entries.filter((entry) => entry.endsWith(".md")).map((entry) => entry.slice(0, -3)),
   );
+  const closed = new Set(
+    (await readdir(deck.closedDir))
+      .filter((entry) => entry.endsWith(".md"))
+      .map((entry) => entry.slice(0, -3)),
+  );
   for (const entry of entries) {
     if (!entry.endsWith(".md")) continue;
     let card: Card;
@@ -82,11 +87,26 @@ export async function run(args: string[], cwd: string): Promise<void> {
     if (!card.blockedBy.includes(id)) continue;
     // `--done` says the work is at rest, which reads as a card having come
     // free, so a card another open blocker still holds shut stays off that
-    // list. A blocker that is closed or was never a card holds nothing shut.
+    // list. Only a blocker resolving to closed/ holds nothing shut: a blocker
+    // in neither open/ nor closed/ means a typo in a hand-edit or a
+    // hand-deleted file — something genuinely wrong a human should look at —
+    // and wrongly withholding a card from the readiness cue costs less than
+    // wrongly releasing one, which a session would pick up here and then
+    // `list --ready` would refuse to show. `list` counts it as blocking too.
     // The other outcomes only warn that a card is about to look ready, which
     // is true of a co-blocked card too, so they name every dependent.
-    if (workDone && card.blockedBy.some((blocker) => blocker !== id && stillOpen.has(blocker))) {
-      continue;
+    if (workDone) {
+      let heldShut = false;
+      for (const blocker of card.blockedBy) {
+        if (blocker === id || closed.has(blocker)) continue;
+        if (!stillOpen.has(blocker)) {
+          console.error(
+            `card: ${entry.slice(0, -3)} is blocked by ${blocker}, which is in neither open/ nor closed/`,
+          );
+        }
+        heldShut = true;
+      }
+      if (heldShut) continue;
     }
     blocked.push(`${entry.slice(0, -3)}  ${card.headline}`);
   }

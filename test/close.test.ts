@@ -177,7 +177,8 @@ test("--done passes over a dependent another open card still blocks", async () =
   await open(deck, "proj-vezipo", "---\nblocked-by: [proj-behilo]\n---\n\n# Came free\n\nBody.\n");
   await open(deck, "proj-dumoka", "---\nblocked-by: [proj-behilo, proj-lakito]\n---\n\n# Still shut\n\nBody.\n");
   await open(deck, "proj-lakito", "---\n---\n\n# The other blocker, still open\n\nBody.\n");
-  // A blocker that is closed, and one that never existed, hold nothing shut.
+  // A blocker that is closed holds nothing shut; one that is in neither
+  // open/ nor closed/ still blocks, and the scan says so on stderr.
   await Bun.write(path.join(deck.closedDir, "proj-gonemo.md"), CARD);
   await open(deck, "proj-fanovi", "---\nblocked-by: [proj-behilo, proj-gonemo]\n---\n\n# Last blocker closed\n\nBody.\n");
   await open(deck, "proj-hitowa", "---\nblocked-by: [proj-behilo, proj-nosuch]\n---\n\n# Blocker never existed\n\nBody.\n");
@@ -189,8 +190,11 @@ test("--done passes over a dependent another open card still blocks", async () =
   expect(printed).toContain("its work is at rest");
   expect(printed).toContain("proj-vezipo  Came free");
   expect(printed).toContain("proj-fanovi  Last blocker closed");
-  expect(printed).toContain("proj-hitowa  Blocker never existed");
+  expect(printed).not.toContain("proj-hitowa");
   expect(printed).not.toContain("proj-dumoka");
+  expect(errored).toContain(
+    "card: proj-hitowa is blocked by proj-nosuch, which is in neither open/ nor closed/",
+  );
 });
 
 test("--promoted names a dependent another open card still blocks, which is what it warns about", async () => {
