@@ -47,6 +47,7 @@ function firstDrawIsBababa(): void {
 
 test("writes the card and prints the id it drew", async () => {
   const { repo, deck } = await deckIn();
+  await Bun.write(path.join(deck.openDir, "proj-behilo.md"), "# The blocker\n\nStill open.\n");
   onStdin("The grounding a cold reader needs.\n");
 
   await neu(["Do the thing", "--label", "PROJ-1", "--label", "work-laptop", "--blocked-by", "proj-behilo"], repo);
@@ -106,6 +107,27 @@ test("an id sitting in closed/ is redrawn past, not reused", async () => {
   expect(logged[0]).not.toBe("proj-bababa");
   expect(await Bun.file(path.join(deck.closedDir, "proj-bababa.md")).text()).toBe("# Spent\n\nGone.\n");
   expect(await Bun.file(path.join(deck.openDir, `${logged[0]}.md`)).text()).toContain("# The next card");
+});
+
+test("refuses a blocker the deck has never heard of, creating nothing", async () => {
+  const { repo, deck } = await deckIn();
+  onStdin("A body that must not land.\n");
+
+  await expect(neu(["Blocked on a typo", "--blocked-by", "proj-zameko"], repo)).rejects.toThrow(/proj-zameko/);
+
+  expect(await Array.fromAsync(new Bun.Glob("*.md").scan(deck.openDir))).toEqual([]);
+});
+
+test("refuses a blocker that is already closed, creating nothing", async () => {
+  const { repo, deck } = await deckIn();
+  await Bun.write(path.join(deck.closedDir, "proj-behilo.md"), "# Finished\n\nDone last week.\n");
+  onStdin("A body that must not land.\n");
+
+  await expect(neu(["Blocked on finished work", "--blocked-by", "proj-behilo"], repo)).rejects.toThrow(
+    /proj-behilo.*already closed/,
+  );
+
+  expect(await Array.fromAsync(new Bun.Glob("*.md").scan(deck.openDir))).toEqual([]);
 });
 
 test("refuses a body that is empty or only whitespace", async () => {

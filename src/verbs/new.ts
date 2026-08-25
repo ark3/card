@@ -32,6 +32,20 @@ export async function run(args: string[], cwd: string): Promise<void> {
   if (headline.includes("\n")) throw new Error("a headline is one line and never wraps");
 
   const deck = await requireDeck(cwd);
+
+  // Validated before any id is drawn, so a refused filing leaves no file behind.
+  for (const blocker of blockedBy) {
+    if (await Bun.file(path.join(deck.openDir, `${blocker}.md`)).exists()) continue;
+    if (await Bun.file(path.join(deck.closedDir, `${blocker}.md`)).exists()) {
+      // Blocking new work on finished work means the card is born ready with a
+      // dead blocked-by line — almost certainly a typo for a different id — so
+      // refuse loudly rather than guess. Finished work worth referencing is
+      // cited by id in the card body instead.
+      throw new Error(`--blocked-by ${blocker}: that card is already closed; cite it in the body instead`);
+    }
+    throw new Error(`--blocked-by ${blocker}: no such card in the deck`);
+  }
+
   const body = await Bun.stdin.text();
   if (body.trim() === "") {
     throw new Error("a card needs a body on stdin; a headline alone is the skeleton this verb replaces");
