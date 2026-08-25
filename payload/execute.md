@@ -27,7 +27,13 @@ Dispatch one agent at a time, and review what it sent back before you decide the
   The card was written by whoever found the problem and has not been re-verified since, and the code may have moved under it — most of all in a codebase this workflow does not control.
   Confirm that the paths, symbols and claims the card names still hold.
   Where they have drifted, amend the card yourself and say what you changed: never work a card as written once it has drifted, and never stop for an amendment you can make — amendable staleness is routine, not an obstacle.
+<!--private-->
   Drift large enough to kill the card's intent is not an amendment at all: skip dispatch and review and take that card straight to step 4, where you close it for what the drift made it — `--moot` where the problem it named is gone, `--promoted` where the real work outgrew the card.
+<!--/private-->
+<!--public-->
+  Drift large enough to kill the card's intent is not an amendment at all: skip dispatch and review and take that card straight to step 4, where you close it for what the drift made it — `--moot` where the problem it named is gone, `--promoted` where the real work outgrew the card and left for an outside system the project answers to but does not control.
+  Where the work outgrew the card and no such outside system exists, it becomes new cards: file them, then close this card `--moot` with their ids in the close note, because they now carry the problem it named.
+<!--/public-->
 
 **2. Dispatch.**
   The reading is not yours to do: the card is the handoff, and a session that does its own reading has no room left to review what comes back.
@@ -108,7 +114,12 @@ What the clause calls for comes to rest first: the card filed, the document writ
 An answer that fits neither branch of the card's conditional is a new card, never a skip.
 A drift-killed card's question never came out, so every clause it carries fits neither branch: each decision a clause gates goes to a new card, never a silent skip.
 
+<!--private-->
 Only then close, writing the close note on stdin: `card close <id> --done` where the work is at rest, and otherwise the flag that says how the card ended — `--promoted` where the work went to a ticket of its own, the usual case when a load-bearing bug surfaces mid-execution, and the public ticket itself is the owner's to file, never this session's; `--declined` where it was decided against; `--moot` where the reason for it is gone.
+<!--/private-->
+<!--public-->
+Only then close, writing the close note on stdin: `card close <id> --done` where the work is at rest, and otherwise the flag that says how the card ended — `--promoted` where the work left for an outside system the project answers to but does not control, the usual case when a load-bearing bug surfaces mid-execution, and the entry in that system is the owner's to file, never this session's; `--declined` where it was decided against; `--moot` where the reason for it is gone.
+<!--/public-->
 On every close the tool names the cards this one was blocking.
 On `--done` they have just come free: they belong in the hand-back, not in this session's work, because which card comes next is the owner's call.
 On the other three they are about to look ready when they are not: they belong in the hand-back too, and their disposition is the owner's, not yours.

@@ -214,11 +214,16 @@ test("a private deck's payloads keep today's boundary text, with no marker resid
   );
   expect(out).toContain("Nothing public ever cites a card id");
   expect(out).toContain("Run every commit message through `card lint-commit`");
+  expect(out).toContain("`--promoted`: the work went to a public ticket.");
+  expect(out).toContain("A card can wait only on another card, never on a public ticket");
+  expect(out).toContain("fold them into that ticket, or give them their own ticket that depends on it");
   expect(out).not.toContain("References run both ways");
   expect(out).not.toContain("<!--");
 
   const executing = await capture(() => execute([], repo));
   expect(executing.out).toContain('never write "Fixes <id>"');
+  expect(executing.out).toContain("`--promoted` where the work went to a ticket of its own");
+  expect(executing.out).toContain("`--promoted` where the real work outgrew the card.");
   expect(executing.out).toContain("through `card lint-commit` first");
   expect(executing.out).toContain("needs a check and not a reader alone");
   expect(executing.out).not.toContain("<!--");
@@ -265,6 +270,39 @@ test("a public deck's execute payload drops the id gate", async () => {
   expect(out).not.toContain("lint-commit");
   expect(out).not.toContain("needs a check and not a reader alone");
   expect(out).not.toContain("<!--");
+});
+
+// `--promoted` on a public deck means the work left for an outside tracker the
+// project answers to, and where no such system sits beside the deck the flag
+// never applies — the shared "public ticket" phrasing had no destination there.
+test("a public deck's promoted close names the outside system, and its absence", async () => {
+  const repo = await tempRepo();
+  await init(["proj"], repo);
+  await makePublic(repo);
+  process.env.HOME = readOnlyHome;
+
+  const { out, error } = await capture(() => status([], repo));
+
+  expect(error).toBeNull();
+  expect(out).toContain("an outside system the project answers to but does not control");
+  expect(out).toContain("`--promoted` never applies: work that outgrows a card becomes more cards");
+  expect(out).toContain(
+    "its dependents look ready even though the work they were waiting for is still open",
+  );
+  expect(out).not.toContain("went to a public ticket");
+  expect(out).not.toContain("never on a public ticket");
+  expect(out).not.toContain("their own ticket that depends on it");
+  expect(out).not.toContain("<!--");
+
+  const executing = await capture(() => execute([], repo));
+  expect(executing.out).toContain("the entry in that system is the owner's to file, never this session's");
+  expect(executing.out).toContain(
+    "outgrew the card and left for an outside system the project answers to but does not control",
+  );
+  expect(executing.out).toContain("close this card `--moot` with their ids in the close note");
+  expect(executing.out).not.toContain("`--promoted` where the real work outgrew the card.");
+  expect(executing.out).not.toContain("went to a ticket of its own");
+  expect(executing.out).not.toContain("<!--");
 });
 
 test("a public deck's author payload names no separate public tier", async () => {

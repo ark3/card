@@ -46,15 +46,31 @@ Moves the card and appends the close note as one act, and refuses to run on empt
 Exactly one flag: the flag records what happened, and the prose carries why.
 `--done` says the work is at rest where the card said it would be.
 The other three all say the work never happened.
+<!--private-->
 `--promoted`: the work went to a public ticket.
+<!--/private-->
+<!--public-->
+`--promoted`: the deck remains the tracker, and this flag marks the one exception — the work left the deck for an outside system the project answers to but does not control, an upstream project's issue queue or a customer's tracker.
+On a deck with no such outside system beside it, `--promoted` never applies: work that outgrows a card becomes more cards.
+<!--/public-->
 `--declined`: someone chose not to do the work, and the reasoning is live again if the tradeoff changes.
 `--moot`: the reason the card existed is gone, and re-filing it would be an error — a card that turns out to duplicate another is moot, with the other card's id in the close note.
 
 On every close the tool names the cards this one was blocking: on `--done` this close is what they were waiting for, and on any of the other three they are about to look ready when they are not.
+<!--private-->
 A card can wait only on another card, never on a public ticket, so once a blocker closes `--promoted` its dependents look ready even though the work they were waiting for is still open in the ticket.
+<!--/private-->
+<!--public-->
+A card can wait only on another card, never on anything in the outside system, so once a blocker closes `--promoted` its dependents look ready even though the work they were waiting for is still open there.
+<!--/public-->
 What happens to the cards named on the other three is the owner's decision.
 Two dispositions are open on any of the three: decline them, because they only mattered if the blocker went a certain way; or re-examine them — the edge may have been overstated, and the card can simply be worked.
+<!--private-->
 `--promoted` opens two more, because the work now has a public ticket: fold them into that ticket, or give them their own ticket that depends on it.
+<!--/private-->
+<!--public-->
+`--promoted` opens two more, because the work now lives in the outside system: fold them into what went there, or give them an entry of their own there that depends on it.
+<!--/public-->
 
 Write the close note for one reader: the next authoring session, sweeping the closed pile for prior art.
 Say what was built and how it was verified, or what was decided against and why, or where the work went if it went somewhere else.
