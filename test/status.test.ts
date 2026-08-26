@@ -6,6 +6,7 @@ import { run as author } from "../src/verbs/author.ts";
 import { run as execute } from "../src/verbs/execute.ts";
 import { run as init } from "../src/verbs/init.ts";
 import { REFUSAL, run as status } from "../src/verbs/status.ts";
+import { run as workflow } from "../src/verbs/workflow.ts";
 import { clearCardRoot, removeTempDirs, tempDir, tempRepo } from "./helpers.ts";
 
 // The probe writes into $HOME, so $HOME is the whole seam: a directory this
@@ -323,6 +324,50 @@ test("a public deck's author payload names no separate public tier", async () =>
   expect(out).not.toContain("<!--");
 });
 
+// `workflow` is the chapter a session runs when cards come up at all, so it
+// carries the deck's deltas for its own privacy rendering.
+test("a private deck's workflow states the boundary and points at the procedures", async () => {
+  const repo = await tempRepo();
+  await init(["proj"], repo);
+  process.env.HOME = readOnlyHome;
+
+  const { out, error } = await capture(() => workflow([], repo));
+
+  expect(error).toBeNull();
+  expect(out).toContain("# Workflow");
+  expect(out).toContain("## The deck");
+  expect(out).toContain("## References");
+  expect(out).toContain("## Findings");
+  expect(out).toContain("## Onward");
+  expect(out).toContain("private, agent-facing tracker");
+  expect(out).toContain("nothing public ever cites a card id");
+  expect(out).toContain("`card lint-commit`");
+  expect(out).toContain("`card new`");
+  expect(out).toContain("`card author`");
+  expect(out).toContain("`card execute`");
+  expect(out).not.toContain("just as freely");
+  expect(out).not.toContain("<!--");
+});
+
+test("a public deck's workflow grants the citation and mandates no lint", async () => {
+  const repo = await tempRepo();
+  await init(["proj"], repo);
+  await makePublic(repo);
+  process.env.HOME = readOnlyHome;
+
+  const { out, error } = await capture(() => workflow([], repo));
+
+  expect(error).toBeNull();
+  expect(out).toContain("# Workflow");
+  expect(out).toContain("public, agent-facing tracker");
+  expect(out).toContain("just as freely");
+  expect(out).toContain("## Findings");
+  expect(out).toContain("## Onward");
+  expect(out).not.toContain("nothing public ever cites a card id");
+  expect(out).not.toContain("privacy boundary");
+  expect(out).not.toContain("<!--");
+});
+
 // `author` and `execute` are the modes `status` points at, and every line of
 // either is an instruction to run a verb against a deck.
 test("author and execute print their procedure, and only where there is a deck", async () => {
@@ -330,6 +375,7 @@ test("author and execute print their procedure, and only where there is a deck",
 
   await expect(author([], repo)).rejects.toThrow(/no deck here/);
   await expect(execute([], repo)).rejects.toThrow(/no deck here/);
+  await expect(workflow([], repo)).rejects.toThrow(/no deck here/);
 
   await init(["proj"], repo);
   const authoring = await capture(() => author([], repo));
@@ -350,7 +396,12 @@ test("every payload rides inside a block that says how to spot a partial read", 
   await init(["proj"], repo);
   process.env.HOME = readOnlyHome;
 
-  for (const [verb, run] of [["status", status], ["author", author], ["execute", execute]] as const) {
+  for (const [verb, run] of [
+    ["status", status],
+    ["author", author],
+    ["execute", execute],
+    ["workflow", workflow],
+  ] as const) {
     const { out, error } = await capture(() => run([], repo));
 
     expect(error).toBeNull();

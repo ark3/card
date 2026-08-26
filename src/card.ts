@@ -9,6 +9,7 @@ import * as list from "./verbs/list.ts";
 import * as neu from "./verbs/new.ts";
 import * as show from "./verbs/show.ts";
 import * as status from "./verbs/status.ts";
+import * as workflow from "./verbs/workflow.ts";
 import * as worktree from "./verbs/worktree.ts";
 
 type Verb = (args: string[], cwd: string) => Promise<void>;
@@ -25,6 +26,7 @@ const VERBS: Record<string, Verb> = {
   worktree: worktree.run,
   author: author.run,
   execute: execute.run,
+  workflow: workflow.run,
 };
 
 const USAGE = `usage: card <verb> [...]
