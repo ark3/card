@@ -121,7 +121,7 @@ test("no sbox on the machine skips the probe, and says so on stdout", async () =
   expect(error).toBeNull();
   expect(out.split("\n")[1]).toContain("Sandbox check skipped: sbox is not on PATH");
   expect(out).toContain("unsandboxed");
-  expect(out).toContain("## Mode");
+  expect(out).toContain("card workflow");
 });
 
 test("says nothing about cards when there is no deck", async () => {
@@ -133,7 +133,7 @@ test("says nothing about cards when there is no deck", async () => {
     const { out, error } = await capture(() => status([], cwd));
     expect(error).toBeNull();
     expect(out).toBe("No card deck for this project.\n");
-    for (const teaching of ["card new", "card list", "## Mode", "one-directional", "Deck:"]) {
+    for (const teaching of ["card workflow", "implementation work", "deck of cards", "Deck:"]) {
       expect(out).not.toContain(teaching);
     }
   }
@@ -152,9 +152,9 @@ test("reports the deck, its counts, and then the payload", async () => {
 
   expect(error).toBeNull();
   expect(out.split("\n")[1]).toBe(`Deck: ${deck.deckDir} — 2 open, 1 closed.`);
-  expect(out).toContain("## Mode");
-  expect(out).toContain("card list [--open | --ready | --closed]");
-  expect(out).toContain("References are one-directional");
+  expect(out).toContain("implementation work");
+  expect(out).toContain("run `card workflow` first");
+  expect(out).toContain("Otherwise the deck needs nothing from this session.");
   expect(out).not.toContain("{{");
   expect(out).not.toContain("CARD_ROOT");
 });
@@ -213,15 +213,9 @@ test("a private deck's payloads keep today's boundary text, with no marker resid
   process.env.HOME = readOnlyHome;
 
   const { out } = await capture(() => status([], repo));
-  expect(out).toContain(
-    "The deck is this project's private, agent-facing record; whatever the project already uses for tracking stays the public one.",
-  );
-  expect(out).toContain("Nothing public ever cites a card id");
-  expect(out).toContain("Run every commit message through `card lint-commit`");
-  expect(out).toContain("`--promoted`: the work went to a public ticket.");
-  expect(out).toContain("A card can wait only on another card, never on a public ticket");
-  expect(out).toContain("fold them into that ticket, or give them their own ticket that depends on it");
-  expect(out).not.toContain("References run both ways");
+  expect(out).toContain("private deck of cards");
+  expect(out).toContain("kept out of the public repo");
+  expect(out).not.toContain("public, agent-facing tracker");
   expect(out).not.toContain("<!--");
 
   const executing = await capture(() => execute([], repo));
@@ -239,7 +233,7 @@ test("a private deck's payloads keep today's boundary text, with no marker resid
   expect(authoring.out).not.toContain("<!--");
 });
 
-test("a public deck's status calls the deck the tracker and lets commits cite ids", async () => {
+test("a public deck's status calls the deck the tracker, never private", async () => {
   const repo = await tempRepo();
   await init(["proj"], repo);
   await makePublic(repo);
@@ -249,11 +243,12 @@ test("a public deck's status calls the deck the tracker and lets commits cite id
 
   expect(error).toBeNull();
   expect(out).toContain("public, agent-facing tracker");
-  expect(out).toContain("References run both ways");
-  expect(out).toContain("cites a card id just as freely");
-  expect(out).not.toContain("private, agent-facing record");
-  expect(out).not.toContain("References are one-directional");
-  expect(out).not.toContain("Nothing public ever cites a card id");
+  expect(out).toContain("there is no other record the work reports to");
+  expect(out).toContain("implementation work");
+  expect(out).toContain("run `card workflow` first");
+  expect(out).toContain("Otherwise the deck needs nothing from this session.");
+  expect(out).not.toContain("private deck of cards");
+  expect(out).not.toContain("kept out of the public repo");
   expect(out).not.toContain("lint-commit");
   expect(out).not.toContain("<!--");
 });
@@ -285,7 +280,7 @@ test("a public deck's promoted close names the outside system, and its absence",
   await makePublic(repo);
   process.env.HOME = readOnlyHome;
 
-  const { out, error } = await capture(() => status([], repo));
+  const { out, error } = await capture(() => workflow([], repo));
 
   expect(error).toBeNull();
   expect(out).toContain("an outside system the project answers to but does not control");
@@ -343,12 +338,14 @@ test("a private deck's workflow states the boundary and points at the procedures
   expect(out).toContain("## Onward");
   expect(out).toContain("private, agent-facing tracker");
   expect(out).toContain("nothing public ever cites a card id");
-  expect(out).toContain("`card lint-commit`");
+  expect(out).toContain("Run every commit message through `card lint-commit`");
   expect(out).toContain("`card new`");
   expect(out).toContain("`card author`");
   expect(out).toContain("`card execute`");
   expect(out).toContain("never build a path out of an id");
   expect(out).toContain("`--promoted`: the work went to a public ticket.");
+  expect(out).toContain("A card can wait only on another card, never on a public ticket");
+  expect(out).toContain("fold them into that ticket, or give them their own ticket that depends on it");
   expect(out).toContain("a card is permission to put something down");
   expect(out).not.toContain("an outside system the project answers to but does not control");
   expect(out).not.toContain("just as freely");
@@ -366,6 +363,7 @@ test("a public deck's workflow grants the citation and mandates no lint", async 
   expect(error).toBeNull();
   expect(out).toContain("# Workflow");
   expect(out).toContain("public, agent-facing tracker");
+  expect(out).toContain("References run both ways");
   expect(out).toContain("just as freely");
   expect(out).toContain("## The verbs");
   expect(out).toContain("## Findings");

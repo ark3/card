@@ -60,7 +60,7 @@ test("one card walks the whole loop, through the real executable", async () => {
   // status` safe to run unconditionally in a project that never adopts it.
   const cold = await run(["status"]);
   expect(cold.code).toBe(0);
-  expect(cold.stdout).not.toContain("Mode");
+  expect(cold.stdout).not.toContain("card workflow");
 
   expect((await run(["init", "proj"])).code).toBe(0);
 
@@ -95,7 +95,7 @@ test("one card walks the whole loop, through the real executable", async () => {
   // the counts rather than describing them.
   const warm = await run(["status"]);
   expect(warm.stdout).toContain("1 open, 1 closed");
-  expect(warm.stdout).toContain("card close <id> --done|--promoted|--declined|--moot");
+  expect(warm.stdout).toContain("run `card workflow` first");
 
   chmodSync(home, 0o700);
 });
