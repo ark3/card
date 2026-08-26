@@ -336,8 +336,10 @@ test("a private deck's workflow states the boundary and points at the procedures
   expect(error).toBeNull();
   expect(out).toContain("# Workflow");
   expect(out).toContain("## The deck");
+  expect(out).toContain("## The verbs");
   expect(out).toContain("## References");
   expect(out).toContain("## Findings");
+  expect(out).toContain("## Dispatch the reading");
   expect(out).toContain("## Onward");
   expect(out).toContain("private, agent-facing tracker");
   expect(out).toContain("nothing public ever cites a card id");
@@ -345,6 +347,10 @@ test("a private deck's workflow states the boundary and points at the procedures
   expect(out).toContain("`card new`");
   expect(out).toContain("`card author`");
   expect(out).toContain("`card execute`");
+  expect(out).toContain("never build a path out of an id");
+  expect(out).toContain("`--promoted`: the work went to a public ticket.");
+  expect(out).toContain("a card is permission to put something down");
+  expect(out).not.toContain("an outside system the project answers to but does not control");
   expect(out).not.toContain("just as freely");
   expect(out).not.toContain("<!--");
 });
@@ -361,8 +367,15 @@ test("a public deck's workflow grants the citation and mandates no lint", async 
   expect(out).toContain("# Workflow");
   expect(out).toContain("public, agent-facing tracker");
   expect(out).toContain("just as freely");
+  expect(out).toContain("## The verbs");
   expect(out).toContain("## Findings");
   expect(out).toContain("## Onward");
+  expect(out).toContain("an outside system the project answers to but does not control");
+  expect(out).toContain("`--promoted` never applies: work that outgrows a card becomes more cards");
+  expect(out).toContain("a card is permission to put something down");
+  expect(out).not.toContain("went to a public ticket");
+  expect(out).not.toContain("never on a public ticket");
+  expect(out).not.toContain("their own ticket that depends on it");
   expect(out).not.toContain("nothing public ever cites a card id");
   expect(out).not.toContain("privacy boundary");
   expect(out).not.toContain("<!--");
