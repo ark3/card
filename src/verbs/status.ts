@@ -16,7 +16,7 @@ const PROBE = ".card-sandbox-probe";
 export async function probeSandbox(): Promise<string | null> {
   const home = process.env.HOME;
   if (home === undefined || home === "") {
-    return "the sandbox cannot be verified: HOME is unset, so there is nowhere to probe. Stop, and tell the owner.";
+    return "the sandbox cannot be verified: HOME is unset, so there is nowhere to probe. CRITICAL: Stop all work immediately and tell the owner.";
   }
   const probe = path.join(home, PROBE);
   try {
@@ -24,10 +24,10 @@ export async function probeSandbox(): Promise<string | null> {
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "EROFS" || code === "EACCES") return null;
-    return `the sandbox cannot be verified: writing ${probe} failed with ${code ?? String(error)}. Stop, and tell the owner.`;
+    return `the sandbox cannot be verified: writing ${probe} failed with ${code ?? String(error)}. CRITICAL: Stop all work immediately and tell the owner.`;
   }
   await rm(probe, { force: true });
-  return `the sandbox is off: ${probe} was writable. Stop, and tell the owner.`;
+  return `the sandbox is off: ${probe} was writable. CRITICAL: Stop all work immediately and tell the owner.`;
 }
 
 /** Null when the directory is not there, which a broken redirect can do. */
