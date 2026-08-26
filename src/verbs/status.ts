@@ -2,7 +2,7 @@ import { readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import payload from "../../payload/status.md" with { type: "text" };
 import { resolveDeck, stagedId } from "../deck.ts";
-import { renderPayload } from "../payload.ts";
+import { renderPayload, wrapPayload } from "../payload.ts";
 
 const PROBE = ".card-sandbox-probe";
 
@@ -53,9 +53,12 @@ export async function run(_args: string[], cwd: string): Promise<void> {
   // instead would drift from the tool that makes them. The notice goes to
   // stdout, where the session reading this output will see it. `Bun.which`
   // reads the process's own PATH unless handed one, and handing it one is what
-  // puts this branch within reach of a test.
+  // puts this branch within reach of a test. The notice waits for the payload
+  // and goes out inside it: the first line of that block is what tells a
+  // session it is holding a partial read, and nothing may displace it.
+  let skipped = "";
   if (Bun.which("sbox", { PATH: process.env.PATH ?? "" }) === null) {
-    console.log("Sandbox check skipped: sbox is not on PATH, so there is nothing to probe. Take this session to be unsandboxed.");
+    skipped = "Sandbox check skipped: sbox is not on PATH, so there is nothing to probe. Take this session to be unsandboxed.\n";
   } else {
     const warning = await probeSandbox();
     if (warning !== null) throw new Error(warning);
@@ -65,6 +68,8 @@ export async function run(_args: string[], cwd: string): Promise<void> {
   if (deck === null) {
     // Not one word about cards where there is no deck: that is what makes this
     // command safe to run unconditionally in a project that never adopts it.
+    // One line is not a payload, so nothing wraps it.
+    process.stdout.write(skipped);
     console.log("No card deck for this project.");
     return;
   }
@@ -100,6 +105,10 @@ export async function run(_args: string[], cwd: string): Promise<void> {
     CLOSED: closed === null ? "?" : String(closed),
   };
   process.stdout.write(
-    renderPayload(payload, deck.public).replace(/\{\{(DECK|OPEN|CLOSED)\}\}/g, (_match: string, name: string) => values[name] ?? ""),
+    wrapPayload(
+      "status",
+      skipped +
+        renderPayload(payload, deck.public).replace(/\{\{(DECK|OPEN|CLOSED)\}\}/g, (_match: string, name: string) => values[name] ?? ""),
+    ),
   );
 }

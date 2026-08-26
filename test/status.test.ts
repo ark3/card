@@ -115,7 +115,7 @@ test("no sbox on the machine skips the probe, and says so on stdout", async () =
   const { out, error } = await capture(() => status([], repo));
 
   expect(error).toBeNull();
-  expect(out.split("\n")[0]).toContain("Sandbox check skipped: sbox is not on PATH");
+  expect(out.split("\n")[1]).toContain("Sandbox check skipped: sbox is not on PATH");
   expect(out).toContain("unsandboxed");
   expect(out).toContain("## Mode");
 });
@@ -147,7 +147,7 @@ test("reports the deck, its counts, and then the payload", async () => {
   const { out, error } = await capture(() => status([], repo));
 
   expect(error).toBeNull();
-  expect(out.split("\n")[0]).toBe(`Deck: ${deck.deckDir} — 2 open, 1 closed.`);
+  expect(out.split("\n")[1]).toBe(`Deck: ${deck.deckDir} — 2 open, 1 closed.`);
   expect(out).toContain("## Mode");
   expect(out).toContain("card list [--open | --ready | --closed]");
   expect(out).toContain("References are one-directional");
@@ -175,7 +175,7 @@ test("names a staging file a close died before renaming, and leaves it there", a
   expect(err).toContain("proj-behilo is still open");
   // Still a deck of one open card and no closed ones, and the file it named
   // is still on disk with the note inside it.
-  expect(out.split("\n")[0]).toBe(`Deck: ${deck.deckDir} — 1 open, 0 closed.`);
+  expect(out.split("\n")[1]).toBe(`Deck: ${deck.deckDir} — 1 open, 0 closed.`);
   expect(await Bun.file(leftover).text()).toContain("The close note that never landed.");
 });
 
@@ -189,7 +189,7 @@ test("says so when the deck came from CARD_ROOT, which wins silently otherwise",
 
   const { out } = await capture(() => status([], repo));
 
-  expect(out.split("\n")[0]).toBe(`Deck: ${deck.deckDir} (from CARD_ROOT) — 0 open, 0 closed.`);
+  expect(out.split("\n")[1]).toBe(`Deck: ${deck.deckDir} (from CARD_ROOT) — 0 open, 0 closed.`);
 });
 
 /** Flips the deck at `repo` public, which `init` never writes. */
@@ -336,4 +336,28 @@ test("author and execute print their procedure, and only where there is a deck",
   const executing = await capture(() => execute([], repo));
   expect(executing.out).toContain("# Execution");
   expect(executing.out).toContain("card worktree <id>");
+});
+
+// A session that pipes a payload through `head` or a grep sees a clean prefix
+// and nothing saying the rest existed. Line 1 is the line every truncation
+// keeps, so it carries both the opening tag and the instruction for spotting a
+// cut, and the closing tag is the last line: seeing it is the whole read.
+test("every payload rides inside a block that says how to spot a partial read", async () => {
+  const repo = await tempRepo();
+  await init(["proj"], repo);
+  process.env.HOME = readOnlyHome;
+
+  for (const [verb, run] of [["status", status], ["author", author], ["execute", execute]] as const) {
+    const { out, error } = await capture(() => run([], repo));
+
+    expect(error).toBeNull();
+    const lines = out.split("\n");
+    expect(lines[0]).toStartWith(`<card_${verb}> `);
+    expect(lines[0]).toContain("ends with the matching closing tag alone on the last line");
+    expect(lines[0]).toContain("you are holding only part of this block");
+    expect(lines[0]).toContain(`rerun \`card ${verb}\` bare, with no pipe and no filter`);
+    expect(out).toEndWith(`\n</card_${verb}>\n`);
+    // Exactly once, so no quoted copy can be taken for the terminator.
+    expect(out.split(`</card_${verb}>`)).toHaveLength(2);
+  }
 });
