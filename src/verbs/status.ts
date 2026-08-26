@@ -7,6 +7,14 @@ import { renderPayload, wrapPayload } from "../payload.ts";
 const PROBE = ".card-sandbox-probe";
 
 /**
+ * The last sentence of every verdict below. Which check failed differs; what
+ * the session has to do about it does not, so the sentence lives here once: a
+ * reword that reached two of the three would leave the third refusing in the
+ * old words, and nothing would say so.
+ */
+export const REFUSAL = "CRITICAL: Stop all work immediately and tell the owner.";
+
+/**
  * Null when the sandbox is on, otherwise why the session has to stop. `$HOME`
  * always exists and is read-only whenever the sandbox is on, so a refused
  * write is the pass; anything else, including a probe that never lands, is
@@ -16,7 +24,7 @@ const PROBE = ".card-sandbox-probe";
 export async function probeSandbox(): Promise<string | null> {
   const home = process.env.HOME;
   if (home === undefined || home === "") {
-    return "the sandbox cannot be verified: HOME is unset, so there is nowhere to probe. CRITICAL: Stop all work immediately and tell the owner.";
+    return `the sandbox cannot be verified: HOME is unset, so there is nowhere to probe. ${REFUSAL}`;
   }
   const probe = path.join(home, PROBE);
   try {
@@ -24,10 +32,10 @@ export async function probeSandbox(): Promise<string | null> {
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "EROFS" || code === "EACCES") return null;
-    return `the sandbox cannot be verified: writing ${probe} failed with ${code ?? String(error)}. CRITICAL: Stop all work immediately and tell the owner.`;
+    return `the sandbox cannot be verified: writing ${probe} failed with ${code ?? String(error)}. ${REFUSAL}`;
   }
   await rm(probe, { force: true });
-  return `the sandbox is off: ${probe} was writable. CRITICAL: Stop all work immediately and tell the owner.`;
+  return `the sandbox is off: ${probe} was writable. ${REFUSAL}`;
 }
 
 /** Null when the directory is not there, which a broken redirect can do. */

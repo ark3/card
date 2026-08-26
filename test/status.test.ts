@@ -5,7 +5,7 @@ import { resolveDeck } from "../src/deck.ts";
 import { run as author } from "../src/verbs/author.ts";
 import { run as execute } from "../src/verbs/execute.ts";
 import { run as init } from "../src/verbs/init.ts";
-import { run as status } from "../src/verbs/status.ts";
+import { REFUSAL, run as status } from "../src/verbs/status.ts";
 import { clearCardRoot, removeTempDirs, tempDir, tempRepo } from "./helpers.ts";
 
 // The probe writes into $HOME, so $HOME is the whole seam: a directory this
@@ -78,6 +78,7 @@ test("a sandbox that is off stops the session, having printed nothing", async ()
   const { out, error } = await capture(() => status([], repo));
 
   expect(error?.message).toContain("the sandbox is off");
+  expect(error?.message).toEndWith(REFUSAL);
   expect(out).toBe("");
   expect(existsSync(path.join(home, ".card-sandbox-probe"))).toBe(false);
 });
@@ -91,6 +92,7 @@ test("a probe that cannot land is not a pass", async () => {
 
   expect(error?.message).toContain("cannot be verified");
   expect(error?.message).toContain("ENOENT");
+  expect(error?.message).toEndWith(REFUSAL);
   expect(out).toBe("");
 });
 
@@ -102,6 +104,7 @@ test("nowhere to probe is not a pass either", async () => {
   const { out, error } = await capture(() => status([], repo));
 
   expect(error?.message).toContain("HOME is unset");
+  expect(error?.message).toEndWith(REFUSAL);
   expect(out).toBe("");
 });
 
