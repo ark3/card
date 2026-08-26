@@ -171,7 +171,7 @@ test("--done names the cards this one was blocking, as work that just came free"
   expect(printed).not.toContain("proj-lakito");
 });
 
-test("--done passes over a dependent another open card still blocks", async () => {
+test("--done keeps a dependent another open card still blocks off the freed list", async () => {
   const { repo, deck } = await deckIn();
   await open(deck, "proj-behilo", CARD);
   await open(deck, "proj-vezipo", "---\nblocked-by: [proj-behilo]\n---\n\n# Came free\n\nBody.\n");
@@ -188,10 +188,12 @@ test("--done passes over a dependent another open card still blocks", async () =
 
   const printed = logged.join("\n");
   expect(printed).toContain("its work is at rest");
-  expect(printed).toContain("proj-vezipo  Came free");
-  expect(printed).toContain("proj-fanovi  Last blocker closed");
-  expect(printed).not.toContain("proj-hitowa");
-  expect(printed).not.toContain("proj-dumoka");
+  const stillShut = printed.indexOf("other open blockers still hold shut");
+  expect(stillShut).toBeGreaterThan(-1);
+  expect(printed.indexOf("proj-vezipo  Came free")).toBeLessThan(stillShut);
+  expect(printed.indexOf("proj-fanovi  Last blocker closed")).toBeLessThan(stillShut);
+  expect(printed.indexOf("proj-hitowa  Blocker never existed")).toBeGreaterThan(stillShut);
+  expect(printed.indexOf("proj-dumoka  Still shut")).toBeGreaterThan(stillShut);
   expect(errored).toContain(
     "card: proj-hitowa is blocked by proj-nosuch, which is in neither open/ nor closed/",
   );
@@ -227,6 +229,27 @@ test("--done with every dependent still held shut says so, not that nothing was 
   expect(printed).not.toContain("nothing was waiting on it.");
   expect(printed).not.toContain("its work is at rest");
   expect(printed).toContain("proj-dumoka  Still shut");
+});
+
+test("--done that frees one card still names the dependent another open blocker holds shut", async () => {
+  const { repo, deck } = await deckIn();
+  await open(deck, "proj-behilo", CARD);
+  await open(deck, "proj-vezipo", "---\nblocked-by: [proj-behilo]\n---\n\n# Came free\n\nBody.\n");
+  await open(deck, "proj-dumoka", "---\nblocked-by: [proj-behilo, proj-lakito]\n---\n\n# Still shut\n\nBody.\n");
+  await open(deck, "proj-lakito", "---\n---\n\n# The other blocker, still open\n\nBody.\n");
+  onStdin(`${NOTE}\n`);
+
+  await close(["proj-behilo", "--done"], repo);
+
+  const printed = logged.join("\n");
+  // The freed heading presents what follows as having come free, so the
+  // co-blocked card must be named, but only after a heading that says still
+  // blocked — dropped silently, the owner never learns this close moved it.
+  expect(printed).toContain("its work is at rest");
+  const stillShut = printed.indexOf("other open blockers still hold shut");
+  expect(stillShut).toBeGreaterThan(-1);
+  expect(printed.indexOf("proj-vezipo  Came free")).toBeLessThan(stillShut);
+  expect(printed.indexOf("proj-dumoka  Still shut")).toBeGreaterThan(stillShut);
 });
 
 test("a close whose card was blocking nothing says so rather than printing nothing", async () => {

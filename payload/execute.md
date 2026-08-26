@@ -122,7 +122,7 @@ Only then close, writing the close note on stdin: `card close <id> --done` where
 <!--/public-->
 On every close the tool names the cards this one was blocking.
 On `--done` the cards it lists as freed have just come free: they belong in the hand-back, not in this session's work, because which card comes next is the owner's call.
-Where the tool says nothing came free, the dependents it names are still held shut by other open blockers: they belong in the hand-back as still blocked, never as ready.
+The dependents the tool names as still held shut by other open blockers — whether anything came free or not — belong in the hand-back as still blocked, never as ready.
 On the other three they are about to look ready when they are not: they belong in the hand-back too, and their disposition is the owner's, not yours.
 
 **5. Hand back.**

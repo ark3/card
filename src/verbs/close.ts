@@ -134,4 +134,12 @@ export async function run(args: string[], cwd: string): Promise<void> {
       : `its work never happened, and these are about to look ready and are not:`,
   );
   for (const line of blocked) console.log(`  ${line}`);
+  // Only `--done` fills this list. Dropped here, a co-blocked dependent would
+  // vanish behind the freed list exactly as it would behind "nothing was
+  // waiting", so it prints too — under wording that keeps it off the freed
+  // list, which is the readiness cue this verb must not overstate.
+  if (heldShut.length > 0) {
+    console.log(`other open blockers still hold shut the rest of what was waiting on it:`);
+    for (const line of heldShut) console.log(`  ${line}`);
+  }
 }
