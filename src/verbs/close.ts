@@ -63,6 +63,7 @@ export async function run(args: string[], cwd: string): Promise<void> {
   console.log(`closed ${id}`);
 
   const blocked: string[] = [];
+  const heldShut: string[] = [];
   const entries = (await readdir(deck.openDir)).sort();
   // The closing card's own file is gone by now, so it is not one of these.
   const stillOpen = new Set(
@@ -96,7 +97,7 @@ export async function run(args: string[], cwd: string): Promise<void> {
     // The other outcomes only warn that a card is about to look ready, which
     // is true of a co-blocked card too, so they name every dependent.
     if (workDone) {
-      let heldShut = false;
+      let held = false;
       for (const blocker of card.blockedBy) {
         if (blocker === id || closed.has(blocker)) continue;
         if (!stillOpen.has(blocker)) {
@@ -104,15 +105,26 @@ export async function run(args: string[], cwd: string): Promise<void> {
             `card: ${entry.slice(0, -3)} is blocked by ${blocker}, which is in neither open/ nor closed/`,
           );
         }
-        heldShut = true;
+        held = true;
       }
-      if (heldShut) continue;
+      if (held) {
+        heldShut.push(`${entry.slice(0, -3)}  ${card.headline}`);
+        continue;
+      }
     }
     blocked.push(`${entry.slice(0, -3)}  ${card.headline}`);
   }
-  // Silence here reads as the scan never having run, so an empty list says so.
+  // Silence here reads as the scan never having run, so an empty list says so
+  // — and says which empty it is, since a dependent every one of whose other
+  // blockers is still open would otherwise vanish behind "nothing was
+  // waiting" and never reach the owner.
   if (blocked.length === 0) {
-    console.log(`nothing was waiting on it.`);
+    if (heldShut.length === 0) {
+      console.log(`nothing was waiting on it.`);
+      return;
+    }
+    console.log(`nothing came free: other open blockers still hold shut everything waiting on it:`);
+    for (const line of heldShut) console.log(`  ${line}`);
     return;
   }
 

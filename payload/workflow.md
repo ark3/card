@@ -43,6 +43,7 @@ On a deck with no such outside system beside it, `--promoted` never applies: wor
 `--moot`: the reason the card existed is gone, and re-filing it would be an error — a card that turns out to duplicate another is moot, with the other card's id in the close note.
 
 On every close the tool names the cards this one was blocking: on `--done` this close is what they were waiting for, and on any of the other three they are about to look ready when they are not.
+On `--done` the tool lists as freed only the cards no other open blocker still holds shut; where that frees nothing, it says nothing came free and names the dependents still held shut.
 <!--private-->
 A card can wait only on another card, never on a public ticket, so once a blocker closes `--promoted` its dependents look ready even though the work they were waiting for is still open in the ticket.
 <!--/private-->

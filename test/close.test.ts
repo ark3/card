@@ -211,6 +211,24 @@ test("--promoted names a dependent another open card still blocks, which is what
   expect(printed).toContain("proj-dumoka  Still shut");
 });
 
+test("--done with every dependent still held shut says so, not that nothing was waiting", async () => {
+  const { repo, deck } = await deckIn();
+  await open(deck, "proj-behilo", CARD);
+  await open(deck, "proj-dumoka", "---\nblocked-by: [proj-behilo, proj-lakito]\n---\n\n# Still shut\n\nBody.\n");
+  await open(deck, "proj-lakito", "---\n---\n\n# The other blocker, still open\n\nBody.\n");
+  onStdin(`${NOTE}\n`);
+
+  await close(["proj-behilo", "--done"], repo);
+
+  const printed = logged.join("\n");
+  // The no-dependents sentence would tell the dispatching session there is
+  // nothing to hand back, and the freed heading would present a still-held
+  // card as having come free; this case owns a sentence that is neither.
+  expect(printed).not.toContain("nothing was waiting on it.");
+  expect(printed).not.toContain("its work is at rest");
+  expect(printed).toContain("proj-dumoka  Still shut");
+});
+
 test("a close whose card was blocking nothing says so rather than printing nothing", async () => {
   const { repo, deck } = await deckIn();
   await open(deck, "proj-behilo", CARD);
