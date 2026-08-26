@@ -1,7 +1,8 @@
 # Working in this repository
 
 This repository develops `card` and uses it to track its own work, in a private, agent-facing deck.
-Run `card status` before you act: it resolves the working mode and prints the rules that bind every session here — among them that a finding survives only once it is a card, never in the transcript alone.
+Run `card status` before you act: it reports this repo's deck.
+The rules that bind card work live in `card workflow` — run it before you touch a card — among them that a finding survives only once it is a card, never in the transcript alone.
 
 `bun test` is the check, and it is a floor: nothing in the suite reads payload prose beyond asserting a few headings survive, so a green run never verifies a payload change.
 The check for prose is a cold read — hand the finished file to an agent with no other context and ask it the question the change is supposed to settle.

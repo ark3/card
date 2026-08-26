@@ -83,18 +83,30 @@ A corporate repo can hold none of them: a checked-in skill file describing a pri
 So this repository holds all of it, and the tool is how a session reaches it.
 
 **`card status` is the entry point and the only discovery mechanism.** With nothing installed in the repo, nothing in the environment advertises that the workflow exists.
-The bootstrap is one line in the owner's personal agent instructions — run `card status` before other work — which is the one file that is both private and always loaded.
+The bootstrap is two halves of one line in the owner's personal agent instructions — on startup run `card status`, bare, with no pipes or filters; if it reports a card deck, then whenever cards come up, run `card workflow` before touching them — and that file is the one that is both private and always loaded.
+The halves complete each other: the trigger is pinned in context, where a session-start printout scrolls away, and the index knows the one thing the private line cannot — whether this repo has a deck.
 Everything else follows from what that command prints.
 
-What it prints: the sandbox probe, where the deck is and how many cards are in it, the two modes, the verbs, and the handful of rules that hold in any mode — cite ids and never restate a card, anything left undone becomes a card rather than getting done, a finding that lives only in a transcript dies with the session, references are one-directional, and the session stays thin.
-The modes are a conditional the model resolves from what was already asked — going to author, run `card author`; going to land a card, `card execute` — never a question put back to the user.
-The verbs are taught, not merely named: `close` does not retire the instruction for closing a card, it replaces a two-step procedure with a command that still has to be explained.
+What it prints is an index, not the workflow: the sandbox verdict, where the deck is and how many cards are open and closed, one trigger — when cards come up, run `card workflow` first — and a release saying the deck otherwise needs nothing from this session.
+Only the sandbox gate speaks imperatively about the present session; every other sentence of the index is a fact or a conditional.
+The workflow arrives as chapters, each printed at the moment it is needed: `card workflow` carries the rules that bind card work, stated as deltas from the issue-tracker model an agent already holds, and `card author` and `card execute` each print the procedure for their mode.
+The verbs are still taught, not merely named — `close` does not retire the instruction for closing a card, it replaces a two-step procedure with a command that still has to be explained — but the teaching now happens in the workflow chapter, read once cards are already in play.
+
+The index shape is a decision of 2026-08-26, made on an observed failure.
+Status used to print everything at once — a mode fork with a proceed-anyway fallback, the verbs, the binding rules, and posture sentences about working the deck unprompted — and on a corporate machine a fresh session read all of it, was handed a ticket in discussion phrasing, and implemented it: no cards authored, the owner's own discuss-versus-act protocol ignored.
+That printout caused the failure.
+The fork's fallback routed work-arriving-as-a-ticket to proceeding, and posture spoken imperatively by a tool reads as authorization that outranks the owner's own protocol layer; the same weight made every interactive session perform deck talk whatever the ask.
+What replaced it is a charter of four layers, each owning what only it can know, so conflicts are prevented by ownership rather than resolved by precedence.
+The tool prints runtime facts and its own contract — the index plus the chapters.
+The repo's own agent file carries deployment policy safe to publish, which in a corporate repo, where the deck must stay unknown, is nothing at all.
+The owner's private global guidance carries the bootstrap and the durable trigger.
+The session — the dispatch prompt or the conversation — carries the rest, and posture and authorization live only in those last two layers, never in text the tool prints.
 
 **The payload carries only what cannot be written down in the corporate repo.** That repo keeps its own documentation and is welcome to it: its check command, its branch and review policy, where its evidence goes, its code conventions.
 None of that is secret and none of it belongs here.
 Test each candidate line by asking whether a colleague reading it would learn that this workflow exists.
 
-**When the project has no deck, `status` says nothing about cards at all.** No orientation, no modes, no rules.
+**When the project has no deck, `status` says nothing about cards at all.** No orientation, no trigger, no chapters pointed at.
 That is what makes the line safe to put in personal instructions unconditionally: a project that does not use the workflow pays one command and one line of output.
 
 **The payload is read by whichever model is running.** Phrasing that reads as advice to one model reads as a mandate to another: agentpane's "ask which mode before doing anything else" is followed literally by GPT, which insists the owner choose, and loosely by Claude, which does not — the sentence was a miscommunication that only one reader exposed.
@@ -104,12 +116,14 @@ This is the same discipline as pricing a card for a cold reader, applied to inst
 
 **A session works in seconds and the owner answers in hours.** Every stop is a round trip whose real cost is not the owner's half-minute of reading but the hours the work sits still waiting for it, so a session resolves what it can and stops only where the owner is the only instrument that will do.
 Two things qualify: which work comes next, which is priority and lives nowhere in the deck, and what happens to the cards a close stranded, which turns on ticket-level intent and is settled under "How a card ends".
-This is the same instinct as resolving the mode rather than asking it.
 Completion is gated on the card's own done-condition rather than on the card: where the card names an observable the session can run, running it clean is the close, and the session carries on to the next card in the set the owner picked.
 Where the done-condition is a judgment or decision only the owner can make, the session stops there.
 A set ends early on a genuine blocker — a failed observable, work that belongs to a ticket of its own — and on the session's own context running short.
 A stale card is not on that list: staleness the session can amend is routine and is amended in place, and drift large enough to kill a card's intent already ends the set as work belonging to a ticket of its own.
 Every set run so far has hit amendable staleness at its first card, which is what taught the distinction.
+This pricing once put the unprompted-deck-work posture into the status header itself — a deliberate placement of 2026-08-22, over a real finding that sat unfiled until the owner asked — and the owner reversed that placement on 2026-08-26, on the corporate-machine evidence above.
+The posture now lives only in the workflow chapter, which a session reads once cards are already in play: a session already touching cards keeps the file-it-now duty, and a session where cards never come up owes nothing.
+The cost is accepted with eyes open — in a session that never touches cards, capture waits for the owner's ask.
 
 **Latency is itself a reframing, and it is worth recording what it reframed.**
 The original framing of session autonomy was "don't bother the human, it's annoying", which motivated nothing: the owner enjoys the conversations.
@@ -184,7 +198,8 @@ That is not a performance choice; it is what keeps the corpus something a person
 
 Build now:
 
-- **`status`** — probe the sandbox, resolve the deck, print the guidance above.
+- **`status`** — probe the sandbox, resolve the deck, print the index: deck facts and the trigger pointing at `card workflow`.
+  The chapters — `card workflow`, `card author`, `card execute` — each print their own procedure at the moment it is needed.
   Read-only, cheap, run at the start of every session.
   A sandbox probe that fails, or that cannot reach a verdict, is where the session stops: warn the owner and print nothing else, rather than working unsandboxed or leaving guidance underneath a warning for a model to read past.
   Evidence: with nothing installable in a corporate repo, guidance has to be delivered rather than stored, and there is no other delivery.
