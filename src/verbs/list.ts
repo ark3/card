@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Card } from "../cardfile.ts";
 import { readCard } from "../cardfile.ts";
@@ -11,13 +11,19 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** The ids in a directory, from the `<id>.md` filenames, in sorted order. */
+/**
+ * The ids in a directory, from the `<id>.md` filenames, most recently updated
+ * first, with the id breaking a tie so a listing is deterministic.
+ */
 async function ids(dir: string): Promise<string[]> {
-  const names = await readdir(dir);
-  return names
-    .filter((name) => name.endsWith(".md"))
-    .map((name) => name.slice(0, -3))
-    .sort();
+  const names = (await readdir(dir)).filter((name) => name.endsWith(".md"));
+  const entries = await Promise.all(
+    names.map(async (name) => ({
+      id: name.slice(0, -3),
+      mtime: (await stat(path.join(dir, name))).mtimeMs,
+    })),
+  );
+  return entries.sort((a, b) => b.mtime - a.mtime || a.id.localeCompare(b.id)).map((entry) => entry.id);
 }
 
 export async function run(args: string[], cwd: string): Promise<void> {
