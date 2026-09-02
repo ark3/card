@@ -78,6 +78,8 @@ The dispatching session stays in the main checkout; the briefing's "never on the
   Neither a report nor a green test is the finding: check what is claimed against the change itself and against the code it ran.
   Confirming a claim is review, however far the check reaches, and a claim you cannot confirm is itself a finding.
   Look for work beyond what the card asked, drift from a spec the card named, and tests that pass without having been shown to fail first.
+  A defensive check or a new abstraction the card did not ask for survives review only with a citation into the code that makes it necessary — the caller that can make the guarded branch execute, the helper the abstraction would otherwise duplicate shown absent.
+  The question is never whether the addition is safe, which it always is, but what needs it: a check tells every later reader the case it guards can happen here, and a check nothing can trigger leaves that statement standing false for readers to inherit and defend against in turn.
 
 Where the dispatching session wrote the change itself off a reader's report, there is no diff and no second mind has seen the work, and a session's own reading of its own writing is the weakest review there is.
 Dispatch the adversarial check at what was written, and review that report the same way.
