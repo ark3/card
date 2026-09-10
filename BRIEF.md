@@ -304,7 +304,7 @@ And `br agents` installs its own instructions into the project's `AGENTS.md` —
 ## Sequencing
 
 Three phases: build the verbs, write the payload and the two mode prompts `status` points at, then run a first real ticket chosen for low stakes rather than size.
-`PLAN.md` holds the ordered work and what each stop has to demonstrate; what follows is why the phases have that shape.
+What follows is why the phases have that shape.
 
 The first two are less separable than they look.
 **The payload specifies the verb surface.** Writing the sentence a model has to follow — close a card with `card close`, and it will not let you close without saying how it ended — is what shows whether a verb's shape is right, so the guidance is drafted alongside the verbs rather than wrapped around them afterwards.
@@ -314,6 +314,34 @@ The stops along the way are checkpoints for catching design mistakes cheaply, no
 The trial is safe because the workflow fails soft: it is a private overlay on how the work already gets done.
 A badly authored card means doing the work the ordinary way; abandoning mid-ticket leaves the public record looking exactly as it would have anyway.
 The blast radius is the owner's own time.
+
+## Settled during the build: the runtime, and where the deck lives
+
+Two sets of decisions were settled while building rather than in the design, and they are recorded here because nothing else records them: what the tool runs on, and how it finds its deck.
+
+**No runtime dependencies.** Everything needed is in Bun — `Bun.TOML.parse` for the config, `Bun.spawn` for git, `Bun.stdin` for card bodies — confirmed by hand on 2026-08-21 rather than assumed.
+The tool has to run from a work laptop, a home server and a dispatched agent's worktree with nothing built first, so it is one entry point and a small module per verb, with no build step unless something forces one.
+
+**`bun run check` runs `bun test` and then `tsc --noEmit`, settled 2026-08-24.** Bun strips type annotations rather than checking them, so the annotations are load-bearing in review, and the checker is what makes them true on the lines tests never execute.
+A dev-only checker does not break the no-dependencies rule, because that rule guards runtime simplicity and clone-and-run, and a static checker violates neither: nothing is built or emitted, `bun test` still runs on a fresh clone with no install, and only the typecheck half of `check` needs a one-time `bun install`.
+TypeScript is pinned to an exact version, because an unpinned checker starts failing when TypeScript releases, not when the code changes.
+
+**Living inside `.git/` is what keeps deck resolution short.** The card directory is `CARD_ROOT` when that is set and `<git-common-dir>/card` otherwise; it holds `card-config.toml`, which names the prefix and the deck's path, and the code's own comments carry the rest.
+Verified on 2026-08-21: `git status` and `git clean` never traverse `.git/`, so the deck is invisible with no ignore rule written anywhere, and it survives `git clean -xdf` and even `-xdff`.
+Nothing is added to `.gitignore` and nothing is committed, so the privacy boundary holds for free; the trade is that the deck lives and dies with `.git`, which the costs below record.
+
+**Every worktree resolves to one deck, and every clone to its own.** `git rev-parse --path-format=absolute --git-common-dir` returns the main checkout's `.git` from anywhere, verified 2026-08-21 including from inside `.worktrees/`.
+Two clones of one repository have two `.git` directories and so two decks; that is accepted, because worktrees are what this workflow cuts.
+
+**The prefix is recorded in the config, never derived from the filenames present.** Deriving it was agentpane's workaround for having no way to create a deck, and it guesses wrong the day a deck holds a card copied in from somewhere else.
+
+**The deck path is relative to the card directory.** The default is `deck`; a deck kept in the repository's own tree is `../../docs/work`.
+One rule, and no scheme survives the data moving anyway.
+It is wrong inside a submodule, where the card directory is `<super>/.git/modules/<name>/card` and `../../` lands in `.git/modules` rather than the submodule's root — verified 2026-08-21.
+Only an in-tree redirect inside a submodule is affected; the default is not.
+
+**Agentpane needs no `CARD_ROOT`.** It gets an ordinary `.git/card/` whose config points its deck at the committed `docs/work/`, which keeps the redirect path honest with a real consumer.
+Card's own deck is the default, prefix `card`.
 
 ## Costs accepted with eyes open
 
