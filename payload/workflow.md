@@ -25,12 +25,13 @@ Editing a card that already exists is ordinary, and you do it by hand.
 Ids are cited bare, and a card changes directory when it closes, so never build a path out of an id.
 
 `card list [--open | --ready | --closed] [--label L]...`.
-Bare or with `--open` it prints the open cards, a blocked one marked with the blockers it still waits on; `--ready` narrows that to the open cards whose blockers have all closed; `--closed` prints the closed cards; `--label` narrows any listing to the cards carrying every label given; every listing orders its cards by when each was last updated, most recent first, so the top line is the most recently touched card.
+Bare or with `--open` it prints the open cards, a blocked one marked with the blockers it still waits on; `--ready` narrows that to the open cards whose blockers have all closed; `--closed` prints the closed cards, each line carrying how the card ended; `--label` narrows any listing to the cards carrying every label given; every listing orders its cards by when each was last updated, most recent first, so the top line is the most recently touched card.
 The listing reports a blocker naming a card that exists nowhere, rather than passing it over.
 
 `card close <id> --done|--promoted|--declined|--moot`, close note on stdin.
 The tool moves the card and appends the close note as one act, and refuses to run on empty input.
 Exactly one flag: the flag records what happened, and the prose carries why.
+The tool writes the flag's word into the card's frontmatter as `closed:`, where `card show` prints it on the card's first lines and `card list --closed` shows it on the card's line, so a reader tells a declined card from a moot one without opening the note.
 `--done` says the work is at rest where the card said it would be; the other three all say the work never happened.
 <!--private-->
 `--promoted`: the work went to a public ticket.
