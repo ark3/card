@@ -258,8 +258,10 @@ Deliberately not built yet:
 
 ## How a card ends
 
-A card ends one way: it moves to `closed/` and gains an explanation.
-There are no close shapes and no vocabulary of outcomes, because the distinctions that matter are ones only prose can carry — what was built and how it was verified, what was decided against and why, what turned out to be moot, where the work went if it went somewhere else.
+A card ends one way: it moves to `closed/`, its frontmatter gains a `closed:` field holding one of four words — `done`, `promoted`, `declined`, `moot` — and it gains an explanation, appended under a `## Close note` heading.
+The word is the outcome, and the tool records it; the why is what only prose can carry — what was built and how it was verified, what was decided against and why, where the work went if it went somewhere else.
+The field was a deliberate choice, not a leftover: `close` already demanded the flag so it could warn about dependents, and a closed card that carried nothing of it forced every reader to reconstruct the outcome from the note.
+Recording the word costs nothing and makes a declined card tellable from a moot one at a glance, in the closed listing and on the card's first lines.
 
 **The explanation is written for a specific reader**: the next ticket's authoring session, sweeping `closed/` for prior art before it writes anything.
 That is the whole reason closed cards are kept.
