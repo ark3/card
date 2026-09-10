@@ -45,6 +45,7 @@ On a deck with no such outside system beside it, `--promoted` never applies: wor
 
 On every close the tool names the cards this one was blocking: on `--done` this close is what they were waiting for, and on any of the other three they are about to look ready when they are not.
 On `--done` the tool lists as freed only the cards no other open blocker still holds shut, and names the rest separately as still held shut; where that frees nothing, it says nothing came free.
+The tool also names a worktree still standing for the card it just closed, with the two commands that remove the tree and its branch.
 <!--private-->
 A card can wait only on another card, never on a public ticket, so once a blocker closes `--promoted` its dependents look ready even though the work they were waiting for is still open in the ticket.
 <!--/private-->

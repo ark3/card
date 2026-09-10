@@ -4,6 +4,7 @@ import path from "node:path";
 import { type Deck, resolveDeck } from "../src/deck.ts";
 import { run as close } from "../src/verbs/close.ts";
 import { run as init } from "../src/verbs/init.ts";
+import { run as worktree } from "../src/verbs/worktree.ts";
 import { clearCardRoot, removeTempDirs, tempRepo } from "./helpers.ts";
 
 const CARD = "---\nlabels: [PROJ-1]\n---\n\n# The card being closed\n\nIts body.\n";
@@ -302,6 +303,24 @@ test("a close whose card was blocking nothing says so rather than printing nothi
   await close(["proj-behilo", "--moot"], repo);
 
   expect(logged).toEqual(["closed proj-behilo", "nothing was waiting on it."]);
+});
+
+test("names a worktree still standing for the card, and the commands that remove it", async () => {
+  const { repo, deck } = await deckIn();
+  await open(deck, "proj-behilo", CARD);
+  await worktree(["proj-behilo"], repo);
+  logged = [];
+  onStdin(`${NOTE}\n`);
+
+  await close(["proj-behilo", "--done"], repo);
+
+  const treePath = path.join(repo, ".worktrees", "proj-behilo");
+  expect(logged[0]).toBe("closed proj-behilo");
+  const printed = logged.join("\n");
+  expect(printed).toContain(treePath);
+  expect(printed).toContain("card/proj-behilo");
+  expect(printed).toContain(`git worktree remove ${treePath} && git branch -D card/proj-behilo`);
+  expect(printed).toContain("nothing was waiting on it.");
 });
 
 test("refuses without a flag, with two flags, and with the retired spellings", async () => {

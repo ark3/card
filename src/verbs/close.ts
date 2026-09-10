@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Card } from "../cardfile.ts";
 import { readCard } from "../cardfile.ts";
 import { requireDeck, stagingName } from "../deck.ts";
+import { git } from "../git.ts";
 import { locate } from "./show.ts";
 
 const USAGE = "usage: card close <id> --done|--promoted|--declined|--moot, close note on stdin";
@@ -33,6 +34,24 @@ function recordOutcome(id: string, text: string, outcome: string): string {
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The path of a worktree still registered on the card's branch, or null when
+ * none is. Removing the tree is a duty the payload puts on the dispatching
+ * session and one it skips, so the close is where a leftover gets named;
+ * nothing here removes it.
+ */
+async function standingWorktree(id: string, cwd: string): Promise<string | null> {
+  const listed = await git(["worktree", "list", "--porcelain"], cwd);
+  if (!listed.ok) throw new Error(listed.stderr.trim() || "not in a git repository");
+  for (const record of listed.stdout.split("\n\n")) {
+    const lines = record.split("\n");
+    if (!lines.includes(`branch refs/heads/card/${id}`)) continue;
+    const root = lines.find((line) => line.startsWith("worktree "))?.slice("worktree ".length);
+    if (root !== undefined) return root;
+  }
+  return null;
 }
 
 export async function run(args: string[], cwd: string): Promise<void> {
@@ -88,6 +107,24 @@ export async function run(args: string[], cwd: string): Promise<void> {
   await unlink(found.path);
 
   console.log(`closed ${id}`);
+
+  // Only a tree still standing earns a line: most closes have none, and a line
+  // on every close would train readers to skip past the dependents below.
+  // `-D`, because review rewrites the messages before the commits land, so the
+  // branch's own tips are routinely unmerged.
+  try {
+    const tree = await standingWorktree(id, cwd);
+    if (tree !== null) {
+      console.log(
+        `its worktree still stands at ${tree} on branch card/${id}; remove both with: git worktree remove ${tree} && git branch -D card/${id}`,
+      );
+    }
+  } catch (error) {
+    // The close has already happened, so a check that cannot run (no git, or
+    // a deck outside any repository) leaves the tree unnamed rather than
+    // failing the command; this line is what says so.
+    console.error(`card: skipped the worktree check: ${message(error)}`);
+  }
 
   const blocked: string[] = [];
   const heldShut: string[] = [];
