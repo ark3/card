@@ -80,3 +80,14 @@ The committed artifacts of this effort must respect the one-directional rule
 the same as any commit: whether the inventory may cite card ids when it lands
 in `reference/` is itself a checkpoint decision, and until then the working
 inventory stays uncommitted.
+
+Decided by the owner 2026-09-10, revisiting that checkpoint: the inventory
+stays committed with its card ids in place, as the one deliberate exception
+to the rule. It is the record of how the current payload came to be, every
+entry is grounded by the card that put the rule there, and stripping the ids
+would leave the entries standing on nothing. The exception costs nothing the
+rule protects: the deck it cites is this tool's own, in the repository that
+defines the rule, and no colleague's tracker sits behind these ids. Nothing
+else in this repository cites an id, `card lint-commit` still holds the line
+on commit messages, and this paragraph is where the question was settled so
+it is not reopened.
