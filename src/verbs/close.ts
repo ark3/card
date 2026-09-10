@@ -8,6 +8,29 @@ import { locate } from "./show.ts";
 const USAGE = "usage: card close <id> --done|--promoted|--declined|--moot, close note on stdin";
 const FLAGS = ["--done", "--promoted", "--declined", "--moot"];
 
+/**
+ * The card's own text with `closed: <outcome>` inserted into its frontmatter,
+ * opening a frontmatter block if the card has none. Textual rather than
+ * `formatCard`, for the reason the write below gives, and it refuses a card
+ * whose frontmatter already says closed: the directory says open, and the two
+ * must never disagree.
+ */
+function recordOutcome(id: string, text: string, outcome: string): string {
+  if (!text.startsWith("---\n")) return `---\nclosed: ${outcome}\n---\n\n${text}`;
+  const end = text.indexOf("\n---\n", 3);
+  if (end === -1) throw new Error(`${id}: frontmatter is never closed`);
+  const head = text.slice(0, end + 1);
+  for (const line of head.slice(4).split("\n")) {
+    const colon = line.indexOf(":");
+    if (colon !== -1 && line.slice(0, colon).trim() === "closed") {
+      throw new Error(
+        `${id} is in open/ but its frontmatter already says closed; fix the card by hand before closing it`,
+      );
+    }
+  }
+  return `${head}closed: ${outcome}\n${text.slice(end + 1)}`;
+}
+
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -35,6 +58,7 @@ export async function run(args: string[], cwd: string): Promise<void> {
     );
   }
   const workDone = outcome === "--done";
+  const word = outcome.slice(2);
 
   const deck = await requireDeck(cwd);
   const found = await locate(deck, id);
@@ -51,8 +75,11 @@ export async function run(args: string[], cwd: string): Promise<void> {
   // Appended to the card's own text rather than reformatted through
   // `formatCard`, which would rewrite frontmatter the owner hand-wrote.
   const text = await Bun.file(found.path).text();
+  const recorded = recordOutcome(id, text.replace(/\n*$/, "\n"), word);
   const staging = path.join(deck.closedDir, stagingName(id));
-  await writeFile(staging, `${text.replace(/\n*$/, "\n")}\n${explanation}\n`);
+  // The heading is what says where the card's own prose ends and the note
+  // begins; nothing else marks the seam.
+  await writeFile(staging, `${recorded}\n## Close note\n\n${explanation}\n`);
   // The card arrives in `closed/` explanation and all, in one rename. Until
   // the unlink runs the open copy is still the card exactly as it was, so no
   // interruption leaves a closed card without its explanation or an

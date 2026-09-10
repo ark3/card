@@ -176,6 +176,34 @@ test("--closed lists the closed cards, and answers whether a ticket is finished"
   expect((await run(["--label", "T-14"], repo)).out).toEqual(["proj-cccccc  still going  [T-14]"]);
 });
 
+test("--closed shows how each card ended, and old cards that recorded nothing show nothing", async () => {
+  const { repo, deck } = await fixture();
+  await put(deck, "closed", "proj-aaaaaa", { headline: "shipped", labels: ["T-14"], closed: "done" });
+  await put(deck, "closed", "proj-bbbbbb", { headline: "ruled dead", closed: "moot" });
+  await put(deck, "closed", "proj-cccccc", { headline: "closed before the field existed" });
+  await touch(deck, "closed", "proj-aaaaaa", 3000);
+  await touch(deck, "closed", "proj-bbbbbb", 2000);
+  await touch(deck, "closed", "proj-cccccc", 1000);
+
+  expect((await run(["--closed"], repo)).out).toEqual([
+    "proj-aaaaaa  shipped  [T-14]  (done)",
+    "proj-bbbbbb  ruled dead  (moot)",
+    "proj-cccccc  closed before the field existed",
+  ]);
+});
+
+test("an open card whose frontmatter says closed is reported, not passed over", async () => {
+  const { repo, deck } = await fixture();
+  await put(deck, "open", "proj-aaaaaa", { headline: "open here, closed in its frontmatter", closed: "declined" });
+
+  const { out, err } = await run([], repo);
+
+  expect(out).toEqual(["proj-aaaaaa  open here, closed in its frontmatter"]);
+  expect(err).toEqual([
+    "card: proj-aaaaaa is in open/ but its frontmatter says closed: declined",
+  ]);
+});
+
 test("a blocker still open is not a ghost, and a closed one stops blocking", async () => {
   const { repo, deck } = await fixture();
   await put(deck, "closed", "proj-aaaaaa", { headline: "the blocker" });

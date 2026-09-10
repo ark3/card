@@ -7,12 +7,16 @@ import { writeFile } from "node:fs/promises";
 export type Card = {
   labels: string[];
   blockedBy: string[];
+  /** How the card ended, on a card `close` has already moved to `closed/`. */
+  closed?: string;
   headline: string;
   /** Everything after the headline, verbatim, without its leading blank line. */
   body: string;
 };
 
 const FLOW_SEQUENCE = /^\[(.*)\]$/;
+/** The outcomes `card close` takes, and the only values `closed` can hold. */
+const OUTCOMES = ["done", "promoted", "declined", "moot"];
 // A value that would need quoting to survive the flow-sequence grammar, or a
 // line break that would break `^labels:` as a grep.
 const UNWRITABLE = /[,[\]\n]/;
@@ -37,10 +41,19 @@ function formatList(field: string, values: string[]): string {
   return `${field}: [${values.join(", ")}]`;
 }
 
+function parseOutcome(raw: string): string {
+  const outcome = raw.trim();
+  if (!OUTCOMES.includes(outcome)) {
+    throw new Error(`closed: \`${outcome}\` is not one of ${OUTCOMES.join(", ")}`);
+  }
+  return outcome;
+}
+
 export function parseCard(text: string): Card {
   let rest = text;
   let labels: string[] = [];
   let blockedBy: string[] = [];
+  let closed: string | undefined;
 
   if (rest.startsWith("---\n")) {
     const end = rest.indexOf("\n---\n", 3);
@@ -53,6 +66,7 @@ export function parseCard(text: string): Card {
       const value = line.slice(colon + 1);
       if (field === "labels") labels = parseList(field, value);
       else if (field === "blocked-by") blockedBy = parseList(field, value);
+      else if (field === "closed") closed = parseOutcome(value);
       else throw new Error(`unknown frontmatter field \`${field}\``);
     }
     rest = rest.slice(end + 5);
@@ -66,6 +80,7 @@ export function parseCard(text: string): Card {
   return {
     labels,
     blockedBy,
+    ...(closed === undefined ? {} : { closed }),
     headline: first.slice(2).trim(),
     body: breakAt === -1 ? "" : rest.slice(breakAt + 1).replace(/^\n+/, ""),
   };
@@ -75,6 +90,7 @@ export function formatCard(card: Card): string {
   const fields = [];
   if (card.labels.length > 0) fields.push(formatList("labels", card.labels));
   if (card.blockedBy.length > 0) fields.push(formatList("blocked-by", card.blockedBy));
+  if (card.closed !== undefined) fields.push(`closed: ${card.closed}`);
 
   const frontmatter = fields.length === 0 ? "" : `---\n${fields.join("\n")}\n---\n\n`;
   const body = card.body.trim() === "" ? "" : `\n${card.body.replace(/\n*$/, "\n")}`;

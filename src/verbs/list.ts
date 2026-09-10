@@ -69,6 +69,12 @@ export async function run(args: string[], cwd: string): Promise<void> {
     }
     if (!labels.every((label) => card.labels.includes(label))) continue;
 
+    // An open card whose frontmatter says closed is as wrong as a dangling
+    // blocker, and passing over it in silence is the same failure.
+    if (!wantsClosed && card.closed !== undefined) {
+      console.error(`card: ${id} is in open/ but its frontmatter says closed: ${card.closed}`);
+    }
+
     const waiting = wantsClosed ? [] : card.blockedBy.filter((blocker) => !closed.has(blocker));
     for (const blocker of waiting) {
       if (!open.has(blocker)) {
@@ -86,7 +92,11 @@ export async function run(args: string[], cwd: string): Promise<void> {
     for (const { id, card, waiting } of listed) {
       const shown = card.labels.length > 0 ? `  [${card.labels.join(", ")}]` : "";
       const stuck = waiting.length > 0 ? `  (blocked by ${waiting.join(", ")})` : "";
-      console.log(`${id}  ${card.headline}${shown}${stuck}`);
+      // How a closed card ended, so the closed pile can be scanned by outcome
+      // without opening a card. Cards closed before `close` recorded it have
+      // nothing to show, and show nothing.
+      const ended = wantsClosed && card.closed !== undefined ? `  (${card.closed})` : "";
+      console.log(`${id}  ${card.headline}${shown}${ended}${stuck}`);
     }
     return;
   }

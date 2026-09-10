@@ -41,7 +41,13 @@ test("both fields may be absent", () => {
 });
 
 test("round-tripping does not reformat", () => {
-  for (const text of [FULL, BARE, "# Headline only.\n", "---\nlabels: [a]\n---\n\n# Labels only.\n"]) {
+  for (const text of [
+    FULL,
+    BARE,
+    "# Headline only.\n",
+    "---\nlabels: [a]\n---\n\n# Labels only.\n",
+    "---\nlabels: [a]\nclosed: declined\n---\n\n# Closed and labelled.\n",
+  ]) {
     expect(formatCard(parseCard(text))).toBe(text);
   }
 });
@@ -49,6 +55,18 @@ test("round-tripping does not reformat", () => {
 test("writes fields on one line each, as flow sequences", () => {
   expect(formatCard({ labels: ["a", "b"], blockedBy: ["c"], headline: "H.", body: "" })).toBe(
     "---\nlabels: [a, b]\nblocked-by: [c]\n---\n\n# H.\n",
+  );
+});
+
+test("reads how a closed card ended, and leaves an open one saying nothing", () => {
+  expect(parseCard("---\nclosed: moot\n---\n\n# H.\n").closed).toBe("moot");
+  expect(parseCard(FULL).closed).toBeUndefined();
+  expect(parseCard(BARE).closed).toBeUndefined();
+});
+
+test("rejects an outcome that is not one of the four", () => {
+  expect(() => parseCard("---\nclosed: finished\n---\n\n# H.\n")).toThrow(
+    /`finished` is not one of done, promoted, declined, moot/,
   );
 });
 

@@ -8,6 +8,10 @@ import { clearCardRoot, removeTempDirs, tempRepo } from "./helpers.ts";
 
 const CARD = "---\nlabels: [PROJ-1]\n---\n\n# The card being closed\n\nIts body.\n";
 const NOTE = "Landed as PROJ-1. Verified by the suite in test/close.test.ts.";
+/** `CARD` as `close` leaves it: the outcome in its frontmatter, the note under its heading. */
+function closedFile(outcome: string, note = NOTE): string {
+  return `---\nlabels: [PROJ-1]\nclosed: ${outcome}\n---\n\n# The card being closed\n\nIts body.\n\n## Close note\n\n${note}\n`;
+}
 
 const realStdin = Bun.stdin;
 let logged: string[] = [];
@@ -56,7 +60,7 @@ test("moves the card and appends the explanation, in one act", async () => {
   await close(["proj-behilo", "--done"], repo);
 
   expect(await Bun.file(path.join(deck.openDir, "proj-behilo.md")).exists()).toBe(false);
-  expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(`${CARD}\n${NOTE}\n`);
+  expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(closedFile("done"));
   expect(logged).toEqual(["closed proj-behilo", "nothing was waiting on it."]);
 });
 
@@ -68,7 +72,45 @@ test("appends without reformatting a card the owner hand-wrote", async () => {
 
   await close(["proj-behilo", "--done"], repo);
 
-  expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(`${byHand}\n${NOTE}\n`);
+  expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(
+    `---\nlabels: [a,b]\nclosed: done\n---\n# Squeezed together\nProse.\n\n## Close note\n\n${NOTE}\n`,
+  );
+});
+
+test("records the outcome each flag names", async () => {
+  for (const flag of ["--done", "--promoted", "--declined", "--moot"]) {
+    const { repo, deck } = await deckIn();
+    await open(deck, "proj-behilo", CARD);
+    onStdin(`${NOTE}\n`);
+
+    await close(["proj-behilo", flag], repo);
+
+    expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(closedFile(flag.slice(2)));
+  }
+});
+
+test("a card with no frontmatter gains one that records the outcome", async () => {
+  const { repo, deck } = await deckIn();
+  await open(deck, "proj-behilo", "# No frontmatter at all\n\nProse.\n");
+  onStdin(`${NOTE}\n`);
+
+  await close(["proj-behilo", "--moot"], repo);
+
+  expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(
+    `---\nclosed: moot\n---\n\n# No frontmatter at all\n\nProse.\n\n## Close note\n\n${NOTE}\n`,
+  );
+});
+
+test("refuses a card whose frontmatter already says closed", async () => {
+  const { repo, deck } = await deckIn();
+  const already = "---\nclosed: moot\n---\n\n# Open here, closed in its frontmatter\n\nBody.\n";
+  const file = await open(deck, "proj-behilo", already);
+  onStdin(`${NOTE}\n`);
+
+  await expect(close(["proj-behilo", "--done"], repo)).rejects.toThrow(/already says closed/);
+
+  expect(await Bun.file(file).text()).toBe(already);
+  expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).exists()).toBe(false);
 });
 
 test("nothing on stdin refuses and leaves the card untouched in open/", async () => {
@@ -118,7 +160,7 @@ test("an interruption after the move leaves the closed card whole, explanation a
 
   // Neither half-state: the closed copy has its explanation, and the copy
   // still in open/ is the card exactly as it was.
-  expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(`${CARD}\n${NOTE}\n`);
+  expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(closedFile("done"));
   expect(await Bun.file(file).text()).toBe(CARD);
 });
 
