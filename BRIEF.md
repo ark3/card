@@ -183,14 +183,14 @@ With labels present it is a mandatory label drawn from a closed set, and that se
 Anything worth classifying can be a label chosen when there is a reason to choose one.
 
 **`where:` is dropped for the same reason.** It named the code a card concerns, which the body says in more detail and at greater length.
-What is left is frontmatter of exactly two list-valued fields, `blocked-by:` and `labels:`, both present because something computes over them.
+What is left is frontmatter of exactly three fields — two list-valued ones the author writes, `blocked-by:` and `labels:`, and one scalar the tool writes at close, `closed:` — every one present because something computes over it.
 Every other fact about a card is prose.
 
 **The ticket a card belongs to is a label too.** That is what lets two tickets share a deck, which happens whenever one is halted for the other — the common case at work, where hitting a load-bearing bug means filing a ticket for it and stopping the first until it lands.
 Filtering on the ticket key gives back the single-ticket view, hides the halted ticket's cards for the duration, and is the reason no stash or second deck is needed.
 
 Two properties hold across all of it, and they are why the changes take this shape.
-**No card is rewritten because another card changed.** Authors sharpen cards deliberately; the tool never does it on their behalf, and a blocker closing alters nothing in the cards that were waiting — status is the directory, and a close is an append.
+**No card is rewritten because another card changed.** Authors sharpen cards deliberately; the tool never does it on their behalf, and a blocker closing alters nothing in the cards that were waiting — status is the directory, and a close writes only to the card that closes.
 **So every relation is computed at read time**, never maintained as an index.
 That is not a performance choice; it is what keeps the corpus something a person can edit with an editor and a grep.
 
