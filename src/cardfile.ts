@@ -2,7 +2,8 @@ import { writeFile } from "node:fs/promises";
 
 /**
  * A card, as `PLAN.md` "What a card is" defines it: two optional list-valued
- * frontmatter fields, one `# ` headline, and prose.
+ * frontmatter fields, one `# ` headline, and prose — and `closed`, the one
+ * field `card close` writes rather than the owner.
  */
 export type Card = {
   labels: string[];
