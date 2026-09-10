@@ -7,20 +7,36 @@
 const OPEN = /^<!--(private|public)-->$/;
 const CLOSE = /^<!--\/(?:private|public)-->$/;
 
+// An unpaired marker is silent where it hurts most: a lost closer drops every
+// later line from one rendering while the other stays whole, so the file reads
+// as it should to whoever edited it and a section goes missing from a session
+// nobody is running yet. So the renderer refuses a file whose markers do not
+// pair, and names the marker and its line for whoever has to find it.
 export function renderPayload(text: string, isPublic: boolean): string {
   const kept: string[] = [];
   let dropping = false;
-  for (const line of text.split("\n")) {
+  let openMarker: { text: string; line: number } | null = null;
+  for (const [index, line] of text.split("\n").entries()) {
+    const number = index + 1;
     const open = OPEN.exec(line);
     if (open !== null) {
+      if (openMarker !== null) {
+        throw new Error(`payload: ${line} on line ${number} opens inside the block opened on line ${openMarker.line}`);
+      }
+      openMarker = { text: line, line: number };
       dropping = (open[1] === "public") !== isPublic;
       continue;
     }
     if (CLOSE.test(line)) {
+      if (openMarker === null) throw new Error(`payload: ${line} on line ${number} closes nothing`);
+      openMarker = null;
       dropping = false;
       continue;
     }
     if (!dropping) kept.push(line);
+  }
+  if (openMarker !== null) {
+    throw new Error(`payload: ${openMarker.text} opened on line ${openMarker.line} is never closed`);
   }
   return kept.join("\n");
 }
