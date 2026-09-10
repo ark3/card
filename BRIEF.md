@@ -203,9 +203,9 @@ Build now:
   Read-only, cheap, run at the start of every session.
   A sandbox probe that fails, or that cannot reach a verdict, is where the session stops: warn the owner and print nothing else, rather than working unsandboxed or leaving guidance underneath a warning for a model to read past.
   Evidence: with nothing installable in a corporate repo, guidance has to be delivered rather than stored, and there is no other delivery.
-- **`init`** — establish that a deck exists for this project, under a chosen prefix: the two directories and a marker file carrying the prefix.
+- **`init`** — establish that a deck exists for this project, under a chosen prefix: the two directories, and beside the deck a config file carrying the prefix and the deck's path.
   That is the whole of it, and what changes afterwards is what `status` reports.
-  The marker is what tells a deck from a directory that happens to sit where a deck would, and it lives in the deck rather than in user config so that a deck handed to an agent as a bare path can still name a new card.
+  The config is what tells a deck from a directory that happens to sit where a deck would, and it lives in the card directory rather than in user config, so that resolution needs nothing outside the repository's own `.git`, and beside the deck rather than in it, so that a deck redirected into the repository's committed tree does not carry its config along as a tracked file.
   Evidence: a prefix cannot be derived from the filenames in the one deck that has none, which is a new one; and `status` reporting that a project has no deck is only useful if something answers it.
 - **`new`** — draw an id, check `open/` and `closed/`, and write the card from a headline given as an argument and a body supplied on stdin, exclusively, in one call.
   The headline is a separate input because it is the one line every survey shows and the format permits exactly one of them: taking it as an argument makes "one `# ` line, never wrapped" structural instead of something the writer has to remember.
