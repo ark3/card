@@ -8,6 +8,8 @@
 #
 #   done          close the card --done, the way a finished session would
 #   dirty <path>  write to that path, the way a session leaves work behind
+#   say <text>    echo that text, the way a session says what it found
+#   file <text>   file a card with that body, the way a session files a finding
 #
 # A card with no control file is left open, which is a session handing back.
 set -eu
@@ -37,5 +39,7 @@ while read -r verb rest; do
   case "$verb" in
     done) echo "stub close note" | "$cli" close "$id" --done ;;
     dirty) echo "stub dirt for $id" > "$rest" ;;
+    say) echo "$rest" ;;
+    file) printf '%s\n' "$rest" | "$cli" new "a card filed during the run" > /dev/null ;;
   esac
 done < "$control/$id"

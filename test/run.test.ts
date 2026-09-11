@@ -230,3 +230,38 @@ test("a deck with no [run] section has no command to launch", async () => {
   const { error } = await capture(() => cardRun(["proj-alpha"], repo));
   expect(error?.message).toContain("no [run] launch");
 });
+
+test("a hand-back that names a card still ahead stops the run after that card closes done", async () => {
+  const here = await bed();
+  for (const id of ["proj-alpha", "proj-beta"]) await card(here, id);
+  await tell(here, "proj-alpha", "say what I did here changes proj-beta", "done");
+  await tell(here, "proj-beta", "done");
+
+  const { out, error } = await capture(() => cardRun(["proj-alpha", "proj-beta"], here.repo));
+
+  expect(error?.message).toContain("the hand-back of proj-alpha names proj-beta");
+  const { dir, text } = await reportOf(out);
+  const lead = text.split("## proj-alpha")[0]!;
+  expect(lead).toContain("Stopped at proj-alpha");
+  expect(lead).toContain("names proj-beta, which is still ahead in this run");
+  expect(text).toContain("state: done");
+  // The card still ahead was never started.
+  expect(existsSync(path.join(dir, "proj-beta.log"))).toBe(false);
+});
+
+test("a card filed during the run that names a card still ahead stops the run the same way", async () => {
+  const here = await bed();
+  for (const id of ["proj-alpha", "proj-beta"]) await card(here, id);
+  await tell(here, "proj-alpha", "done", "file What surfaced here changes what proj-beta has to do.");
+  await tell(here, "proj-beta", "done");
+
+  const { out, error } = await capture(() => cardRun(["proj-alpha", "proj-beta"], here.repo));
+
+  expect(error?.message).toContain("filed during this run names proj-beta");
+  const { dir, text } = await reportOf(out);
+  const lead = text.split("## proj-alpha")[0]!;
+  expect(lead).toContain("Stopped at proj-alpha");
+  expect(lead).toContain("names proj-beta, which is still ahead in this run");
+  expect(text).toContain("state: done");
+  expect(existsSync(path.join(dir, "proj-beta.log"))).toBe(false);
+});
