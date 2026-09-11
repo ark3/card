@@ -13,7 +13,7 @@ type Checkout = { root: string; branch: string; sha: string };
  * *current* worktree when a tree is cut from inside another one, which stacks
  * temporary branches on each other.
  */
-async function mainCheckout(cwd: string): Promise<Checkout> {
+export async function mainCheckout(cwd: string): Promise<Checkout> {
   const listed = await git(["worktree", "list", "--porcelain"], cwd);
   if (!listed.ok) throw new Error(listed.stderr.trim() || "not in a git repository");
 

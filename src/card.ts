@@ -7,6 +7,7 @@ import * as init from "./verbs/init.ts";
 import * as lintCommit from "./verbs/lint-commit.ts";
 import * as list from "./verbs/list.ts";
 import * as neu from "./verbs/new.ts";
+import * as runVerb from "./verbs/run.ts";
 import * as show from "./verbs/show.ts";
 import * as status from "./verbs/status.ts";
 import * as workflow from "./verbs/workflow.ts";
@@ -26,6 +27,7 @@ const VERBS: Record<string, Verb> = {
   worktree: worktree.run,
   author: author.run,
   execute: execute.run,
+  run: runVerb.run,
   workflow: workflow.run,
 };
 

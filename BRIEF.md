@@ -231,6 +231,13 @@ Build now:
   Evidence: agentpane's execute skill carries all of this as remembered prompt procedure today.
   Its fast-forward, which existed because worktree baselines were observed stale, is not carried: a tree cut from the current branch's tip cannot be stale.
   The sandbox probe this verb was first sketched with belongs to `status` instead: it is a fact about the session, not about a tree just cut.
+- **`run <id>...`** — work a series of cards, one fresh headless session each, in the order given and in the main checkout, stopping at the first card that does not close `done`.
+  One at a time and never in a worktree, because every session commits on the base branch there and two at once would collide.
+  Around each card it refuses a checkout that is dirty or a `.worktrees/` that holds a tree, commits the dirt a close leaves behind where the deck is one git manages and the config carries a message for it, and stops when the hand-back or a card filed during the run names an id still ahead, which would otherwise start cold against work that just changed it.
+  It chooses each session's id, so the card that ends open — a session handing back for the owner's input — is one `claude --resume` away, and the report repeats that command.
+  The report is scratch, under the system temp directory: it assembles the session logs rather than summarizing them, since what the run carries durably is already in the close notes and the commits.
+  The launch command, the model each label routes to, and the commit message for a close's own dirt are per-clone config beside the deck, because the sandbox wrapper exists on one machine, the models are a cost choice per deck, and citing an id in a commit is legal only on a deck declared public.
+  Evidence: the owner runs this loop by hand today, starting a session per card and judging each hand-back, and an untracked script ran it on the home server for a day, which is what settled the shape.
 
 Deliberately not built yet:
 
@@ -358,5 +365,8 @@ Card's own deck is the default, prefix `card`.
 - **One-tree atomicity is gone.**
   In agentpane, retiring every copy of an overturned fact is one grep over one tree.
   Split across repo and corpus, the sweep is two runs — tree, then `card cmd -- rg` — and nothing reminds you of the second.
+- **`run` knows one harness's print-mode flags.**
+  `-p`, `--model`, `--session-id` and `--name` are Claude Code's, and nothing else in the tool knows any of them.
+  The coupling is accepted because the owner runs this verb and no session ever will, which is the trade `status` already makes by naming the `sbox` binary rather than describing the sandbox it builds.
 - **Closed cards go stale like all documentation.**
   They are dated evidence, not living docs, and are read the way git history is read.
