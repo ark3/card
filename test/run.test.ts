@@ -221,12 +221,38 @@ test("a close-commit template on a deck that is not public refuses at config tim
   expect(error?.message).toContain("close_commit on a deck that is not public");
 });
 
-test("a deck with no [run] section has no command to launch", async () => {
+/** A deck with no [run] section at all, which `bed` cannot build: it always writes one. */
+async function unlaunchable(isPublic: boolean): Promise<string> {
   const repo = await tempRepo();
   const cardDir = path.join(repo, ".git", "card");
   mkdirSync(path.join(cardDir, "deck", "open"), { recursive: true });
-  await Bun.write(path.join(cardDir, "card-config.toml"), 'prefix = "proj"\n');
+  const lines = ['prefix = "proj"'];
+  if (isPublic) lines.push("public = true");
+  await Bun.write(path.join(cardDir, "card-config.toml"), `${lines.join("\n")}\n`);
+  return repo;
+}
+
+test("a deck with no [run] section has no command to launch, and the refusal shows the section to write", async () => {
+  const repo = await unlaunchable(false);
 
   const { error } = await capture(() => cardRun(["proj-alpha"], repo));
-  expect(error?.message).toContain("no [run] launch");
+
+  const message = error?.message ?? "";
+  expect(message).toContain(path.join(repo, ".git", "card", "card-config.toml"));
+  expect(message).toContain("no [run] launch");
+  expect(message).toContain("[run]");
+  expect(message).toContain("launch = ");
+  expect(message).toContain("models = ");
+  expect(message).not.toContain("close_commit");
+});
+
+test("the example the refusal shows a public deck carries a close-commit template", async () => {
+  const repo = await unlaunchable(true);
+
+  const { error } = await capture(() => cardRun(["proj-alpha"], repo));
+
+  const message = error?.message ?? "";
+  expect(message).toContain("launch = ");
+  expect(message).toContain("models = ");
+  expect(message).toContain("close_commit = ");
 });

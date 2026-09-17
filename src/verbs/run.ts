@@ -21,6 +21,23 @@ type Section = {
   output: string;
 };
 
+/**
+ * The [run] section to append, with real values rather than placeholders so it
+ * can be pasted and then edited. A close-commit template is refused on a deck
+ * that is not public, so a private deck is shown the section without it.
+ */
+function runExample(isPublic: boolean): string {
+  const lines = [
+    "Append one and edit it to this clone's own choices: which command launches a session, which model each label routes to, and what message commits a close.",
+    "",
+    "[run]",
+    'launch = ["sbox", "claude"]',
+    'models = { "" = "claude-opus-5" }',
+  ];
+  if (isPublic) lines.push('close_commit = "chore: close {id}"');
+  return lines.join("\n");
+}
+
 async function stateOf(deck: Deck, id: string): Promise<State> {
   const found = await locate(deck, id);
   if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
@@ -159,7 +176,8 @@ export async function run(args: string[], cwd: string): Promise<void> {
   const config = deck.run;
   if (config === undefined) {
     throw new Error(
-      `${path.join(deck.cardDir, CONFIG_NAME)} carries no [run] launch, so there is no command to start a session with`,
+      `${path.join(deck.cardDir, CONFIG_NAME)} carries no [run] launch, so there is no command to start a session with` +
+        `\n\n${runExample(deck.public)}`,
     );
   }
   // Every session commits on the base branch of the main checkout, so the run
