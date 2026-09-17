@@ -13,6 +13,10 @@ The deck is this project's public, agent-facing tracker; there is no other recor
 The practice it carries is decomposition: a ticket breaks down into the smallest units that can each be implemented on their own, and each unit is one card.
 A card is prose written for a cold agent, and the deck mandates no card sections: a card carries whatever its own work needs, in whatever shape holds that.
 A card is also its own only copy: cite its id and let `card show` reach it, because a retelling in the conversation is a second copy, and it drifts from the first.
+Ids are not mnemonic: the owner keeps them straight by the headline beside them, and copies them out of a message into the next command, where any markup around one is a character the paste carries along.
+So the first time a message names a card, cite it as the listing prints it, id then headline, in plain text — never in backticks, bold or a link — and later mentions in the same message may use the id alone.
+The command examples in these chapters put `<id>` in backticks because there the id sits inside a command; an id cited in prose is not code, and this rule, not the examples, governs it.
+The headline is the tool's own line, so citing it copies nothing that drifts, where a retelling of the body does, and that is what `card show` is for.
 
 ## The verbs
 

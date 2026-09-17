@@ -2,7 +2,8 @@
 
 The owner hands you a set of cards, sometimes one.
 Work them in order: close each card you can, stop at the first you cannot, then hand back what came of them.
-Never pick the next card yourself — which work comes next is the owner's call, and working through a set the owner picked is not picking for yourself.
+Never start a card the owner did not hand you: the bar is on doing the work, not on holding a view of it.
+Which work comes next is the owner's call, and a recommendation in the hand-back is how you inform that call; working through a set the owner picked is not picking for yourself.
 
 ## Picking the set
 
@@ -131,6 +132,11 @@ On the other three they are about to look ready when they are not: they belong i
   Say what changed and how to see it: what to run, what to look at, what would count as working.
   Say it for each card as that card closes, so the owner can try the early ones while you work the rest.
   Stop after the last card in the set, and at the first card you cannot close.
+  End with a recommendation, never a disclaimer: name the card you would pick next and why — most often a card the close freed, a card you filed during the set that fixes a defect in what you just landed, or a ready card whose cost the set changed — and where nothing on the deck follows from this set, say that.
+  The owner already knows the pick is theirs, so a hand-back that only says so has said nothing.
+  Cite each card the hand-back names as the listing prints it, id then headline, in plain text, the first time it appears; the id alone serves after that.
+  Where the recommendation names more than one card, end with one line holding only the ids, space-separated, in the order you would run them, because that line pastes straight into the owner's `card run`.
+  That line belongs to the recommendation only, never to every hand-back that cites two ids: a line mixing a card you filed with a dependent still blocked is one the owner has to prune before pasting, and sparing the owner that pruning is what the line is for.
 
 ## Filing one
 
