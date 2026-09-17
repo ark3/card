@@ -68,6 +68,8 @@ Name a public ticket key if the card has one — that still resolves in a year, 
 `card worktree <id>` cuts an isolated tree for a dispatched agent at `.worktrees/<id>`, on a temporary branch cut from the branch the main checkout is on, and prints the tree's path, then its branch with the base branch and sha it was cut from.
 `card execute` says when to use it.
 
+`card run <id>...` is the owner's verb, starting a fresh execute session for each card in a series and stopping at the first that does not close `--done`; no session runs it, because which card comes next is the owner's call, and a session running the series would be picking the next card for itself.
+
 `card cmd -- <command>` runs a command with the deck as the working directory.
 The cards are plain markdown; grep them.
 
