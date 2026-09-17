@@ -9,8 +9,8 @@ import { mainCheckout } from "./worktree.ts";
 
 const USAGE = "usage: card run <id>...";
 
-/** A card as the run reads it: how it ended, and what routes and warns. */
-type State = { state: string; labels: string[]; body: string };
+/** A card as the run reads it: how it ended, and what routes. */
+type State = { state: string; labels: string[] };
 
 /** One card's line in the report, whether a session ran for it or not. */
 type Section = {
@@ -25,7 +25,7 @@ async function stateOf(deck: Deck, id: string): Promise<State> {
   const found = await locate(deck, id);
   if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
   const card = await readCard(found.path);
-  return { state: card.closed ?? "open", labels: card.labels, body: card.body };
+  return { state: card.closed ?? "open", labels: card.labels };
 }
 
 async function openIds(deck: Deck): Promise<Set<string>> {
@@ -127,19 +127,6 @@ function resumeCommand(sessionId: string): string {
   return `claude --resume ${sessionId}`;
 }
 
-/**
- * Why what has just surfaced makes a card still ahead unsafe to start cold, or
- * null when nothing does.
- */
-function namesAhead(texts: { where: string; text: string }[], ahead: string[]): string | null {
-  for (const { where, text } of texts) {
-    for (const id of ahead) {
-      if (text.includes(id)) return `${where} names ${id}, which is still ahead in this run`;
-    }
-  }
-  return null;
-}
-
 function report(stamp: string, lead: string, sections: Section[], filed: string[]): string {
   const parts = [`# card run ${stamp}`, "", lead, ""];
   for (const section of sections) {
@@ -187,8 +174,7 @@ export async function run(args: string[], cwd: string): Promise<void> {
   const sections: Section[] = [];
   let stopped: { id: string; reason: string; sessionId: string | null } | null = null;
 
-  for (const [index, id] of ids.entries()) {
-    const ahead = ids.slice(index + 1);
+  for (const id of ids) {
     const start = await stateOf(deck, id);
     // The owner re-runs the same command after resolving a card by hand, and
     // the resolved card must not run again.
@@ -224,19 +210,6 @@ export async function run(args: string[], cwd: string): Promise<void> {
     const unsettled = await settle(root, deck, config, id);
     if (unsettled !== null) {
       stopped = { id, reason: unsettled, sessionId };
-      break;
-    }
-
-    const filed = [...(await openIds(deck))].filter((open) => !before.has(open)).sort();
-    const texts = [{ where: `the hand-back of ${id}`, text: output }];
-    for (const open of filed) {
-      texts.push({ where: `${open}, filed during this run`, text: (await stateOf(deck, open)).body });
-    }
-    // A later card the surfacing work changed would start cold, so the owner
-    // reads it before it runs.
-    const warning = namesAhead(texts, ahead);
-    if (warning !== null) {
-      stopped = { id, reason: warning, sessionId };
       break;
     }
   }
