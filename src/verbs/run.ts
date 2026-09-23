@@ -163,9 +163,17 @@ function report(stamp: string, lead: string, sections: Section[], filed: string[
   return `${parts.join("\n").replace(/\n*$/, "")}\n`;
 }
 
+/** The local wall-clock time to the second, its date and time joined by `sep`. */
+function localTime(sep: string): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return `${date}${sep}${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
 /** A stage line, so a run reports progress before it ends. */
 function stage(line: string): void {
-  console.error(`[${new Date().toISOString()}] ${line}`);
+  console.error(`[${localTime(" ")}] ${line}`);
 }
 
 export async function run(args: string[], cwd: string): Promise<void> {
@@ -184,7 +192,7 @@ export async function run(args: string[], cwd: string): Promise<void> {
   // works there, one card at a time: two at once would collide.
   const { root } = await mainCheckout(cwd);
 
-  const stamp = new Date().toISOString().replace(/\..*$/, "").replaceAll(":", "-");
+  const stamp = localTime("T").replaceAll(":", "-");
   const runDir = path.join(tmpdir(), "card-run", stamp);
   await mkdir(runDir, { recursive: true });
 

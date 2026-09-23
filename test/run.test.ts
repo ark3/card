@@ -131,6 +131,35 @@ test("a series the sessions all close done finishes, in order, each section resu
   expect(resumed).toEqual(launched);
 });
 
+test("stage lines and the run directory carry local time, not UTC", async () => {
+  const here = await bed();
+  await card(here, "proj-alpha");
+  await tell(here, "proj-alpha", "done");
+
+  // A zone far from UTC, so a UTC stamp cannot pass by coincidence.
+  const zone = process.env.TZ;
+  process.env.TZ = "Pacific/Kiritimati";
+  try {
+    const { out, stages, error } = await capture(() => cardRun(["proj-alpha"], here.repo));
+    expect(error).toBeNull();
+
+    // A stamp without a zone parses as local time, so it lands near now only
+    // if it was written in local time.
+    const near = (stamp: string) => Math.abs(Date.now() - new Date(stamp).getTime()) < 60_000;
+    const line = stages.match(/^\[(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)\] /m);
+    expect(line).not.toBeNull();
+    expect(near(`${line![1]}T${line![2]}`)).toBe(true);
+
+    const { dir } = await reportOf(out);
+    const name = path.basename(dir).match(/^(\d{4}-\d\d-\d\d)T(\d\d)-(\d\d)-(\d\d)$/);
+    expect(name).not.toBeNull();
+    expect(near(`${name![1]}T${name![2]}:${name![3]}:${name![4]}`)).toBe(true);
+  } finally {
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  }
+});
+
 test("a card the session leaves open stops the run, and the report leads with its resume command", async () => {
   const here = await bed();
   for (const id of ["proj-alpha", "proj-beta"]) await card(here, id);
