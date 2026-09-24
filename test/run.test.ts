@@ -80,11 +80,8 @@ async function commitAll(repo: string): Promise<void> {
 
 async function capture(fn: () => Promise<void>) {
   const out: string[] = [];
-  const stages: string[] = [];
   const log = console.log;
-  const err = console.error;
   console.log = (...parts: unknown[]) => out.push(parts.join(" "));
-  console.error = (...parts: unknown[]) => stages.push(parts.join(" "));
 
   let error: Error | null = null;
   try {
@@ -93,9 +90,8 @@ async function capture(fn: () => Promise<void>) {
     error = thrown as Error;
   } finally {
     console.log = log;
-    console.error = err;
   }
-  return { out: out.join("\n").trim(), stages: stages.join("\n"), error };
+  return { out: out.join("\n").trim(), error };
 }
 
 /** The report the run wrote, found by the path it printed to stdout. */
@@ -140,13 +136,13 @@ test("stage lines and the run directory carry local time, not UTC", async () => 
   const zone = process.env.TZ;
   process.env.TZ = "Pacific/Kiritimati";
   try {
-    const { out, stages, error } = await capture(() => cardRun(["proj-alpha"], here.repo));
+    const { out, error } = await capture(() => cardRun(["proj-alpha"], here.repo));
     expect(error).toBeNull();
 
     // A stamp without a zone parses as local time, so it lands near now only
     // if it was written in local time.
     const near = (stamp: string) => Math.abs(Date.now() - new Date(stamp).getTime()) < 60_000;
-    const line = stages.match(/^\[(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)\] /m);
+    const line = out.match(/^\[(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)\] /m);
     expect(line).not.toBeNull();
     expect(near(`${line![1]}T${line![2]}`)).toBe(true);
 

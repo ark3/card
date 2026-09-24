@@ -173,7 +173,7 @@ function localTime(sep: string): string {
 
 /** A stage line, so a run reports progress before it ends. */
 function stage(line: string): void {
-  console.error(`[${localTime(" ")}] ${line}`);
+  console.log(`[${localTime(" ")}] ${line}`);
 }
 
 export async function run(args: string[], cwd: string): Promise<void> {
