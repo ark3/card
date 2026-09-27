@@ -49,6 +49,7 @@ The prompt carries:
 - for an implementer, the worktree's path and branch as `card worktree` printed them;
 - the project's own instructions, which are yours to hand over;
 - the card's grounding and intent inline — paths, symbols, how to run it, what done looks like — pointing the agent at that one card and nothing else in the deck;
+- for the adversarial check at a fix for a timing, ordering or state-consistency defect, the question whether the fix is a check added where the symptom showed — a flag, a counter, a re-check at the site — and, if it is, a case that check misses;
 - every constraint you hold only from conversation: a repository not to touch, a freeze, fixtures holding customer data.
   Those constraints bind the agent as they bind you, and nothing but your prompt carries them across.
 
@@ -149,6 +150,9 @@ If the next agent would have to open with a codebase-wide grep, the card was und
 Say what the card is in service of, and which of the specifics are load-bearing rather than incidental; you know that now and the picker will not.
 State what done looks like as something observable — a test that goes red first and green after, a command whose output changes, a decision recorded in a named place — never as a description of the finished state, which closes on an opinion.
 Never name the owner trying the work as done: the picker cannot observe it, and what the owner finds on trying the work later is a new card, or this one amended and dispatched again, as "Between cards" says.
+File the check an adversarial reader reported as added where the symptom showed, with a case it misses, as a card that replaces the check, never as one that adds the missed case.
+Any card that replaces a mechanism states in its done-condition that the mechanism it replaces is gone, not only that the new cases pass: a done-condition that asked only for the new cases once closed green with one more check at every call site.
+A further case named against the same check while that card is open amends that card's done-condition and is never a card of its own: the open card is the one `card author`'s "Sweep both piles first" tells you to amend.
 Phrase any conditional over the decision it gates, never over the answer you expect: "if X turns out to be false, record it in `<id>`" never fires when X comes back true, and the decision it gated sits unmade.
 
 Filing is not a discussion.
