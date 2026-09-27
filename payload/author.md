@@ -46,6 +46,7 @@ The observable depends on what the card produces.
 A code change closes on a test that fails before the change and passes after, cited by test file and by what it asserts.
 A decision closes when it is taken and recorded where the next person will look — the card names where, because the tool cannot know the project.
 An investigation closes when its finding exists in something that outlives the session.
+Never name the owner trying the work as a criterion: the session that executes the card cannot observe it, and what the owner finds on trying the work later is a new card, or this one amended and dispatched again.
 A description of the finished state is not a criterion: it closes on an opinion.
 
 **Any conditional phrased over the decision it gates, not over the outcome you expect.**

@@ -28,6 +28,7 @@ Dispatch one agent at a time, and review what it sent back before you decide the
   The card was written by whoever found the problem and has not been re-verified since, and the code may have moved under it — most of all in a codebase this workflow does not control.
   Confirm that the paths, symbols and claims the card names still hold.
   Where they have drifted, amend the card yourself and say what you changed: never work a card as written once it has drifted, and never stop for an amendment you can make — amendable staleness is routine, not an obstacle.
+  A done-condition that names the owner trying the work is the same amendment: you cannot observe the owner trying it, so amend the card to name the evidence that stands in for the trial, and say what you changed.
 <!--private-->
   Drift large enough to kill the card's intent is not an amendment at all: skip dispatch and review and take that card straight to step 4, where you close it for what the drift made it — `--moot` where the problem it named is gone, `--promoted` where the real work outgrew the card.
 <!--/private-->
@@ -147,6 +148,7 @@ If the next agent would have to open with a codebase-wide grep, the card was und
 
 Say what the card is in service of, and which of the specifics are load-bearing rather than incidental; you know that now and the picker will not.
 State what done looks like as something observable — a test that goes red first and green after, a command whose output changes, a decision recorded in a named place — never as a description of the finished state, which closes on an opinion.
+Never name the owner trying the work as done: the picker cannot observe it, and what the owner finds on trying the work later is a new card, or this one amended and dispatched again, as "Between cards" says.
 Phrase any conditional over the decision it gates, never over the answer you expect: "if X turns out to be false, record it in `<id>`" never fires when X comes back true, and the decision it gated sits unmade.
 
 Filing is not a discussion.
@@ -158,6 +160,7 @@ The owner sees what you filed in the hand-back, and a card the owner did not wan
 Whether you carry on is gated on the card's done-condition, not on the card.
 Where the card names an observable you can run — a test that goes red first and green after — running it clean is what closes the card: finish step 4, then go straight on to the next card in the set.
 Where the done-condition is a judgment or a decision only the owner can make, hand back and stop there, whatever else is in the set: a reader you dispatch is not the owner and cannot stand in.
+Where the done-condition names the owner trying the work — "done when the owner has used it" — that is not a decision and does not stop the set: you cannot observe the owner trying it, so this is the step 1 amendment — amend the card yourself to name the evidence that stands in for the trial, say what you changed in the hand-back, and go on to the next card.
 
 A set also ends early on a genuine obstacle: an observable that will not go green, drift that kills a card's intent, work that belongs to a ticket of its own, something that surfaces and changes a later card in the set, or your own context running short — say, a conversation grown long enough to be worth restarting.
 When drift kills a card, close that card under step 4 first: the set ends after that close, not instead of it.
