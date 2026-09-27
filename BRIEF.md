@@ -339,6 +339,10 @@ Nothing is added to `.gitignore` and nothing is committed, so the privacy bounda
 
 **Every worktree resolves to one deck, and every clone to its own.** `git rev-parse --path-format=absolute --git-common-dir` returns the main checkout's `.git` from anywhere, verified 2026-08-21 including from inside `.worktrees/`.
 Two clones of one repository have two `.git` directories and so two decks; that is accepted, because worktrees are what this workflow cuts.
+Resolution stays that and only that, and the writing verbs carry the rest: `new` and `close` refuse when run from a linked worktree and name the main checkout to run from, since filing and closing are the dispatching session's work and never a dispatched implementer's.
+What they test is the working directory's git directory and not the caller's role, so the refusal catches a dispatched session writing from the tree it was handed and not one that writes from the main checkout's path.
+A deck committed in the working tree is what made that refusal load-bearing, since each linked worktree then carries its own tracked copy of the deck on its own branch, and a write from inside one lands in the main checkout's tree instead, uncommitted, where the implementer's branch never sees it.
+The refusal does not close that hole: while a card's branch is open its tracked copy of the deck still diverges from the main checkout's, and nothing here reconciles them.
 
 **The prefix is recorded in the config, never derived from the filenames present.** Deriving it was agentpane's workaround for having no way to create a deck, and it guesses wrong the day a deck holds a card copied in from somewhere else.
 

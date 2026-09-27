@@ -2,6 +2,7 @@ import path from "node:path";
 import { createCard } from "../cardfile.ts";
 import { requireDeck } from "../deck.ts";
 import { drawId } from "../id.ts";
+import { refuseFromLinkedWorktree } from "./worktree.ts";
 
 const USAGE = "usage: card new '<headline>' [--label L]... [--blocked-by <id>]..., body on stdin";
 // Ninety ids per syllable cubed. Ten collisions in a row is not a deck that
@@ -30,6 +31,8 @@ export async function run(args: string[], cwd: string): Promise<void> {
   if (headline === undefined || positional.length > 1) throw new Error(USAGE);
   if (headline === "") throw new Error("a card needs a headline");
   if (headline.includes("\n")) throw new Error("a headline is one line and never wraps");
+
+  await refuseFromLinkedWorktree("new", cwd);
 
   const deck = await requireDeck(cwd);
 

@@ -350,3 +350,21 @@ test("refuses when there is no deck", async () => {
   const repo = await tempRepo();
   await expect(close(["proj-behilo", "--done"], repo)).rejects.toThrow(/no deck here/);
 });
+
+test("refuses from a linked worktree, naming the main checkout, and closes from the main checkout itself", async () => {
+  const { repo, deck } = await deckIn();
+  const file = await open(deck, "proj-behilo", CARD);
+  await worktree(["proj-behilo"], repo);
+  const tree = path.join(repo, ".worktrees", "proj-behilo");
+  onStdin(`${NOTE}\n`);
+
+  await expect(close(["proj-behilo", "--done"], tree)).rejects.toThrow(
+    new RegExp(`dispatching session.*main checkout at ${repo}$`),
+  );
+  expect(await Bun.file(file).text()).toBe(CARD);
+
+  onStdin(`${NOTE}\n`);
+  await close(["proj-behilo", "--done"], repo);
+
+  expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(closedFile("done"));
+});

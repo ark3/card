@@ -3,6 +3,7 @@ import path from "node:path";
 import { type Deck, resolveDeck } from "../src/deck.ts";
 import { run as init } from "../src/verbs/init.ts";
 import { run as neu } from "../src/verbs/new.ts";
+import { run as worktree } from "../src/verbs/worktree.ts";
 import { clearCardRoot, removeTempDirs, tempRepo } from "./helpers.ts";
 
 const realStdin = Bun.stdin;
@@ -157,4 +158,24 @@ test("refuses a flag with no value, and a flag it does not know", async () => {
 test("refuses when there is no deck", async () => {
   const repo = await tempRepo();
   await expect(neu(["A headline"], repo)).rejects.toThrow(/no deck here/);
+});
+
+test("refuses from a linked worktree, naming the main checkout, and files from the main checkout itself", async () => {
+  const { repo, deck } = await deckIn();
+  await worktree(["proj-behilo"], repo);
+  const tree = path.join(repo, ".worktrees", "proj-behilo");
+  onStdin("A body that must not land.\n");
+
+  await expect(neu(["Filed from a dispatched tree"], tree)).rejects.toThrow(
+    new RegExp(`dispatching session.*main checkout at ${repo}$`),
+  );
+  expect(await Array.fromAsync(new Bun.Glob("*.md").scan(deck.openDir))).toEqual([]);
+
+  logged = [];
+  onStdin("A body that lands.\n");
+  await neu(["Filed from the main checkout"], repo);
+
+  expect(await Bun.file(path.join(deck.openDir, `${logged[0]}.md`)).text()).toContain(
+    "# Filed from the main checkout",
+  );
 });

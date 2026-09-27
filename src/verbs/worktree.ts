@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { git } from "../git.ts";
+import { git, inLinkedWorktree } from "../git.ts";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
@@ -29,6 +29,21 @@ export async function mainCheckout(cwd: string): Promise<Checkout> {
     throw new Error(`the main checkout at ${root} is on a detached HEAD, so there is no branch to cut from`);
   }
   return { root, branch: branch.replace(/^refs\/heads\//, ""), sha };
+}
+
+/**
+ * Refuses a deck-writing verb run from a linked worktree, which is where a
+ * dispatched session works: filing and closing are the dispatching session's
+ * work, and where the deck is committed in the tree the write lands in the main
+ * checkout's tree, uncommitted, where the dispatched session's branch never
+ * sees it.
+ */
+export async function refuseFromLinkedWorktree(verb: string, cwd: string): Promise<void> {
+  if (!(await inLinkedWorktree(cwd))) return;
+  const main = await mainCheckout(cwd);
+  throw new Error(
+    `card ${verb} writes the deck, which is the dispatching session's work, not a dispatched one's; run it from the main checkout at ${main.root}`,
+  );
 }
 
 export async function run(args: string[], cwd: string): Promise<void> {

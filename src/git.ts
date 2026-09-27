@@ -18,3 +18,15 @@ export async function gitCommonDir(cwd: string): Promise<string | null> {
   const result = await git(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
   return result.ok ? result.stdout.trim() : null;
 }
+
+/**
+ * Whether `cwd` sits in a linked worktree rather than the main checkout: its
+ * own `.git` is a file pointing into the common directory, so the two paths
+ * differ. False outside a git repository, where nothing is a worktree.
+ */
+export async function inLinkedWorktree(cwd: string): Promise<boolean> {
+  const own = await git(["rev-parse", "--path-format=absolute", "--git-dir"], cwd);
+  const common = await gitCommonDir(cwd);
+  if (!own.ok || common === null) return false;
+  return own.stdout.trim() !== common;
+}

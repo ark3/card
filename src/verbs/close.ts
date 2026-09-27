@@ -5,6 +5,7 @@ import { readCard } from "../cardfile.ts";
 import { requireDeck, stagingName } from "../deck.ts";
 import { git } from "../git.ts";
 import { locate } from "./show.ts";
+import { refuseFromLinkedWorktree } from "./worktree.ts";
 
 const USAGE = "usage: card close <id> --done|--promoted|--declined|--moot, close note on stdin";
 const FLAGS = ["--done", "--promoted", "--declined", "--moot"];
@@ -78,6 +79,8 @@ export async function run(args: string[], cwd: string): Promise<void> {
   }
   const workDone = outcome === "--done";
   const word = outcome.slice(2);
+
+  await refuseFromLinkedWorktree("close", cwd);
 
   const deck = await requireDeck(cwd);
   const found = await locate(deck, id);
