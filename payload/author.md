@@ -3,9 +3,9 @@
 Produce cards a cold agent can act on.
 This session does not change code.
 
-## Sweep the closed pile first, before writing anything
+## Sweep both piles first, before writing anything
 
-    card cmd -- rg -l '<term>' closed
+    card cmd -- rg -l '<term>' open closed
 
 <!--private-->
 A deferral too small for the public tier survives only as a closed card, and an authoring session that skips this search deletes it.
@@ -13,8 +13,10 @@ A deferral too small for the public tier survives only as a closed card, and an 
 <!--public-->
 A deferral survives only as a closed card, and an authoring session that skips this search deletes it.
 <!--/public-->
+An open card may already be the card you are about to write, and an authoring session that skips this search files it twice.
 Search for the terms the new work turns on, and read what comes back with `card show`.
-What you find is grounding to cite, not text to copy: a promoted or declined card is already sitting there with its full reasoning, and the new card cites it rather than restating it.
+A closed card is grounding to cite, not text to copy: a promoted or declined card is already sitting there with its full reasoning, and the new card cites it rather than restating it.
+An open card that already carries the finding is the card to amend: edit its file rather than filing a second one.
 
 ## Write, then flag
 

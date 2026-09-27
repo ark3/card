@@ -391,7 +391,7 @@ test("author and execute print their procedure, and only where there is a deck",
   await init(["proj"], repo);
   const authoring = await capture(() => author([], repo));
   expect(authoring.out).toContain("# Authoring");
-  expect(authoring.out).toContain("Sweep the closed pile first");
+  expect(authoring.out).toContain("Sweep both piles first");
 
   const executing = await capture(() => execute([], repo));
   expect(executing.out).toContain("# Execution");
