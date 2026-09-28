@@ -343,6 +343,7 @@ Resolution stays that and only that, and the writing verbs carry the rest: `new`
 What they test is the working directory's git directory and not the caller's role, so the refusal catches a dispatched session writing from the tree it was handed and not one that writes from the main checkout's path.
 A deck committed in the working tree is what made that refusal load-bearing, since each linked worktree then carries its own tracked copy of the deck on its own branch, and a write from inside one lands in the main checkout's tree instead, uncommitted, where the implementer's branch never sees it.
 The refusal does not close that hole: while a card's branch is open its tracked copy of the deck still diverges from the main checkout's, and nothing here reconciles them.
+No verb but `status` has a sanctioned caller in a worktree, and `status` only because the project's own instructions, which the dispatch prompt hands over, tell every session to run it: the execute procedure names every other verb only in text addressed to the dispatching session in the main checkout, and both briefings tell a dispatched agent not to read the deck, so the two refusals are backstops for an agent outside its briefing, not the boundary, and `cmd` stays the escape hatch it is documented as.
 
 **The prefix is recorded in the config, never derived from the filenames present.** Deriving it was agentpane's workaround for having no way to create a deck, and it guesses wrong the day a deck holds a card copied in from somewhere else.
 
