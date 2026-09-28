@@ -26,6 +26,19 @@ export async function tempRepo(): Promise<string> {
   return dir;
 }
 
+/**
+ * A bare clone of `repo` with one linked worktree: a bare repository has no
+ * checkout of its own, so every checkout of it is a linked one.
+ */
+export async function bareCloneWithWorktree(repo: string): Promise<{ bare: string; tree: string }> {
+  const dir = tempDir();
+  const bare = path.join(dir, "repo.git");
+  await git(["clone", "-q", "--bare", repo, bare], dir);
+  const tree = path.join(dir, "wt");
+  await git(["worktree", "add", "-q", tree, "main"], bare);
+  return { bare, tree };
+}
+
 export function removeTempDirs(): void {
   for (const dir of created.splice(0)) rmSync(dir, { recursive: true, force: true });
 }

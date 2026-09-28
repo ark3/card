@@ -1,10 +1,11 @@
 import { afterAll, afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import path from "node:path";
+import { git } from "../src/git.ts";
 import { type Deck, resolveDeck } from "../src/deck.ts";
 import { run as init } from "../src/verbs/init.ts";
 import { run as neu } from "../src/verbs/new.ts";
 import { run as worktree } from "../src/verbs/worktree.ts";
-import { clearCardRoot, removeTempDirs, tempRepo } from "./helpers.ts";
+import { bareCloneWithWorktree, clearCardRoot, removeTempDirs, tempRepo } from "./helpers.ts";
 
 const realStdin = Bun.stdin;
 let logged: string[] = [];
@@ -178,4 +179,34 @@ test("refuses from a linked worktree, naming the main checkout, and files from t
   expect(await Bun.file(path.join(deck.openDir, `${logged[0]}.md`)).text()).toContain(
     "# Filed from the main checkout",
   );
+});
+
+test("refuses from a linked worktree of a detached main checkout without mentioning the branch it cannot cut", async () => {
+  const { repo, deck } = await deckIn();
+  await worktree(["proj-behilo"], repo);
+  const tree = path.join(repo, ".worktrees", "proj-behilo");
+  await git(["checkout", "-q", "--detach"], repo);
+  onStdin("A body that must not land.\n");
+
+  await expect(neu(["Filed from a dispatched tree"], tree)).rejects.toThrow(
+    new RegExp(`dispatching session.*main checkout at ${repo}$`),
+  );
+  expect(await Array.fromAsync(new Bun.Glob("*.md").scan(deck.openDir))).toEqual([]);
+});
+
+test("refuses from a linked worktree of a bare repository, which has no checkout to name", async () => {
+  const { bare, tree } = await bareCloneWithWorktree(await tempRepo());
+  await init(["proj"], bare);
+  const deck = (await resolveDeck(bare))!;
+  onStdin("A body that must not land.\n");
+
+  const error = await neu(["Filed from a dispatched tree"], tree).then(
+    () => null,
+    (thrown: Error) => thrown,
+  );
+
+  expect(error?.message).toContain("dispatching session");
+  expect(error?.message).toContain(bare);
+  expect(error?.message).not.toMatch(/branch|no main checkout/);
+  expect(await Array.fromAsync(new Bun.Glob("*.md").scan(deck.openDir))).toEqual([]);
 });

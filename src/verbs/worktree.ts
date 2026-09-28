@@ -8,12 +8,13 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 type Checkout = { root: string; branch: string; sha: string };
 
 /**
- * The main checkout, which `git worktree list` always names first, with its
- * branch resolved explicitly. Taking the base from `HEAD` instead follows the
- * *current* worktree when a tree is cut from inside another one, which stacks
- * temporary branches on each other.
+ * The first record of `git worktree list --porcelain`, which is the main
+ * checkout, or the repository itself where that is bare and so has no checkout
+ * of its own.
  */
-export async function mainCheckout(cwd: string): Promise<Checkout> {
+async function firstListed(
+  cwd: string,
+): Promise<{ root: string; bare: boolean; sha?: string; branch?: string }> {
   const listed = await git(["worktree", "list", "--porcelain"], cwd);
   if (!listed.ok) throw new Error(listed.stderr.trim() || "not in a git repository");
 
@@ -21,10 +22,21 @@ export async function mainCheckout(cwd: string): Promise<Checkout> {
   const field = (name: string) =>
     record.find((line) => line.startsWith(`${name} `))?.slice(name.length + 1);
   const root = field("worktree");
-  const sha = field("HEAD");
-  const branch = field("branch");
+  if (root === undefined) throw new Error("git named no worktree");
+  return { root, bare: record.includes("bare"), sha: field("HEAD"), branch: field("branch") };
+}
 
-  if (root === undefined || sha === undefined) throw new Error("git named no main checkout");
+/**
+ * The main checkout, which `git worktree list` always names first, with its
+ * branch resolved explicitly. Taking the base from `HEAD` instead follows the
+ * *current* worktree when a tree is cut from inside another one, which stacks
+ * temporary branches on each other.
+ */
+export async function mainCheckout(cwd: string): Promise<Checkout> {
+  const { root, sha, branch } = await firstListed(cwd);
+
+  // A bare repository is caught here too: its record carries no `HEAD` line.
+  if (sha === undefined) throw new Error("git named no main checkout");
   if (branch === undefined) {
     throw new Error(`the main checkout at ${root} is on a detached HEAD, so there is no branch to cut from`);
   }
@@ -40,9 +52,13 @@ export async function mainCheckout(cwd: string): Promise<Checkout> {
  */
 export async function refuseFromLinkedWorktree(verb: string, cwd: string): Promise<void> {
   if (!(await inLinkedWorktree(cwd))) return;
-  const main = await mainCheckout(cwd);
+  // The root alone, not `mainCheckout`: a detached or bare main checkout has no
+  // base branch, and this refusal holds either way, so resolving one here would
+  // replace this message with one about cutting a branch.
+  const { root, bare } = await firstListed(cwd);
+  const where = bare ? `${root}, the bare repository the deck is reached from` : `the main checkout at ${root}`;
   throw new Error(
-    `card ${verb} writes the deck, which is the dispatching session's work, not a dispatched one's; run it from the main checkout at ${main.root}`,
+    `card ${verb} writes the deck, which is the dispatching session's work, not a dispatched one's; run it from ${where}`,
   );
 }
 
