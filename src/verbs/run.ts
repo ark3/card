@@ -51,6 +51,9 @@ function chooseLaunch(named: Harness | null, noSbox: boolean): Launch {
   let harness: Harness;
   let why: string;
   if (named !== null) {
+    // Checked here, since under sbox a missing harness ends the card open with
+    // a resume command for a session that never existed.
+    if (!onPath(named)) throw new Error(`--harness names ${named}, but ${named} is not on PATH`);
     harness = named;
     why = "--harness named it";
   } else if (onPath("claude")) {

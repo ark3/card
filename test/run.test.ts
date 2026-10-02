@@ -212,6 +212,18 @@ test("--harness overrides the choice PATH would make, and the report says the fl
   expect(text).toContain(`resume: cd ${here.repo} && sbox pi --session `);
 });
 
+test("--harness naming a harness that is not on PATH refuses before anything launches", async () => {
+  const here = await bed({ on: ["claude", "sbox"] });
+  await card(here, "proj-alpha");
+  await tell(here, "proj-alpha", "done");
+
+  const { out, error } = await capture(() => cardRun(["--harness", "pi", "proj-alpha"], here.repo));
+
+  expect(error?.message).toContain("pi is not on PATH");
+  expect(out).toBe("");
+  expect(existsSync(path.join(here.deckDir, "open", "proj-alpha.md"))).toBe(true);
+});
+
 test("sbox on PATH wraps the session, whose argv carries no --model and nothing else the verb did not name", async () => {
   const here = await bed();
   // A label that once routed to a model of its own routes nowhere now.
