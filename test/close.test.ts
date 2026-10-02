@@ -397,7 +397,7 @@ test("refuses from a linked worktree of a bare repository, which has no checkout
   );
 
   expect(error?.message).toContain("dispatching session");
-  expect(error?.message).toContain(bare);
+  expect(error?.message).toContain(`${bare}, the bare repository the deck is reached from`);
   expect(error?.message).not.toMatch(/branch|no main checkout/);
   expect(await Bun.file(file).text()).toBe(CARD);
 });
