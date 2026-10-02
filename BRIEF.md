@@ -233,10 +233,14 @@ Build now:
   The sandbox probe this verb was first sketched with belongs to `status` instead: it is a fact about the session, not about a tree just cut.
 - **`run <id>...`** — work a series of cards, one fresh headless session each, in the order given and in the main checkout, stopping at the first card that does not close `done`.
   One at a time and never in a worktree, because every session commits on the base branch there and two at once would collide.
-  Around each card it refuses a checkout that is dirty or a `.worktrees/` that holds a tree, and commits the dirt a close leaves behind where the deck is one git manages and the config carries a message for it.
-  It chooses each session's id, so the card that ends open — a session handing back for the owner's input — is one `claude --resume` away, and the report repeats that command.
+  Around each card it refuses a checkout that is dirty or a `.worktrees/` that holds a tree, and commits the dirt a close leaves behind, as `chore: close <id>`, where the deck is one git manages and is declared public, since citing an id in a commit is legal only there.
+  It chooses each session's id, so the card that ends open — a session handing back for the owner's input — is one resume command away, and the report repeats that command as built from what ran, `sbox claude --resume <id>` or `sbox pi --session <id>`, run from the main checkout's root, since both harnesses look a session up by project.
   The report is scratch, under the system temp directory: it assembles the session logs rather than summarizing them, since what the run carries durably is already in the close notes and the commits.
-  The launch command, the model each label routes to, and the commit message for a close's own dirt are per-clone config beside the deck, because the sandbox wrapper exists on one machine, the models are a cost choice per deck, and citing an id in a commit is legal only on a deck declared public.
+  It reads no configuration: it launches Claude Code where `claude` is on PATH, otherwise Pi where `pi` is, refuses where neither is, and takes `--harness claude` or `--harness pi` to override the choice.
+  Every session runs as `sbox <harness>`, and where `sbox` is not on PATH the verb refuses unless `--no-sbox` says to run unwrapped, which skips the wrapper and adds no permission flag, since the owner configures the harness for any unwrapped use.
+  It passes no `--model`, so each harness's own configured model and effort apply, and no label routes a card to a model.
+  The stage line for each card and the report name what ran: the harness, whether `sbox` wrapped it, and why that harness, whether found on PATH, the other missing, or the flag.
+  A `[run]` section left in the config from when the verb read one makes `run` refuse, naming the section to delete, rather than ignore it; no other verb refuses it, since none ever read it.
   Evidence: the owner runs this loop by hand today, starting a session per card and judging each hand-back, and an untracked script ran it on the home server for a day, which is what settled the shape.
 
 Deliberately not built yet:
@@ -370,8 +374,11 @@ Card's own deck is the default, prefix `card`.
 - **One-tree atomicity is gone.**
   In agentpane, retiring every copy of an overturned fact is one grep over one tree.
   Split across repo and corpus, the sweep is two runs — tree, then `card cmd -- rg` — and nothing reminds you of the second.
-- **`run` knows one harness's print-mode flags.**
-  `-p`, `--model`, `--session-id` and `--name` are Claude Code's, and nothing else in the tool knows any of them.
-  The coupling is accepted because the owner runs this verb and no session ever will, which is the trade `status` already makes by naming the `sbox` binary rather than describing the sandbox it builds.
+- **`run` knows two harnesses in code.**
+  Claude Code and Pi take `-p`, `--session-id` and `--name` alike and differ only in the command that resumes a session, and nothing else in the tool knows any of it.
+  `run` also names the `sbox` binary, as `status` already does, rather than describing the sandbox it builds.
+  The coupling is accepted because the owner runs this verb and no session ever will, which is the trade `status` already makes.
+  A later harness joins only if it accepts a session id the caller chooses, which is what keeps resume unambiguous: the verb prints the resume command for the id it chose, rather than one recovered from the session's output.
+  Codex was weighed on 2026-10-02 and left out on that test: `codex exec` lists no `--session-id`, and resuming there is `codex exec resume <id>`.
 - **Closed cards go stale like all documentation.**
   They are dated evidence, not living docs, and are read the way git history is read.

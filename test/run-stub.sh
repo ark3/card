@@ -1,26 +1,32 @@
 #!/bin/sh
-# Stands in for the harness `card run` launches, so the tests exercise the loop
-# without a model. The launch command in the test's config is
-# `<this script> <control directory> <card entry point>`, and everything after
-# that is what the verb itself passes.
+# Stands in for the harnesses `card run` launches, and for `sbox`, so the tests
+# exercise the loop without a model. The tests link it onto PATH as `claude`,
+# `pi` and `sbox`, and it tells which it is from the name it ran as: as `sbox`
+# it says so and runs its arguments, the way the wrapper does, and as a harness
+# it echoes its own argv, everything of which is what the verb passes.
 #
-# Each line of `<control directory>/<id>` is one thing to do for that card:
+# A harness reads its control directory from RUN_STUB_CONTROL and the card
+# entry point from RUN_STUB_CLI. Each line of `<control directory>/<id>` is one
+# thing to do for that card:
 #
 #   done          close the card --done, the way a finished session would
 #   dirty <path>  write to that path, the way a session leaves work behind
 #
 # A card with no control file is left open, which is a session handing back.
 set -eu
-control="$1"
-cli="$2"
-shift 2
+name="${0##*/}"
+if [ "$name" = sbox ]; then
+  echo "sbox wrapped"
+  exec "$@"
+fi
+control="$RUN_STUB_CONTROL"
+cli="$RUN_STUB_CLI"
 
-model=""
+argv="$*"
 session=""
 prompt=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --model) model="$2" ;;
     --session-id) session="$2" ;;
   esac
   prompt="$1"
@@ -29,8 +35,9 @@ done
 id="${prompt##* }"
 
 echo "stub ran for $id"
+echo "harness $name"
+echo "argv $argv"
 echo "session $session"
-echo "model ${model:-none}"
 
 [ -f "$control/$id" ] || exit 0
 while read -r verb rest; do
