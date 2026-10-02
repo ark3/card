@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Card } from "../cardfile.ts";
 import { readCard } from "../cardfile.ts";
 import { requireDeck, stagingName } from "../deck.ts";
-import { git } from "../git.ts";
+import { listWorktrees } from "../git.ts";
 import { locate } from "./show.ts";
 import { refuseFromLinkedWorktree } from "./worktree.ts";
 
@@ -44,15 +44,8 @@ function message(error: unknown): string {
  * nothing here removes it.
  */
 async function standingWorktree(id: string, cwd: string): Promise<string | null> {
-  const listed = await git(["worktree", "list", "--porcelain"], cwd);
-  if (!listed.ok) throw new Error(listed.stderr.trim() || "not in a git repository");
-  for (const record of listed.stdout.split("\n\n")) {
-    const lines = record.split("\n");
-    if (!lines.includes(`branch refs/heads/card/${id}`)) continue;
-    const root = lines.find((line) => line.startsWith("worktree "))?.slice("worktree ".length);
-    if (root !== undefined) return root;
-  }
-  return null;
+  const listed = await listWorktrees(cwd);
+  return listed.find((tree) => tree.branch === `refs/heads/card/${id}`)?.root ?? null;
 }
 
 export async function run(args: string[], cwd: string): Promise<void> {

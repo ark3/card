@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { git, inLinkedWorktree } from "../git.ts";
+import { git, inLinkedWorktree, listWorktrees, type Worktree } from "../git.ts";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
@@ -12,18 +12,10 @@ type Checkout = { root: string; branch: string; sha: string };
  * checkout, or the repository itself where that is bare and so has no checkout
  * of its own.
  */
-async function firstListed(
-  cwd: string,
-): Promise<{ root: string; bare: boolean; sha?: string; branch?: string }> {
-  const listed = await git(["worktree", "list", "--porcelain"], cwd);
-  if (!listed.ok) throw new Error(listed.stderr.trim() || "not in a git repository");
-
-  const record = listed.stdout.split("\n\n")[0]!.split("\n");
-  const field = (name: string) =>
-    record.find((line) => line.startsWith(`${name} `))?.slice(name.length + 1);
-  const root = field("worktree");
-  if (root === undefined) throw new Error("git named no worktree");
-  return { root, bare: record.includes("bare"), sha: field("HEAD"), branch: field("branch") };
+async function firstListed(cwd: string): Promise<Worktree> {
+  const first = (await listWorktrees(cwd))[0];
+  if (first === undefined) throw new Error("git named no worktree");
+  return first;
 }
 
 /**
