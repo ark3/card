@@ -97,6 +97,7 @@ The dispatching session is the one that commits here, and the only one, and it r
 <!--/private-->
 <!--public-->
 The dispatching session is the one that commits here, and the only one.
+Each write to the deck — the card amended under step 1, a card filed, the close below — is the dispatching session's to commit as well, right after the write, in the repository's own commit style, wherever `git status` shows it.
 <!--/public-->
 
 - An implementer's commits come back by that session's hand.
@@ -124,6 +125,7 @@ Only then close, writing the close note on stdin: `card close <id> --done` where
 <!--/private-->
 <!--public-->
 Only then close, writing the close note on stdin: `card close <id> --done` where the work is at rest, and otherwise the flag that says how the card ended — `--promoted` where the work left for an outside system the project answers to but does not control, the usual case when a load-bearing bug surfaces mid-execution, and the entry in that system is the owner's to file, never this session's; `--declined` where it was decided against; `--moot` where the reason for it is gone.
+The close is a write to the deck, and where `git status` shows it the dispatching session commits it right after, in the repository's own commit style.
 <!--/public-->
 On every close the tool names the cards this one was blocking.
 On `--done` the cards it lists as freed have just come free: they belong in the hand-back, not in this session's work, because which card comes next is the owner's call.
@@ -157,6 +159,9 @@ Phrase any conditional over the decision it gates, never over the answer you exp
 
 Filing is not a discussion.
 You found it mid-work: write the card where you stand and go on with the procedure.
+<!--public-->
+A filed card is a write to the deck, and where `git status` shows it the dispatching session commits it right after, in the repository's own commit style.
+<!--/public-->
 The owner sees what you filed in the hand-back, and a card the owner did not want costs one close.
 
 ## Between cards

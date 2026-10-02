@@ -24,6 +24,9 @@ The headline is the tool's own line, so citing it copies nothing that drifts, wh
 The tool draws an id, checks it against the open and closed cards, and writes the file, as one act: never choose an id, never create a new card's file by hand, and never create a skeleton to fill in afterwards — a card half-written is the failure this verb replaces.
 The headline is an argument because a card has exactly one `# ` line, and that line never wraps.
 Editing a card that already exists is ordinary, and you do it by hand.
+<!--public-->
+`card new`, an edit by hand and `card close` each write the deck, and where `git status` shows the write, commit it yourself right after, in the repository's own commit style; the message may name the card.
+<!--/public-->
 
 `card show <id>` prints a card wherever it is, and `card show <id> --path` prints the file's location instead, which is how you edit one.
 Ids are cited bare, and a card changes directory when it closes, so never build a path out of an id.
@@ -92,6 +95,9 @@ References run both ways on this deck: cards cite tickets, branches and commits 
 ## Findings
 
 When a finding worth keeping surfaces mid-work, file it as a card with `card new` — headline as the argument, body on stdin — before your turn ends.
+<!--public-->
+Where `git status` shows the card you filed, commit it yourself right after, in the repository's own commit style.
+<!--/public-->
 A finding that lives only in the transcript dies with the session.
 Undone work is the same case: file scope you notice mid-work as a card rather than fixing it, which is the wanted outcome, not a concession.
 A filed card is out of your hands and off your mind, and the session stays on the work in front of it.

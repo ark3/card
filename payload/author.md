@@ -71,6 +71,9 @@ Use them for the ticket key, and for anything you will want to filter on later �
 
 You sharpen a card already on disk by editing its file; `card show <id> --path` prints the location.
 The tool never rewrites a card because another card changed — a blocker closing alters nothing in the cards that were waiting — so an amendment that another card's conditional calls for is yours to make, deliberately.
+<!--public-->
+A card you file or edit is a write to the deck, and where `git status` shows that write, commit it yourself right after, in the repository's own commit style.
+<!--/public-->
 
 ## The test for a finished card
 
