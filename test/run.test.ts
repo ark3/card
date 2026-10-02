@@ -34,6 +34,7 @@ type Config = {
   public?: boolean;
   closeCommit?: string;
   models?: Record<string, string>;
+  harness?: string;
 };
 
 type Bed = { repo: string; deckDir: string; control: string };
@@ -52,6 +53,7 @@ async function bed(config: Config = {}): Promise<Bed> {
   const lines = [`prefix = "proj"`, `deck = "${relative}"`];
   if (config.public === true) lines.push("public = true");
   lines.push("", "[run]", `launch = ["${STUB}", "${control}", "${CARD}"]`);
+  if (config.harness !== undefined) lines.push(`harness = "${config.harness}"`);
   if (config.models !== undefined) {
     const pairs = Object.entries(config.models).map(([label, model]) => `"${label}" = "${model}"`);
     lines.push(`models = { ${pairs.join(", ")} }`);
@@ -172,6 +174,34 @@ test("a card the session leaves open stops the run, and the report leads with it
   expect(lead).toContain(`Resume that session with: claude --resume ${session}`);
 });
 
+test("a pi deck resumes with pi's own command, for the session the verb launched", async () => {
+  const here = await bed({ harness: "pi" });
+  for (const id of ["proj-alpha", "proj-beta"]) await card(here, id);
+  await tell(here, "proj-alpha", "done");
+
+  const { out, error } = await capture(() => cardRun(["proj-alpha", "proj-beta"], here.repo));
+
+  expect(error?.message).toContain("proj-beta ended open rather than done");
+  const { text } = await reportOf(out);
+  const resumed = [...text.matchAll(/^resume: pi --session (\S+)$/gm)].map((match) => match[1]);
+  const launched = [...text.matchAll(/^session (\S+)$/gm)].map((match) => match[1]);
+  expect(resumed).toHaveLength(2);
+  expect(resumed).toEqual(launched);
+  expect(text).toContain(`Resume that session with: pi --session ${launched[1]}`);
+  expect(text).not.toContain("claude --resume");
+});
+
+test("a harness the verb does not know refuses at config time, before anything is launched", async () => {
+  const here = await bed({ harness: "codex" });
+  await card(here, "proj-alpha");
+  await tell(here, "proj-alpha", "done");
+
+  const { error } = await capture(() => cardRun(["proj-alpha"], here.repo));
+
+  expect(error?.message).toContain("run.harness that is not one of claude, pi");
+  expect(existsSync(path.join(here.deckDir, "open", "proj-alpha.md"))).toBe(true);
+});
+
 test("a card already closed before the run is skipped, and the next one still runs", async () => {
   const here = await bed();
   await Bun.write(
@@ -267,6 +297,7 @@ test("a deck with no [run] section has no command to launch, and the refusal sho
   expect(message).toContain("no [run] launch");
   expect(message).toContain("[run]");
   expect(message).toContain("launch = ");
+  expect(message).toContain("harness = ");
   expect(message).toContain("models = ");
   expect(message).not.toContain("close_commit");
 });

@@ -2,7 +2,7 @@ import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { readCard } from "../cardfile.ts";
-import { CONFIG_NAME, type Deck, type RunConfig, requireDeck } from "../deck.ts";
+import { CONFIG_NAME, type Deck, type Harness, HARNESSES, type RunConfig, requireDeck } from "../deck.ts";
 import { git } from "../git.ts";
 import { locate } from "./show.ts";
 import { mainCheckout } from "./worktree.ts";
@@ -28,10 +28,11 @@ type Section = {
  */
 function runExample(isPublic: boolean): string {
   const lines = [
-    "Append one and edit it to this clone's own choices: which command launches a session, which model each label routes to, and what message commits a close.",
+    `Append one and edit it to this clone's own choices: which command launches a session, which harness that command starts (${HARNESSES.join(" or ")}), which model each label routes to, and what message commits a close.`,
     "",
     "[run]",
     'launch = ["sbox", "claude"]',
+    'harness = "claude"',
     'models = { "" = "claude-opus-5" }',
   ];
   if (isPublic) lines.push('close_commit = "chore: close {id}"');
@@ -110,7 +111,10 @@ function modelFor(config: RunConfig, labels: string[]): string | null {
   return config.models[""] ?? null;
 }
 
-/** The session's own output, verbatim, which is also all `<id>.log` holds. */
+/**
+ * The session's own output, verbatim, which is also all `<id>.log` holds.
+ * Every harness in HARNESSES takes these flags alike, so none is chosen here.
+ */
 async function session(
   config: RunConfig,
   model: string | null,
@@ -140,11 +144,17 @@ async function session(
   return output;
 }
 
-function resumeCommand(sessionId: string): string {
-  return `claude --resume ${sessionId}`;
+/** The command that reopens a session this verb chose the id of. */
+function resumeCommand(harness: Harness, sessionId: string): string {
+  switch (harness) {
+    case "claude":
+      return `claude --resume ${sessionId}`;
+    case "pi":
+      return `pi --session ${sessionId}`;
+  }
 }
 
-function report(stamp: string, lead: string, sections: Section[], filed: string[]): string {
+function report(stamp: string, harness: Harness, lead: string, sections: Section[], filed: string[]): string {
   const parts = [`# card run ${stamp}`, "", lead, ""];
   for (const section of sections) {
     parts.push(
@@ -152,7 +162,7 @@ function report(stamp: string, lead: string, sections: Section[], filed: string[
       "",
       `state: ${section.state}`,
       `model: ${section.model ?? "none named"}`,
-      `resume: ${section.sessionId === null ? "no session ran" : resumeCommand(section.sessionId)}`,
+      `resume: ${section.sessionId === null ? "no session ran" : resumeCommand(harness, section.sessionId)}`,
       "",
       section.output === "" ? "No session output." : section.output.replace(/\n*$/, ""),
       "",
@@ -244,9 +254,9 @@ export async function run(args: string[], cwd: string): Promise<void> {
   const lead =
     stopped === null
       ? `Finished: every card in the series is closed done.`
-      : `Stopped at ${stopped.id}: ${stopped.reason}.${stopped.sessionId === null ? "" : `\nResume that session with: ${resumeCommand(stopped.sessionId)}`}`;
+      : `Stopped at ${stopped.id}: ${stopped.reason}.${stopped.sessionId === null ? "" : `\nResume that session with: ${resumeCommand(config.harness, stopped.sessionId)}`}`;
   const reportPath = path.join(runDir, "REPORT.md");
-  await writeFile(reportPath, report(stamp, lead, sections, filed));
+  await writeFile(reportPath, report(stamp, config.harness, lead, sections, filed));
 
   stage(stopped === null ? "the run finished" : `the run stopped at ${stopped.id}`);
   console.log(reportPath);

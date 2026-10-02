@@ -5,6 +5,13 @@ export const CONFIG_NAME = "card-config.toml";
 export const DEFAULT_DECK = "deck";
 
 /**
+ * The harnesses `card run` can launch. Both take the same print-mode flags,
+ * so the name decides only the command that resumes a session.
+ */
+export const HARNESSES = ["claude", "pi"] as const;
+export type Harness = (typeof HARNESSES)[number];
+
+/**
  * What `card run` needs and cannot derive: all of it per-clone, since the
  * launch command differs by machine, the models are the owner's cost choice
  * for this deck, and the commit template is legal only where citing an id is.
@@ -12,6 +19,8 @@ export const DEFAULT_DECK = "deck";
 export type RunConfig = {
   /** Argv that starts one headless session, before the verb's own flags. */
   launch: string[];
+  /** Which harness `launch` starts, `claude` where the config names none. */
+  harness: Harness;
   /** Label to model, with the empty key as the deck's default. */
   models: Record<string, string>;
   /** Message for the commit that lands a close's own dirt, with `{id}` in it. */
@@ -56,7 +65,7 @@ function parseRun(configPath: string, raw: unknown, isPublic: boolean): RunConfi
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new Error(`${configPath} carries a run that is not a table`);
   }
-  const section = raw as { launch?: unknown; models?: unknown; close_commit?: unknown };
+  const section = raw as { launch?: unknown; harness?: unknown; models?: unknown; close_commit?: unknown };
 
   const launch = section.launch;
   if (
@@ -65,6 +74,13 @@ function parseRun(configPath: string, raw: unknown, isPublic: boolean): RunConfi
     launch.some((word) => typeof word !== "string" || word === "")
   ) {
     throw new Error(`${configPath} carries a run.launch that is not a non-empty list of words`);
+  }
+
+  // A harness the verb does not know would launch fine and print a resume
+  // command for the wrong tool, which nobody notices until they need it.
+  const harness = section.harness ?? "claude";
+  if (!HARNESSES.includes(harness as Harness)) {
+    throw new Error(`${configPath} carries a run.harness that is not one of ${HARNESSES.join(", ")}`);
   }
 
   const models: Record<string, string> = {};
@@ -93,6 +109,7 @@ function parseRun(configPath: string, raw: unknown, isPublic: boolean): RunConfi
 
   return {
     launch: launch as string[],
+    harness: harness as Harness,
     models,
     ...(section.close_commit === undefined ? {} : { closeCommit: section.close_commit as string }),
   };
