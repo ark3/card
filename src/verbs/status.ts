@@ -31,7 +31,7 @@ export async function probeSandbox(): Promise<string | null> {
     await writeFile(probe, "");
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === "EROFS" || code === "EACCES") return null;
+    if (code === "EROFS" || code === "EACCES" || code === "EPERM") return null;
     return `the sandbox cannot be verified: writing ${probe} failed with ${code ?? String(error)}. ${REFUSAL}`;
   }
   await rm(probe, { force: true });
