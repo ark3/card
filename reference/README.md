@@ -1,7 +1,7 @@
 # Reference
 
 Documents this project reads from and reasons against, most of them copied verbatim from other projects; this file names where each came from and why it is kept.
-In `BRIEF.md`'s terms, every document here is carried except the beads README, which is argued with.
+In `BRIEF.md`'s terms, every document here is carried except the beads README, which is argued with, and the Tasktron script, which is drawn on.
 
 - `OW-59.md` — agentpane's work item under `docs/work/`, deciding whether to build a tracking tool at all.
   Carried: it is the deciding item on the agentpane side, and the brief cites the observations it records.
@@ -15,6 +15,8 @@ In `BRIEF.md`'s terms, every document here is carried except the beads README, w
   Carried: the format specification the brief cites by section, and the specification of the id generator in `src/id.ts`.
 - `beads-rust-readme.md` — the README of `br`, the Rust port of beads.
   Argued with: it is the same problem solved the other way, at maturity, and the brief says why that comparison is kept (`BRIEF.md`, the passage naming `reference/beads-rust-readme.md`).
+- `tasktron.clj` — Tasktron, a single-file Babashka script by lynaghk, copied 2026-10-07 from the gist at https://gist.githubusercontent.com/lynaghk/a7fbe176215aba38537237e33628d062/raw/9cea0cb93980f757fad5da6c24c7097e7a7d6eec/gistfile1.txt, with a trailing newline added.
+  Drawn on: it authors a plan in interactive stages that end in an explicit approval, then executes every subtask unattended, each role a fresh headless session with a prompt built in code and the next step chosen by code from that role's structured verdict, which is the shape the next design of card's authoring and execution starts from.
 - `payload-rewrite/plan.md` — this repository's own, written 2026-08-22.
   Carried: it governs the rewrite of the payload files that `AGENTS.md` "The register for payload files" cites.
 - `payload-rewrite/inventory.md` — this repository's own, the rule inventory that rewrite was done from.
