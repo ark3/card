@@ -115,6 +115,7 @@ The two deployments split by what sits above the deck, not by public versus priv
   A Claude Code cloud container works because the tool runs there, not because a session in it dispatches anything: the container has `claude`, and a session there launched `claude -p`, whose session in turn launched a subagent (the owner's check with Haiku, October 2026, which flagged `MAX_SUBAGENT_SPAWN_DEPTH=1` as possibly needing adjustment).
   Authoring's fresh session per stage works there too, since `/clear` keeps the container's filesystem (the owner's quick experiment, 2026-10-02).
   A session in the container is an interactive session like any other, running `card` at the owner's ask; a deck created there empties before the container does, by the rule above.
+  The container's VM stops within minutes of the session going idle, so a run there proceeds only while a session keeps it awake ("Where the run lives" below).
 
 ## The backlog lives above the deck
 
@@ -231,6 +232,12 @@ The relay route was checked on 2026-10-26, on the owner's server and in a cloud 
 Choosing the id is required, not only convenient: in a cloud container every `claude -p` launched without `--session-id` got one and the same id, across containers and working directories, appended to one transcript per directory, and a resume of that id followed only the newest call's conversation, so roles of one card launched in series in one worktree would collide and a resume would reach the wrong one (checked October 2026).
 So the tool launches every role session with `--session-id` set to a fresh uuid it records, and resumes by that uuid; unsetting `CLAUDE_CODE_SESSION_ID` did not help.
 Rejected: the owner's session reading the stopped session's transcript and answering from it, which has one model reading another's reasoning with no way to ask what it meant.
+
+**Where the run lives.**
+Approval starts the long middle, hours of role sessions the owner does not wait for, so the run must outlive the turn and the session that started it, and a check on 2026-10-26 settled where it can.
+On the owner's server a detached process survives the end of the turn and the exit of the `claude -p` that started it, reparented to the sandbox around the daemon that launched the session, and dies only when that sandbox exits; two heartbeats, one from the session's shell and one from a `claude -p` child that exited straight after, ran on with no gap for the hour observed.
+In a Claude Code cloud container it does not: the container is a microVM that stops within about five minutes of the session going idle, one sample, and comes back as a fresh boot with its disk kept and every process gone.
+So the tool never relies on the run surviving: it writes enough state after every card for a dead run to resume from the last card closed, since the disk and the plan's worktree survive the stop, and the resume discards the in-flight card's uncommitted work as `card stop` does, so that card reruns from its reconciler; it records the kernel's boot id beside the run's pid and treats a changed boot id as death, since pids restart low after a boot and a pid file alone can name an unrelated live process; and in a cloud container a run makes progress only while some session keeps the VM awake, which leaves an unattended run there open ("What stays open").
 
 **Findings become cards marked not yet accepted.**
 The reconciler, implementer and reviewer all report findings, through one optional field every role's answer shares, and the tool files each one the same way, noting the role that filed it (owner, 2026-10-26).
@@ -351,7 +358,7 @@ It binds every site where the tool tells the owner something: the stop and what 
 ### The verb surface
 
 The verbs are the operations the interactive sessions — the authoring stages, the check before approval, answering a stopped run, settling findings at the end — need, with today's verbs retired by default wherever a headless role or the tool now does the work.
-Settled 2026-10-26, apart from where the run lives ("What stays open"), by the walk-through the owner accepted.
+Settled 2026-10-26 by the walk-through the owner accepted; where the run lives was settled the same day, under "Where the run lives".
 
 The owner asks a session to run `card`, which creates the deck if needed and prints the prompt for the next stage; when the owner agrees a stage is done, the session runs a second invocation, `card done`, which records the transition and takes in what the stage wrote — the plan document and the cards are plain files where the stage's prompt says, and the tool assigns ids and checks their shape there, so authoring needs no verb that files one card, since a plan's card is live for nothing before approval; at approval that invocation starts execution, and the owner invokes nothing through the long middle.
 At the end the owner has a session run `card` again, any session; with every card closed done it prints for the owner the final card's guide, the branch and the path of the worktree holding it, and the findings by headline with the role that filed each, and with findings it prints the settling prompt, so settling needs no entry of its own and ends, with no `card done`, at the last decision.
@@ -392,13 +399,13 @@ The prompt prints the path only where a sweep is wanted, the cards stage, which 
 
 **Stepping in mid-run.**
 The floor is settled (2026-10-26), and the rest is to be learned from experience.
-While a plan runs, `card` reports the active card and role and how many cards have closed, which rests on the tool telling a running plan from a dead one, a check not yet made.
+While a plan runs, `card` reports the active card and role and how many cards have closed, which rests on the liveness record under "Where the run lives".
 `card stop` stops now: the tool ends the active role session, discards the in-flight card's uncommitted work as it does after a blocking finding, and leaves that card open, so resuming reruns it from its reconciler; "stop after this card" was set aside because one card can take long, and a stop the owner cannot count on to come promptly is little use.
 Changing the plan mid-run needs nothing more: stop, amend it in authoring by the final card's path, and approve to resume.
 Pausing, or steering a role partway through a card, waits until a real run shows the owner wants it.
 
-**Where the run lives.**
-Where the run lives once approval starts it — a detached process, and whether a cloud container keeps it alive while the owner's session is idle — is unverified; the check that tells a running plan from a dead one is the same check.
+**An unattended run in a cloud container.**
+The VM stops within minutes of an idle session ("Where the run lives"), so a run meant to proceed unattended for hours there needs either a session that stays busy in a turn for the duration, which is untested, or a host other than the container.
 
 **The two-hops hypothesis** under "Delivery" is unconfirmed by the owner.
 
