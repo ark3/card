@@ -72,6 +72,8 @@ What the deck lasting does not buy is any part of the workflow.
 No part of the workflow may depend on the deck lasting (2026-10-26): the workflow works with no closed pile at all, a closed pile is a bonus where a deck persists, and in an ephemeral container the deck must empty before the container does, every finding worked, promoted or declined.
 Tracking cards in git — a deck committed in the repository's tree, as agentpane's is — is what card moves away from: agentpane showed it counterproductive, and what must last lives elsewhere ("The backlog lives above the deck" below).
 The committed-deck feature need not be dropped at once, but nothing is optimized for it; the private deck under `.git`, which git does not track, is the working store.
+Of that feature, the `deck` redirect in the config stays and the `public` flag goes (owner, 2026-10-27).
+The flag had three effects — the chapters' public sentences, a close committed by `card run` on a public deck, and the card-id check skipped — and the redesign retires the first two with the chapters and the verb, while agentpane's deck, the one public deck, is being emptied into its issues; so the card-id check now runs on every deck, and a config still carrying `public` is refused with a line saying the flag is gone, as today's tool refuses a stale `[run]` section.
 
 ## What the deck does for the work
 
@@ -169,7 +171,7 @@ The owner's principle, which most of what follows serves: "I want to be there fo
   Authoring settles what the plan is and how to do it; after the owner approves, execution does all of it.
   The owner never picks cards to run, and nothing recommends what comes next: "either the thing will be done (nothing left to do) or it won't be done."
 - **No dispatching session is required.**
-  The tool decides every next step, and launches each role itself as a fresh headless `claude -p` session, which the cloud-container check under "Two deployments" showed works there.
+  The tool decides every next step, and launches each role itself as a fresh headless session of one of two harnesses, Claude Code or Pi ("The harness" below), which for Claude Code the cloud-container check under "Two deployments" showed works there.
   A relay, in which an interactive session passes tool-built prompts to its own subagents, was sketched and judged unnecessary.
   The `sbox` requirement goes: sandboxing belongs to the harness.
 - **Routing a verdict is placement; reaching it is judgment.**
@@ -232,6 +234,22 @@ The relay route was checked on 2026-10-26, on the owner's server and in a cloud 
 Choosing the id is required, not only convenient: in a cloud container every `claude -p` launched without `--session-id` got one and the same id, across containers and working directories, appended to one transcript per directory, and a resume of that id followed only the newest call's conversation, so roles of one card launched in series in one worktree would collide and a resume would reach the wrong one (checked October 2026).
 So the tool launches every role session with `--session-id` set to a fresh uuid it records, and resumes by that uuid; unsetting `CLAUDE_CODE_SESSION_ID` did not help.
 Rejected: the owner's session reading the stopped session's transcript and answering from it, which has one model reading another's reasoning with no way to ask what it meant.
+What is open at a stop was settled on 2026-10-27, when the implementation plan's gaps were walked through.
+Bare `card` reports a run the owner stopped or a role bounced, says what it waits on, and never restarts it; only a dead run ("Where the run lives") is carried on by bare `card` itself, since nothing there waits on the owner.
+`card resume` with nothing on stdin carries on after `card stop`, as it does after an answer given at a terminal.
+`card amend` takes the plan back to the cards stage and prints that stage's prompt, from which `card done` and then `card approve` carry the run on from the stopped card, whose reconciler sees the amendments first; "Stepping in mid-run" and "The final card" both send the owner to authoring after a stop, and no word carried them there until this one.
+
+**The harness.**
+Settled with the owner on 2026-10-27, after this brief first landed naming Claude Code alone: the tool drives two harnesses, Claude Code and Pi, because Claude Code is not available at work, where the tool is used most, and today's `card run` already knows both.
+Each harness's flags are spelled once in code.
+Claude Code launches a role with `claude -p --session-id <uuid>` and resumes it with `--resume <uuid>`; Pi launches and resumes alike with `pi -p --session-id <uuid>`, which creates the session or continues it; both read the prompt on stdin, which has no size limit where an argument does (Tasktron's reason).
+Pi passes the admission test under "Costs accepted", a harness that accepts a session id the caller chooses.
+The run's harness is chosen once, at approval, by today's rule — Claude Code where `claude` is on PATH, else Pi, and `--harness` to name one — and recorded in the plan's state, so every launch and resume of that run, `card ask` included, uses the same one; the model and effort are left to each harness's own settings, as today.
+Claude Code's role sessions launch with `--permission-mode bypassPermissions`, since a headless session has nobody to answer a permission prompt and a fresh cloud container carries no settings that would, and the relay check ran under that flag in both places; Pi has no permission prompt, and its `--approve` means trusting project-local files, not tool permission.
+Structured answers take the portable shape, Tasktron's: the schema is stated in the prompt, the answer is parsed out of the session's output text, and a malformed one gets the repair prompt under "Delivery"; Claude Code's `--json-schema` rides along where it costs nothing and is relied on nowhere.
+Pi loads what Claude Code loads (owner, 2026-10-27); the skill that fact once served went the same day ("Delivery").
+The relay under "Stopping" was checked on Pi on 2026-10-27, by the protocol used on Claude Code: question-only resumes by `pi -p --session-id <uuid>` with the question on stdin answered without touching files, a continue resume carrying the owner's decision and the schema restated finished the work to the schema, two same-directory sessions with distinct ids kept separate session files and resumed apart, no synthetic reply appeared, and no fence was needed.
+Plain `-p` prints the final text alone, where `--mode json` streams events, so the launcher parses plain `-p` output on Pi and the `result` field of Claude Code's JSON envelope, one parse for both.
 
 **Where the run lives.**
 Approval starts the long middle, hours of role sessions the owner does not wait for, so the run must outlive the turn and the session that started it, and a check on 2026-10-26 settled where it can.
@@ -244,12 +262,16 @@ The reconciler, implementer and reviewer all report findings, through one option
 A finding is something outside the card's contract that the reporting role must not act on; a problem inside the contract goes through that role's own outcomes — the reviewer's revision, the reconciler's amendment or bounce, the implementer's blocking bounce — because a defect filed as a finding lets its card close done with the defect parked behind the mark.
 The reviewer is the reason the field is shared: a fresh reader of a diff sees what the implementer was too close to, and without the field it either drops what it sees or widens "fix small things itself" past the card.
 The tool hands a marked card to no implementer and treats it as ready for nothing until the owner clears the mark; at the end of the plan the owner settles each: work it now, promote it, or decline it.
+Where the mark lives was settled on 2026-10-27: nowhere in the card.
+The tool stores which cards make up a plan and in what order, and a card in `open/` that no plan's order lists is by that fact not yet accepted; a second copy of that bit, as a field or a directory, would be a maintained index of the kind the card format rules out, and a card hand-written into `open/` lands on the safe side, pending.
+The tool writes the filing role, the card the finding was found under and the plan into the body's first line as it files.
+`join` clears the mark by moving the card into the plan's order, ahead of the final card where the plan already has one, and it works at a plan's end and in any cards stage alike, where the stage's prompt lists what waits; `later` records the decision in the finishing plan's state and leaves the card where it is, in no plan, for a cards stage not yet run to `join`; `decline` and `promote` close it.
 Why the gate: agentpane's deck, with nothing above it, reached 93 open cards, 56 of them filed by reviews and runs, and filed 281 cards against 275 closed between 2026-09-23 and 2026-10-15.
 Why still a card: a card is executable the moment it is accepted, with no triage pass to turn it into one.
 The owner settles findings one decision at a time, each its own invocation carrying the decision in its arguments or on stdin, made as the owner makes it, so a settling session that dies midway loses nothing already decided (owner, 2026-10-26).
 Promotion is always the owner's act, since the agent may be unable to reach the tracker: a model rewrites the finding as public-safe text at promotion time, the tool checks it for card ids as it checks a close note and prints it for the owner, the owner posts it, and the tool records the card as promoted with the key the owner gives back.
 Findings are filed in the card's private register and rewritten only when promoted, because filing should stay cheap and most findings never go public.
-A finding the owner chooses to work now joins this plan when it falls within the plan's intent, and starts a new plan when it falls outside it (owner, 2026-10-26).
+A finding the owner chooses to work now joins this plan when it falls within the plan's intent, and waits, through `later`, for a plan not yet authored when it falls outside it (owner, 2026-10-26; narrowed on 2026-10-27 from "starts a new plan", since a settling verb that started a plan put two plans in progress at once and a plan's name on every command).
 The test is the plan's intent and not the card's contract because a finding is by definition outside its card yet may still belong to the plan, while work outside the plan would ride on its branch and into its merge request.
 A joining finding takes the final card's path: the owner adds it in an authoring session ahead of the final card, it passes the check before approval, the plan document is updated if the finding changes what the plan is, and the final card runs again; the plan is not done until it does, which is the fact about its cards and not a regression.
 Where the owner has no tracker for the plan, working or declining are the choices, and declining a finding the owner has read loses nothing the filing was for: "It also makes me aware" (owner, 2026-10-26).
@@ -271,7 +293,8 @@ Which cards make up the plan, and in what order, the tool stores where it likes;
 Authoring writes it as the last card: how to verify end to end that the plan document's acceptance criteria hold on the finished branch, citing the document for the criteria.
 It runs through the same roles as any card, and a gap it finds is a blocking finding: the implementer raises it as one, and a reviewer that finds a gap the implementer missed requests a revision, which brings it to the same place.
 The reconciler cannot close that gap, since amending a verification card into implementation exceeds its intent, and new cards change the plan the owner approved; so the reconciler bounces it to the owner, the run stops, and the hand-back names it.
-The owner answers in an authoring session that adds cards ahead of the final card, which pass the check before approval like any others, and a bare `card` then carries the plan on, running the final card again (owner, 2026-10-26).
+The owner answers with `card amend`, in an authoring session that adds cards ahead of the final card, which pass the check before approval like any others, and `card approve` then carries the plan on, reopening the final card and running it again (owner, 2026-10-26; the verbs, 2026-10-27).
+Reopening is in place: the tool moves the final card back to `open/`, removes its `closed:` field and keeps its record, so the roles that run it again see what the last run found (2026-10-27).
 Rejected: the reconciler drafting fix cards behind the mark, which gives a reconciler authoring's work without the check, and an unattended authoring stage, which drops the interactive check and can loop with no one deciding.
 Chosen over a final step the tool always runs as "a much more powerful approach", since authoring writes a check fitted to the plan.
 
@@ -282,42 +305,59 @@ It also takes the place of the hand-back step today's payload asks of a session,
 ### Authoring
 
 **Staged**, which the owner wants to try because the ad hoc approach "has worked okay, but that doesn't mean it's optimal": write the plan document (what the plan is); write the cards (how, ending with the final card); a check before approval; the owner's approval, on which the session runs the verb that starts execution.
+Three stages, settled 2026-10-27: the document stage and the cards stage each end with `card done`, and the check stage ends with `card approve`, which starts the run, or `card amend`, which returns the plan to the cards stage.
+The check stage's prompt says in plain words that `card approve` is the owner's word and starts the run, so a fresh session is told the stakes before it can act.
 Authoring also settles the plan's branch: its name, following the host repository's convention (at work, `feature/abc-123-...` for a Jira ticket ABC-123), and the point it starts from, such as `develop`; the tool records both for execution.
-A bare `card` carries an approved plan on from wherever it stands, such as after the owner answers a stopped run.
+A bare `card` carries an approved plan on from wherever it stands when nothing waits on the owner, as after a run died; where the owner stopped the run or a role bounced, it reports and waits, and `card resume` carries on ("Stopping", 2026-10-27).
 
 **A fresh session per stage**, the plan document being the handoff, so every stage boundary is a free cold read of it.
 The owner does not work at a terminal by choice: authoring is always "Please run `card`", and the tool prints the prompt for whatever stage is next.
 
 **Recorded transitions.**
 When the owner agrees a stage is done, the session runs a verb that records it, and the tool reads the record; inferring the stage from the document's content was rejected, because a half-written document looks the same as an agreed one.
-Stages can loop back until approval, and approval is only ever the owner's explicit word.
+Stages can loop back until approval — `card amend`, from the check stage, is the way back (2026-10-27) — and approval is only ever the owner's explicit word.
 
 **The check before approval is interactive**: a fresh session checks the plan document and the cards, presents its findings, and edits what the owner decides — the owner at the start, uninvolved through the middle.
 
-**A bare `card` does the next thing**: start authoring, print the next stage, execute an approved plan, say what a stopped run is waiting on, or say the plan is done.
-With more than one plan in progress it asks which; the common case of one should need no naming.
+**A bare `card` does the next thing**: start authoring, print the next stage, carry on a plan whose run died, say what a stopped or bounced run is waiting on, or say the plan is done.
+With more than one plan in progress it asks which, listing the plans and printing each command with `--plan <slug>` filled in ("The verb surface"); the common case of one should need no naming.
+
+### Two executables: `card` and `deck`
+
+Settled with the owner on 2026-10-27, reading this brief back: it describes two programs.
+One manipulates a collection of text files under conventions — the deck under the git common directory and its config, the prefix and the ids, the card file with its three frontmatter fields and its `# ` headline, the open and closed directories, the close note and the `closed:` field, and the check of a text for card ids — and knows nothing of agents, plans or branches.
+The other understands agents and implements the workflow on one of two harnesses: it builds the prompts, launches and resumes the roles, holds the plan's branch and worktree, stops and answers, settles findings, and is itself run by interactive sessions.
+The first is `deck`, named for the collection as `card` was named for the item, with the same boring verbs, and it is nearly today's code: the card and deck modules and five of today's verbs — `deck init`, `deck new`, `deck show`, `deck list`, `deck close` — with their tests, the id check as `deck lint`, and two operations the workflow needs that are still conventions of the file, reopening a closed card in place and appending a record section beneath a card's contract.
+The second is `card`, the program the rest of this brief describes, and it touches a card file only through `deck`'s modules.
+One package carries both executables, so one install delivers both, and `card` calls `deck` in process, as a library, not as a subprocess: simpler, typed and testable, with the process boundary still available later, since `deck`'s executable is a thin wrapper over the same modules.
+The split is cheap because the code already falls on that seam, so its cost is a rename and the two additions; it buys a base that is tested on its own and that the workflow never reaches around, a clean retirement, since the old surface simply ceases when `card` is a new program, and a human-facing way to look at the deck, `deck list --label` for one, that the workflow's reasoning never has to justify or deny.
+The guardrail: `deck` stays today's verbs plus the two additions, because a file tool that grows features of its own is a tracker with a CLI, which is the prior this brief displaces.
+`deck` creates the deck where none exists, under the fixed default prefix, on `deck new` and when `card` starts a plan, and `deck init <prefix>` chooses another prefix first; the refusal of `new` from a linked worktree ("What the first brief settles" below) stays with `deck new`.
+`deck agent-help` prints, on demand, the conventions a session needs when the owner asks it to touch the deck directly — the file's shape, the verbs, how to cite an id, the one-way reference rule — and nothing prints it unasked; it is prose a model reads, so it lives under `payload/` like the prompts, and it is the one place the retired `workflow` chapter's content survives, minus everything that steered a session.
+A session that finds `deck` on PATH could list the deck and reason from it, which is the exposure today's `card list` already has; no prompt sends a session there but the cards stage, and the rule stands that the tool reads the deck and sessions work what the owner asked.
 
 ### Delivery
 
 **The bootstrap goes.**
 No global instruction runs `card status` in every session, which the owner calls "a hack" kept to carry a sandbox check that belongs in the harness.
-A skill takes its place, installed in the owner's personal skills and never in a repository card works in.
-Bare `card` acts, so it runs only when asked, and a skill's text is read only when the skill is invoked, so beyond the skill's one-line description no workflow text reaches a session unasked.
+Nothing takes its place (owner, 2026-10-27): authoring is "Please run `card`", bare `card` acts only when asked, and every printout carries beside it what the session must do with it, so no workflow text reaches a session unasked, not even a description.
+A skill was the replacement as first written; under the redesign it had nothing to say that the tool's own output does not print beside every marked block, and its one-line description was the last piece of workflow text in every session's context, so it went the day the two executables were settled, with `deck agent-help` covering the rare direct use on demand ("Two executables" above).
 That retires at its source the failure of 2026-08-26 the first brief records under "What the deliverable is": a status printout that spoke imperatively about the present session, read by a fresh session on a corporate machine that then implemented a ticket handed to it in discussion phrasing.
-The constraint that shaped the first brief holds: nothing of the workflow is committed to any repository card works in, and the skill lives outside every such repository.
+The constraint that shaped the first brief holds: nothing of the workflow is committed to any repository card works in.
 
-**Installing is two one-liners** (owner, 2026-10-26): a global package install for the tool and `npx skills add` for the skill, with Node or Bun assumed present, including in a fresh cloud container.
-Both install from the public repository and nothing is published: `bun install -g github:ark3/card` for the tool and `npx skills add ark3/card` for the skill, so there is no registry account, no name to find, and no release step; an install takes the tip of main, a tag pins a version, and `"private": true` in `package.json` blocks only publishing.
-The skill's source lives in card's own repository; "never in a repository" bars the skill from the repositories card works in, not from the one it ships from.
-The runtime is Bun, for now: the tool calls Bun's own APIs and its `bin` is a `.ts` file, so its one-liner is `bun install -g`, and only the skill's `npx` works under Node alone; the Claude Code cloud container carries Bun 1.4.4.
+**Installing is one one-liner** (owner, 2026-10-26 as two, narrowed to one on 2026-10-27 when the skill went): a global package install, with Bun assumed present, including in a fresh cloud container.
+It installs from the public repository and nothing is published: `bun install -g github:ark3/card` delivers both executables, so there is no registry account, no name to find, and no release step; an install takes the tip of main, a tag pins a version, and `"private": true` in `package.json` blocks only publishing.
+The one-liner was rehearsed on 2026-10-27, when the owner pinned today's tool at a sha for the duration of the redesign, so that the cards replacing the tool would not change the tool executing them: Bun links a `.ts` bin from a GitHub source.
+The runtime is Bun, for now: the tool calls Bun's own APIs and its `bin` entries are `.ts` files, so its one-liner is `bun install -g`; the Claude Code cloud container carries Bun 1.4.4.
 Rejected for now: porting to Node, a real card touching the suite as well; a compiled executable per platform, which no package-manager one-liner installs; and publishing to npm under a scoped name, which adds an account and a publish step per release for a shorter command.
 
-**The tool creates the deck when it starts a plan**, under a fixed default prefix, asking nothing (2026-10-26), and `card new` creates it the same way when a thought is put down where no deck exists yet.
-Bare `card` and `card new` are the only entries, and every other operation happens inside a plan the tool started, so no state of the workflow has no deck, and "no deck here" answers an asked invocation with a refusal.
-The prefix stops being a decision because the owner no longer thinks about cards one at a time and recognizes them by headline; `card init <prefix>` stays for anyone who wants to choose one before the first plan.
+**The tool creates the deck when it starts a plan**, under a fixed default prefix, `card`, asking nothing (2026-10-26; the word, 2026-10-27), and `deck new` creates it the same way when a thought is put down where no deck exists yet; the creating code is `deck`'s, which `card` calls ("Two executables").
+Bare `card` and `deck new` are the only entries, and every other operation happens inside a plan the tool started, so no state of the workflow has no deck, and "no deck here" answers an asked invocation with a refusal.
+The prefix stops being a decision because the owner no longer thinks about cards one at a time and recognizes them by headline; `deck init <prefix>` stays for anyone who wants to choose one before the first plan.
 
 **The tool builds each role's prompt in code**, so every prompt has one reader, and the two hops of today — the payload telling a session what a dispatch prompt carries, then the session writing it — become one.
 The role and stage prompts themselves are implementation work, written in the implementation cards and not here (2026-10-26); this brief carries what governs them: the principles below, each role's outcomes above as the skeleton of its answer schema, and the obligation to keep card's plan apart from Claude Code's plan mode; the cards that write them draw on this brief, the payload as it stands today, and `reference/tasktron.clj`.
+The prose of each prompt lives in one file per reader under `payload/`, imported as text and substituted in code as the status chapter is built today, because the register rules of this repository's AGENTS.md bind that directory and a cold read needs a file to hand over (2026-10-27).
 The principles are Tasktron's prompting lessons, read from `reference/tasktron.clj` on 2026-10-07:
 
 - **Code steers, so no prompt does.**
@@ -346,7 +386,7 @@ The principles are Tasktron's prompting lessons, read from `reference/tasktron.c
   The authoring prompts are adapted from a generic brainstorming and planning template ("YAGNI ruthlessly", sections of "200-300 words", a bold "Key Principles" list restating the process above it): they say things twice, advise rather than direct ("Prefer multiple choice questions"), and the plan prompt uses `## Subtasks` both as a heading of its own instructions and as the name of the document's section.
   They survive because the owner sits in that conversation and corrects course, which is the only place loose prose is affordable; this repository's register rules would reject them, and card's stage prompts should not copy them.
 
-The relay check reported what the relay asks of the prompts: no question-only resume restarted the work in four runs, so a fence on question resumes is optional insurance, not a requirement; the tool passes `--json-schema` only on the resume it reads, the continue; and a run ending in a schema answer leaves a synthetic "No response requested." reply in the transcript, which the resumed model reads as its own, so a relay prompt should not lean on "your last answer".
+The relay check reported what the relay asks of the prompts: no question-only resume restarted the work in four runs, so a fence on question resumes is optional insurance, not a requirement; the tool passes `--json-schema`, where it passes it at all ("The harness" above), only on the resume it reads, the continue; and a run ending in a schema answer leaves a synthetic "No response requested." reply in the transcript, which the resumed model reads as its own, so a relay prompt should not lean on "your last answer".
 
 **What the tool prints for the owner, the session relays unaltered.**
 A session runs every invocation of the tool, never the owner at a terminal — resuming a stopped role session at a terminal is not an invocation of the tool — and the owner sees a command's output only by going to look, so anything the tool means for the owner reaches the owner only in the session's reply (owner, 2026-10-26).
@@ -359,37 +399,47 @@ It binds every site where the tool tells the owner something: the stop and what 
 
 The verbs are the operations the interactive sessions — the authoring stages, the check before approval, answering a stopped run, settling findings at the end — need, with today's verbs retired by default wherever a headless role or the tool now does the work.
 Settled 2026-10-26 by the walk-through the owner accepted; where the run lives was settled the same day, under "Where the run lives".
+Since 2026-10-27 the surface below is `card`'s, the workflow executable; the file tool `deck` has its own verbs ("Two executables"), and `card` has none that touches a card file.
 
-The owner asks a session to run `card`, which creates the deck if needed and prints the prompt for the next stage; when the owner agrees a stage is done, the session runs a second invocation, `card done`, which records the transition and takes in what the stage wrote — the plan document and the cards are plain files where the stage's prompt says, and the tool assigns ids and checks their shape there, so authoring needs no verb that files one card, since a plan's card is live for nothing before approval; at approval that invocation starts execution, and the owner invokes nothing through the long middle.
+The owner asks a session to run `card`, which creates the deck if needed and prints the prompt for the next stage; when the owner agrees a stage is done, the session runs a second invocation, `card done`, which records the transition and takes in what the stage wrote — the plan document and the cards are plain files where the stage's prompt says, and the tool assigns ids and checks their shape there, so authoring needs no verb that files one card, since a plan's card is live for nothing before approval; at the end of the check stage the session runs `card approve`, which starts execution (amended 2026-10-27 from `card done` doing both; the spelling below says why), and the owner invokes nothing through the long middle.
 At the end the owner has a session run `card` again, any session; with every card closed done it prints for the owner the final card's guide, the branch and the path of the worktree holding it, and the findings by headline with the role that filed each, and with findings it prints the settling prompt, so settling needs no entry of its own and ends, with no `card done`, at the last decision.
 Each decision is its own invocation; promotion takes two, because the card-id check must come before the owner posts: the first carries the session's public-safe draft on stdin, for one finding or several folded into one ticket, and the tool checks it, prints it for the owner, and marks them awaiting a key, which `card` keeps listing; the second records the owner's key and closes them promoted.
 The test that decides each invocation: one is justified only where an interactive session needs code to run at a moment the session chooses, and its content rides on arguments or stdin, never on a file left waiting.
 
-The spelling, settled 2026-10-26:
+The spelling, settled 2026-10-26 and amended 2026-10-27, where each amendment says so:
 
 - `card` — the next thing, or where things stand.
-- `card done` — a stage the owner agreed is done; at approval it starts the run.
+- `card done` — a stage the owner agreed is done: the document stage or the cards stage.
+- `card approve` — the owner's approval, at the end of the check stage; it starts the run.
+  Added 2026-10-27 in place of `card done` approving, so that no word means two things in two neighbouring states: a `done` run by a session holding a stale picture of the state, thinking it ends the cards stage when the plan is already in the check stage, would have approved, where every other word used in the wrong state is refused.
+- `card amend` — back to the cards stage, from the check stage or from a stopped run, printing that stage's prompt.
+  Added 2026-10-27: "Stepping in mid-run" and "The final card" both send the owner to authoring after a stop, and no word carried them there; a session amending cards needs the cards stage prompt handed to it, which a stop report cannot carry without printing a prompt most stops never need.
 - `card stop` — stop a run now ("What stays open").
-- `card join <finding>`, `card later <finding>` for a new plan, `card decline <finding>` with the reason on stdin, `card promote <finding>...` with the draft on stdin, and `card promote <finding>... --key <KEY>` to record the key — settling findings.
+- `card join <finding>`, `card later <finding>` for a plan not yet authored, `card decline <finding>` with the reason on stdin, `card promote <finding>...` with the draft on stdin, and `card promote <finding>... --key <KEY>` to record the key — settling findings.
   `later` rather than `new`, which would read as today's `card new`, a different act.
 - `card ask`, with the owner's question on stdin, which resumes the stopped session headless and prints its answer for the owner; and `card resume`, with the owner's answer on stdin, or with nothing where the owner already answered the session at a terminal — a stopped run.
-- `card new '<headline>'`, body on stdin — a thought put down outside a stage and outside a run, filed as a card marked not yet accepted ("Putting a thought down" below).
-- `card init <prefix>` — kept from today, for choosing a prefix before the first plan.
+- `card new` and `card init` left this surface on 2026-10-27 for the file tool, as `deck new '<headline>'`, body on stdin — a thought put down outside a stage and outside a run, filed as a card marked not yet accepted ("Putting a thought down" below) — and `deck init <prefix>`, for choosing a prefix before the first plan: filing a thought and choosing a prefix are file operations.
+- `--plan <slug>`, accepted by every verb in any position and printed by `card` right after the word `card` in every command it lists — the plan a command means, needed only while more than one plan is in progress, and starting a plan under that name where none exists by it.
+  Added 2026-10-27: the brief said `card` "asks which" with more than one plan in progress, and no command could carry the answer; and nothing started a second plan while one was in progress, which at work is the halted ticket's case.
+  A plan started without a name takes its slug from its document's headline when the document stage ends.
 
 The session never chooses among these: `card` prints, for the current state, the exact commands open in it, so the session copies a command rather than recalling a vocabulary (owner, 2026-10-26).
 Separate words were chosen over folding the acts into `card done` with arguments: the owner's choice has to be carried either way, so folding saves nothing there, while a session holding a stale picture of the state — the run finished, or another session approved — gets a loud refusal from a word used in the wrong state, where a folded `done` would quietly do what the current state means by it, approval included, which "Recorded transitions" keeps to the owner's explicit word.
+On 2026-10-27 the same reasoning took approval out of `card done`: `card approve` is its own word, so a stale `done` is refused like any other word in the wrong state.
 
 **Putting a thought down.**
 The brief first landed with no verb that files one card, and the owner added one on 2026-10-26: "put a pin in that" is the gesture the design began with, and the purpose sentence promises "a place to put things down", which a surface whose only entries are an authoring stage and a run's findings keeps only for authoring and for roles, so a thought in any other interactive session could be kept only by opening a plan for it.
-`card new` is today's verb kept, with one change: the card it files is marked not yet accepted, like a role's finding, so no run picks it up until the owner settles it.
+`deck new` is today's `card new` kept, moved to the file tool on 2026-10-27, with one change: the card it files is marked not yet accepted, like a role's finding, so no run picks it up until the owner settles it.
 It passes the test above: an interactive session needs code to run at the moment the thought comes, and the headline and body ride on an argument and stdin.
-It comes back the way a finding does: `card` prints the marked cards with the settling prompt whenever any exist and no run is live, so a thought put down with no plan in progress returns at the next bare `card`, where `later`, `decline` and `promote` apply and `join` needs a plan to join.
+It comes back at the next bare `card` with nothing in progress, which lists the cards that wait before it starts authoring, with `decline` and `promote` open for each and the cards stage ahead to `join` them; the settling prompt prints only at a plan's end.
+Amended 2026-10-27: printed whenever a marked card existed and no run was live, as first written, the settling prompt would have reached a session mid-authoring, with `join` left to guess which plan.
 
 **Retired.**
-Of today's thirteen verbs — `status`, `init`, `new`, `show`, `list`, `close`, `cmd`, `lint-commit`, `worktree`, `author`, `execute`, `run`, `workflow` — `init` and `new` survive, `new` narrowed as "Putting a thought down" says.
-A verb is how something outside the tool's control loop acts on the deck, and the headless roles act only through their answers: the tool itself puts the card in the prompt (`show`), files a run's findings (what `new` did for a session, which it now does only for the owner's own thoughts), appends the account and the close note and closes the card (`close`), holds the plan's worktree (`worktree`), commits, and checks text for card ids (`lint-commit`).
+Of today's thirteen verbs — `status`, `init`, `new`, `show`, `list`, `close`, `cmd`, `lint-commit`, `worktree`, `author`, `execute`, `run`, `workflow` — none survives in `card`, and six move to the file tool `deck` ("Two executables", 2026-10-27): `init`, `new`, `show`, `list`, `close`, and `lint-commit` as `deck lint`, with `new` narrowed as "Putting a thought down" says.
+The reasoning below is about `card`'s surface, the one sessions copy commands from; a file tool the owner runs is outside it.
+A verb is how something outside the tool's control loop acts on the deck, and the headless roles act only through their answers: the tool itself puts the card in the prompt (`show`), files a run's findings (what `new` did for a session, which it now does only for the owner's own thoughts), appends the account and the close note and closes the card (`close`), holds the plan's worktree (`worktree`), commits, and checks text for card ids (`lint-commit`) — each deck operation through `deck`'s modules.
 `status`, `workflow`, `execute` and `run` served a session steering the workflow, which a bare `card` that does the next thing, the end of the bootstrap, and prompts built in code retire together; `author` has nothing of its own once a bare `card` starts authoring and prints the next stage.
-`list` answered a session asking what is ready, which no session asks: the tool reads the deck's state, and `card` says where things stand.
+`list` answered a session asking what is ready, which no session asks: the tool reads the deck's state, and `card` says where things stand; as `deck list` it answers the owner, who wants a plan's cards by label, and that use was never the workflow's.
 `cmd`, the escape hatch to the raw files, goes by the owner's choice of 2026-10-26, made after the brief first landed with it absent from the spelling and no reason given.
 Its only work was resolving the deck's path for a session that did not know it, and the cards stage prompt, built in code, prints that path already resolved — the absolute path under the git common directory, since a linked worktree's `.git` is a file — so no code needs to run at a moment the session chooses, which is the test above failing, and the session reads the deck with its ordinary tools, where a wrapper with a `--` separator is a place literal readers stumble.
 The deck's location was never the secret, and a printed prompt is not committed, so the disclosure costs nothing; what the prefix still bought, a transcript that announces deck access and a nudge that the session is touching the tracker, the one-reader prompt gives in words.
@@ -401,7 +451,7 @@ The prompt prints the path only where a sweep is wanted, the cards stage, which 
 The floor is settled (2026-10-26), and the rest is to be learned from experience.
 While a plan runs, `card` reports the active card and role and how many cards have closed, which rests on the liveness record under "Where the run lives".
 `card stop` stops now: the tool ends the active role session, discards the in-flight card's uncommitted work as it does after a blocking finding, and leaves that card open, so resuming reruns it from its reconciler; "stop after this card" was set aside because one card can take long, and a stop the owner cannot count on to come promptly is little use.
-Changing the plan mid-run needs nothing more: stop, amend it in authoring by the final card's path, and approve to resume.
+Changing the plan mid-run needs nothing more: stop, `card amend` to the cards stage, and `card done` then `card approve` to resume (the verbs, 2026-10-27).
 Pausing, or steering a role partway through a card, waits until a real run shows the owner wants it.
 
 **An unattended run in a cloud container.**
@@ -415,19 +465,20 @@ The redesign leaves the card file, the runtime and deck resolution alone, and th
 
 - **The card file's format**: "What this project changes about the format" there — three frontmatter fields, `blocked-by:` and `labels:` written by the author and `closed:` written by the tool, one `# ` headline, prose; no card rewritten because another changed, and every relation computed at read time.
   With it "Requirements carried over from agentpane": the format stays the API, and ids are drawn at random (`src/id.ts`); and "How a card ends": the four close outcomes and the close note under its own heading.
+  Under the redesign the run follows authoring's order, so `blocked-by:` is checked once, when the cards stage's `card done` takes the cards in — no card may precede one it waits on — and read nowhere else (2026-10-27).
 - **The runtime**: "Settled during the build" there — no runtime dependencies, everything in Bun, `bun run check` as `bun test` then `tsc --noEmit`, TypeScript pinned to an exact version.
 - **Where the deck lives**: "Settled during the build" there — the card directory under the git common directory, `card-config.toml` beside the deck, every worktree resolving to one deck and every clone to its own, the prefix recorded and never derived from the filenames present.
 - **The one-directional reference rule**: "The context that shapes the design" there — items cite the public tier's keys freely, and nothing public ever cites a card id.
-  It is the entire privacy boundary and it is checkable, and under the redesign the tool checks it itself, on every close note and on every promotion text.
+  It is the entire privacy boundary and it is checkable, and under the redesign the tool checks it itself, on every close note and on every promotion text, on every deck, public mode being gone ("The deck is a store").
 
 What changes about them:
 
 - **Nothing is optimized for a deck in the tree, and the workflow works with no closed pile.**
   The first brief's "Authoring must sweep the closed corpus for prior art" cannot be load-bearing: where a closed pile exists an authoring session may read it, at the path the cards stage prompt prints ("Retired", on `cmd`), and where none does nothing is missing.
-  Of the refusals of `new` and `close` from a linked worktree, which "Settled during the build" records, `close`'s goes with the verb and `new`'s stays with it.
+  Of the refusals of `new` and `close` from a linked worktree, which "Settled during the build" records, `close`'s goes, since the tool now closes cards itself through `deck`'s modules and the refusal guarded a dispatched session that no longer exists, and `new`'s stays with `deck new`.
 - **The install story.**
-  "clone-and-run" becomes two one-liners, and the runtime stays Bun for now ("Delivery").
-- **The tool creates the deck**, under a fixed default prefix, when it starts a plan or when `card new` finds none; `card init <prefix>` is kept for choosing one first, and "No hardcoded prefix" there narrows to the prefix being recorded in the deck and never inferred from it.
+  "clone-and-run" becomes one one-liner delivering two executables, the skill having gone, and the runtime stays Bun for now ("Delivery").
+- **The tool creates the deck**, under a fixed default prefix, when `card` starts a plan or when `deck new` finds none; `deck init <prefix>` is kept for choosing one first, and "No hardcoded prefix" there narrows to the prefix being recorded in the deck and never inferred from it.
 
 ## Costs accepted with eyes open
 
@@ -444,11 +495,77 @@ Restated for the redesign; the first brief's list is not carried.
   The reconciler is the answer: a check against the tip before every card, load-bearing rather than hygiene.
 - **One-tree atomicity is gone.**
   Retiring every copy of an overturned fact is a sweep over the tree and a second over the deck, and nothing reminds you of the second.
-- **The tool names the harness in code.**
-  It launches `claude -p`, sets `--session-id`, and resumes by it; a harness joins only if it accepts a session id the caller chooses, which the collision under "Stopping" makes a requirement rather than a convenience.
-  Codex was weighed on 2026-10-02 and left out on that test: `codex exec` lists no `--session-id`.
+- **The tool names its harnesses in code.**
+  It launches `claude -p` or `pi -p`, sets `--session-id`, and resumes by it ("The harness"); a harness joins only if it accepts a session id the caller chooses, which the collision under "Stopping" makes a requirement rather than a convenience.
+  Pi accepts one; Codex was weighed on 2026-10-02 and left out on that test: `codex exec` lists no `--session-id`.
+
+## Acceptance criteria of the redesign
+
+This brief is the plan document of the plan that implements it, so it carries that plan's acceptance criteria, settled with the owner on 2026-10-27; the plan's final card checks the finished branch against them.
+
+1. **The surface.**
+   In a git repository with no deck, bare `card` creates the deck under the prefix `card` and prints the document-stage prompt.
+   `card`'s verbs are `card`, `card done`, `card approve`, `card amend`, `card stop`, `card join`, `card later`, `card decline`, `card promote` in its two forms, `card ask` and `card resume`, with `--plan <slug>` accepted by any.
+   `deck`'s verbs are `deck init`, `deck new`, `deck show`, `deck list`, `deck close`, `deck lint` and `deck agent-help`.
+   Every retired verb is refused as unknown by both.
+   A `card` verb used in the wrong state refuses, names the state, and prints the commands open in it.
+2. **Staged authoring.**
+   Three stages.
+   Bare `card` prints the next stage's prompt.
+   `card done` ends the document stage, refusing a document without branch and start point in its frontmatter, and ends the cards stage by taking in the card files, with ids assigned, shape checked, the order recorded with the last file as the final card, and `blocked-by` checked against that order.
+   `card approve` ends the check stage, records the harness, starts the run and returns at once.
+   `card amend` returns to the cards stage from the check stage or from a stopped run.
+   A cold read of each stage prompt tells card's plan from Claude Code's plan mode.
+3. **Executing one card.**
+   Under either harness, chosen at approval by the PATH rule or `--harness` and recorded for the run, the tool launches reconciler, implementer and reviewer as fresh headless sessions with fresh recorded ids, each prompt built in code from one payload file per reader, each answer parsed from the session's output against the role's schema stated in the prompt, with the repair prompt on a malformed answer at most twice.
+   Routing matches "Executing one card".
+4. **Findings and the record.**
+   Every role's answer shares one optional findings field.
+   Each finding is filed into `open/` in no plan's order, so no run picks it up, with the filing role, card and plan in the body's first line.
+   The account, the feedback and the close note are appended beneath the contract.
+5. **Landing.**
+   The branch is created from the start point if absent and held in the plan's worktree under `.worktrees/` for the whole run.
+   Each card lands as one commit with the close note as message, after the id check.
+   An implementer's own commits are undone with the changes kept.
+   The main checkout is never touched.
+   The worktree is removed only when every card is done and the findings settled.
+6. **Stopping and answering.**
+   The run stops at the first card that does not close done.
+   Bare `card` reports it and waits.
+   `card ask` relays a question and prints the answer for the owner.
+   `card resume` continues with the owner's answer or with nothing.
+   `card stop` ends the role session, discards the in-flight work and leaves the card open to rerun from its reconciler.
+7. **Where the run lives.**
+   The run outlives the invocation that approved it.
+   State is written after every card.
+   Liveness is pid plus boot id.
+   A dead run is carried on by bare `card` from the last card closed.
+   During a run bare `card` reports the active card and role and how many cards have closed.
+8. **The plan document and the final card.**
+   Reconcilers and the final card's roles read the document and nobody else does.
+   The final card runs last.
+   A gap it finds stops the run; `card amend` adds cards ahead of it, and `card approve` reopens the final card in place and runs it again.
+9. **The end.**
+   With every card done, bare `card` prints the final card's guide, the branch, the worktree path, the findings by headline with role, and the settling prompt.
+   `join` moves a card into the plan, `later` records the decision and leaves the card where it is, `decline` closes it, and `promote` takes two invocations with the id check first.
+   `deck new` files a card in no plan, and with nothing in progress bare `card` lists what waits and starts authoring.
+10. **The owner register.**
+    Everything the tool means for the owner is marked for unaltered relay at every site "What the tool prints for the owner" names.
+11. **Delivery.**
+    No `card status` bootstrap and no skill.
+    `bun install -g github:ark3/card` installs both executables.
+    No `sbox`.
+    Nothing of the workflow is committed to a repository card works in.
+    `deck agent-help` prints the deck's conventions on demand and nothing prints them unasked.
+    The payload files the tool ships are shorter than today's four chapters.
+12. **What holds.**
+    The card file format, with `blocked-by` read once at take-in.
+    The Bun runtime with `bun run check` green.
+    The deck under the git common directory with its config beside it.
+    The one-way reference rule checked on every close note and promotion text, on every deck, with a config still carrying `public` refused.
 
 ## Where the implementation stands
 
 The tool as it stands on 2026-10-26 is the first brief's: the thirteen verbs named under "Retired", and a payload of three chapters that a dispatching session reads and follows.
 This brief records the design that replaces it; the payload derives from this brief, and the implementation cards follow.
+Of today's tool, the card and deck modules and five verbs become `deck`, and `card` is written new ("Two executables").
