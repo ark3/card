@@ -305,8 +305,8 @@ The skill's source lives in card's own repository; "never in a repository" bars 
 The runtime is Bun, for now: the tool calls Bun's own APIs and its `bin` is a `.ts` file, so its one-liner is `bun install -g`, and only the skill's `npx` works under Node alone; the Claude Code cloud container carries Bun 1.4.4.
 Rejected for now: porting to Node, a real card touching the suite as well; a compiled executable per platform, which no package-manager one-liner installs; and publishing to npm under a scoped name, which adds an account and a publish step per release for a shorter command.
 
-**The tool creates the deck when it starts a plan**, under a fixed default prefix, asking nothing (2026-10-26).
-Bare `card` is the only entry and every other operation happens inside a plan the tool started, so no state of the workflow has no deck, and "no deck here" answers an asked invocation with a refusal.
+**The tool creates the deck when it starts a plan**, under a fixed default prefix, asking nothing (2026-10-26), and `card new` creates it the same way when a thought is put down where no deck exists yet.
+Bare `card` and `card new` are the only entries, and every other operation happens inside a plan the tool started, so no state of the workflow has no deck, and "no deck here" answers an asked invocation with a refusal.
 The prefix stops being a decision because the owner no longer thinks about cards one at a time and recognizes them by headline; `card init <prefix>` stays for anyone who wants to choose one before the first plan.
 
 **The tool builds each role's prompt in code**, so every prompt has one reader, and the two hops of today — the payload telling a session what a dispatch prompt carries, then the session writing it — become one.
@@ -353,7 +353,7 @@ It binds every site where the tool tells the owner something: the stop and what 
 The verbs are the operations the interactive sessions — the authoring stages, the check before approval, answering a stopped run, settling findings at the end — need, with today's verbs retired by default wherever a headless role or the tool now does the work.
 Settled 2026-10-26, apart from where the run lives ("What stays open"), by the walk-through the owner accepted.
 
-The owner asks a session to run `card`, which creates the deck if needed and prints the prompt for the next stage; when the owner agrees a stage is done, the session runs a second invocation, `card done`, which records the transition and takes in what the stage wrote — the plan document and the cards are plain files where the stage's prompt says, and the tool assigns ids and checks their shape there, so a verb that files one card has no reason left, since a card is live for nothing before approval; at approval that invocation starts execution, and the owner invokes nothing through the long middle.
+The owner asks a session to run `card`, which creates the deck if needed and prints the prompt for the next stage; when the owner agrees a stage is done, the session runs a second invocation, `card done`, which records the transition and takes in what the stage wrote — the plan document and the cards are plain files where the stage's prompt says, and the tool assigns ids and checks their shape there, so authoring needs no verb that files one card, since a plan's card is live for nothing before approval; at approval that invocation starts execution, and the owner invokes nothing through the long middle.
 At the end the owner has a session run `card` again, any session; with every card closed done it prints for the owner the final card's guide, the branch and the path of the worktree holding it, and the findings by headline with the role that filed each, and with findings it prints the settling prompt, so settling needs no entry of its own and ends, with no `card done`, at the last decision.
 Each decision is its own invocation; promotion takes two, because the card-id check must come before the owner posts: the first carries the session's public-safe draft on stdin, for one finding or several folded into one ticket, and the tool checks it, prints it for the owner, and marks them awaiting a key, which `card` keeps listing; the second records the owner's key and closes them promoted.
 The test that decides each invocation: one is justified only where an interactive session needs code to run at a moment the session chooses, and its content rides on arguments or stdin, never on a file left waiting.
@@ -366,14 +366,21 @@ The spelling, settled 2026-10-26:
 - `card join <finding>`, `card later <finding>` for a new plan, `card decline <finding>` with the reason on stdin, `card promote <finding>...` with the draft on stdin, and `card promote <finding>... --key <KEY>` to record the key — settling findings.
   `later` rather than `new`, which would read as today's `card new`, a different act.
 - `card ask`, with the owner's question on stdin, which resumes the stopped session headless and prints its answer for the owner; and `card resume`, with the owner's answer on stdin, or with nothing where the owner already answered the session at a terminal — a stopped run.
+- `card new '<headline>'`, body on stdin — a thought put down outside a stage and outside a run, filed as a card marked not yet accepted ("Putting a thought down" below).
 - `card init <prefix>` — kept from today, for choosing a prefix before the first plan.
 
 The session never chooses among these: `card` prints, for the current state, the exact commands open in it, so the session copies a command rather than recalling a vocabulary (owner, 2026-10-26).
 Separate words were chosen over folding the acts into `card done` with arguments: the owner's choice has to be carried either way, so folding saves nothing there, while a session holding a stale picture of the state — the run finished, or another session approved — gets a loud refusal from a word used in the wrong state, where a folded `done` would quietly do what the current state means by it, approval included, which "Recorded transitions" keeps to the owner's explicit word.
 
+**Putting a thought down.**
+The brief first landed with no verb that files one card, and the owner added one on 2026-10-26: "put a pin in that" is the gesture the design began with, and the purpose sentence promises "a place to put things down", which a surface whose only entries are an authoring stage and a run's findings keeps only for authoring and for roles, so a thought in any other interactive session could be kept only by opening a plan for it.
+`card new` is today's verb kept, with one change: the card it files is marked not yet accepted, like a role's finding, so no run picks it up until the owner settles it.
+It passes the test above: an interactive session needs code to run at the moment the thought comes, and the headline and body ride on an argument and stdin.
+It comes back the way a finding does: `card` prints the marked cards with the settling prompt whenever any exist and no run is live, so a thought put down with no plan in progress returns at the next bare `card`, where `later`, `decline` and `promote` apply and `join` needs a plan to join.
+
 **Retired.**
-Of today's thirteen verbs — `status`, `init`, `new`, `show`, `list`, `close`, `cmd`, `lint-commit`, `worktree`, `author`, `execute`, `run`, `workflow` — only `init` survives.
-A verb is how something outside the tool's control loop acts on the deck, and the headless roles act only through their answers: the tool itself puts the card in the prompt (`show`), files findings (`new`), appends the account and the close note and closes the card (`close`), holds the plan's worktree (`worktree`), commits, and checks text for card ids (`lint-commit`).
+Of today's thirteen verbs — `status`, `init`, `new`, `show`, `list`, `close`, `cmd`, `lint-commit`, `worktree`, `author`, `execute`, `run`, `workflow` — `init` and `new` survive, `new` narrowed as "Putting a thought down" says.
+A verb is how something outside the tool's control loop acts on the deck, and the headless roles act only through their answers: the tool itself puts the card in the prompt (`show`), files a run's findings (what `new` did for a session, which it now does only for the owner's own thoughts), appends the account and the close note and closes the card (`close`), holds the plan's worktree (`worktree`), commits, and checks text for card ids (`lint-commit`).
 `status`, `workflow`, `execute` and `run` served a session steering the workflow, which a bare `card` that does the next thing, the end of the bootstrap, and prompts built in code retire together; `author` has nothing of its own once a bare `card` starts authoring and prints the next stage.
 `list` answered a session asking what is ready, which no session asks: the tool reads the deck's state, and `card` says where things stand.
 `cmd`, the escape hatch to the raw files, is not in the spelling the owner accepted; the walk-through gave no reason for it, and the only one this brief can offer is that the raw files stay plain and greppable, as the format requires, at the path the first brief records.
@@ -407,10 +414,10 @@ What changes about them:
 
 - **Nothing is optimized for a deck in the tree, and the workflow works with no closed pile.**
   The first brief's "Authoring must sweep the closed corpus for prior art" cannot be load-bearing: where a closed pile exists an authoring session may read it, and where none does nothing is missing.
-  The refusals of `new` and `close` from a linked worktree, which "Settled during the build" records, go with those verbs.
+  Of the refusals of `new` and `close` from a linked worktree, which "Settled during the build" records, `close`'s goes with the verb and `new`'s stays with it.
 - **The install story.**
   "clone-and-run" becomes two one-liners, and the runtime stays Bun for now ("Delivery").
-- **The tool creates the deck**, under a fixed default prefix, when it starts a plan; `card init <prefix>` is kept for choosing one first, and "No hardcoded prefix" there narrows to the prefix being recorded in the deck and never inferred from it.
+- **The tool creates the deck**, under a fixed default prefix, when it starts a plan or when `card new` finds none; `card init <prefix>` is kept for choosing one first, and "No hardcoded prefix" there narrows to the prefix being recorded in the deck and never inferred from it.
 
 ## Costs accepted with eyes open
 
