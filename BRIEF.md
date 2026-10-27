@@ -383,7 +383,10 @@ Of today's thirteen verbs — `status`, `init`, `new`, `show`, `list`, `close`, 
 A verb is how something outside the tool's control loop acts on the deck, and the headless roles act only through their answers: the tool itself puts the card in the prompt (`show`), files a run's findings (what `new` did for a session, which it now does only for the owner's own thoughts), appends the account and the close note and closes the card (`close`), holds the plan's worktree (`worktree`), commits, and checks text for card ids (`lint-commit`).
 `status`, `workflow`, `execute` and `run` served a session steering the workflow, which a bare `card` that does the next thing, the end of the bootstrap, and prompts built in code retire together; `author` has nothing of its own once a bare `card` starts authoring and prints the next stage.
 `list` answered a session asking what is ready, which no session asks: the tool reads the deck's state, and `card` says where things stand.
-`cmd`, the escape hatch to the raw files, is not in the spelling the owner accepted; the walk-through gave no reason for it, and the only one this brief can offer is that the raw files stay plain and greppable, as the format requires, at the path the first brief records.
+`cmd`, the escape hatch to the raw files, goes by the owner's choice of 2026-10-26, made after the brief first landed with it absent from the spelling and no reason given.
+Its only work was resolving the deck's path for a session that did not know it, and the cards stage prompt, built in code, prints that path already resolved — the absolute path under the git common directory, since a linked worktree's `.git` is a file — so no code needs to run at a moment the session chooses, which is the test above failing, and the session reads the deck with its ordinary tools, where a wrapper with a `--` separator is a place literal readers stumble.
+The deck's location was never the secret, and a printed prompt is not committed, so the disclosure costs nothing; what the prefix still bought, a transcript that announces deck access and a nudge that the session is touching the tracker, the one-reader prompt gives in words.
+The prompt prints the path only where a sweep is wanted, the cards stage, which keeps a closed pile a bonus in the prompt as in this brief.
 
 ### What stays open
 
@@ -413,7 +416,7 @@ The redesign leaves the card file, the runtime and deck resolution alone, and th
 What changes about them:
 
 - **Nothing is optimized for a deck in the tree, and the workflow works with no closed pile.**
-  The first brief's "Authoring must sweep the closed corpus for prior art" cannot be load-bearing: where a closed pile exists an authoring session may read it, and where none does nothing is missing.
+  The first brief's "Authoring must sweep the closed corpus for prior art" cannot be load-bearing: where a closed pile exists an authoring session may read it, at the path the cards stage prompt prints ("Retired", on `cmd`), and where none does nothing is missing.
   Of the refusals of `new` and `close` from a linked worktree, which "Settled during the build" records, `close`'s goes with the verb and `new`'s stays with it.
 - **The install story.**
   "clone-and-run" becomes two one-liners, and the runtime stays Bun for now ("Delivery").
