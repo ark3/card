@@ -8,14 +8,17 @@ Like everything in this repository it is public, so it cites no card id.
 ## How the work runs
 
 Today's tool executes the work that replaces it, installed globally from this repository at a pinned sha, so the cards replacing the tool never change the tool executing them.
+Today's tool has cards, labels, `blocked-by`, `card author`, `card execute` and `card run`, which runs cards in series; it has no plans, stages or roles, which belong to the design and not to the tool that builds it.
 
-How many plans the work takes is authoring's first decision, and it is open.
-The recommendation is two or three plans rather than one.
-The first is the smallest `card` that runs a plan end to end on both harnesses: the authoring stages, the three roles, landing, and stopping and answering.
-The later plans — settling findings and promotion, the owner register, `deck agent-help` — are authored after the first lands and run on the new tool itself, which gives a working `card` sooner and gives the design's open questions the real run two of them wait on.
-Each later plan runs on a build pinned at the end of the one before it, for the same reason today's tool is pinned.
-Staleness is not the reason to split: today's execution amends a stale card before building it.
-The alternative is one plan, with every acceptance criterion in `BRIEF.md` checked only by its last card.
+The whole design lands as one series of cards, authored now with `card author` and run by today's tool, and the last card checks every acceptance criterion in `BRIEF.md` and every migration check below.
+Splitting the work into plans, the first producing a `card` able to author and run the rest, was considered and declined on 2026-10-28: the new tool's approach is unproven, while today's tool is known to work with strong models and acceptably with GPT-5.6 Terra, the weaker model it meets at work.
+Staleness is no reason to split either: today's execution amends a stale card before building it.
+
+Order is carried by `blocked-by`, each card on the one before it, since today's tool keeps no order of its own and `card list --ready` then shows one runnable card at a time.
+One label, shared by every card, stands in for the ticket key `card author` asks for.
+
+The cut into cards is settled before authoring and, once settled, recorded here: the ordered pieces, each with what it delivers, what it touches, what it needs from earlier pieces and its done-condition; the principles behind the piece boundaries; and the owner's answers to the questions the cut raised.
+The authoring session takes that record as input, not as a contract, and flags where grounding a card against the code changes a piece.
 
 ## What carries over
 
