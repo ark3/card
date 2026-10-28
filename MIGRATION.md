@@ -9,6 +9,14 @@ Like everything in this repository it is public, so it cites no card id.
 
 Today's tool executes the work that replaces it, installed globally from this repository at a pinned sha, so the cards replacing the tool never change the tool executing them.
 
+How many plans the work takes is authoring's first decision, and it is open.
+The recommendation is two or three plans rather than one.
+The first is the smallest `card` that runs a plan end to end on both harnesses: the authoring stages, the three roles, landing, and stopping and answering.
+The later plans — settling findings and promotion, the owner register, `deck agent-help` — are authored after the first lands and run on the new tool itself, which gives a working `card` sooner and gives the design's open questions the real run two of them wait on.
+Each later plan runs on a build pinned at the end of the one before it, for the same reason today's tool is pinned.
+Staleness is not the reason to split: today's execution amends a stale card before building it.
+The alternative is one plan, with every acceptance criterion in `BRIEF.md` checked only by its last card.
+
 ## What carries over
 
 Into `deck`:
