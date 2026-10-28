@@ -184,7 +184,7 @@ The reviewer takes the account as claims to check against the code, not as reaso
 
 **Reviewer.**
 A fresh session gets the card, now carrying the account, and the diff, and runs the card's done-condition itself; there is no machine check and no `check:` field.
-Its verdict drives the tool, and it chooses one of three outcomes: approve, with the close note; fix small things itself and approve, with no second review; or request a revision.
+Its verdict drives the tool, and it chooses one of three outcomes: approve, with the close note and the commit's subject; fix small things itself and approve, with no second review; or request a revision.
 Feedback is appended to the card and the same implementer session is resumed — one implementer per version of the card, since an amendment after a blocking finding starts a fresh one.
 The revision rounds are capped, and a cap that runs out stops the run for the owner.
 A session reviewing an implementer's work has three judgments to make — send it back, fix it, or, for a badly written card, start fresh — and the reviewer holds the first two, while starting fresh is the reconciler's path.
@@ -193,7 +193,7 @@ A session reviewing an implementer's work has three judgments to make — send i
 
 Execution starts by making sure the plan's branch, named by authoring, exists: the tool creates it from its recorded start point if it is absent, and uses it as it stands if it is present, as when the owner made it or a stopped run resumes.
 The tool then holds that branch checked out in a worktree for the plan, under `.worktrees/`, from the start of the run until the plan ends, so git itself refuses to check it out anywhere else meanwhile, and the tool never touches the main checkout or cares what it has checked out.
-Cards run in series in that one worktree: the implementer works there uncommitted, the reviewer reviews the uncommitted diff and makes its small fixes in place, revision rounds continue on the same state, and on approval the tool makes the card's one commit, with the close note as its message, and closes the card done.
+Cards run in series in that one worktree: the implementer works there uncommitted, the reviewer reviews the uncommitted diff and makes its small fixes in place, revision rounds continue on the same state, and on approval the tool makes the card's one commit, the reviewer's subject over the close note as its body, and closes the card done.
 Before committing, the tool checks the lines the card's diff adds for card ids, as it checks the close note: a diff that fails goes back to the reviewer, resumed with the offending lines quoted, to remove the id as one of its small fixes, and a diff still failing after two tries stops the run as a role that failed.
 A card that changed nothing, as the final card usually does, still gets its commit, an empty one, so that every card's close note lands in git, the final card's guide included.
 This was chosen over a worktree per card, cut from the plan's tip and fast-forwarded back, because a fresh tree can need its dependencies installed before anything runs, once per card, while the roles of one card never run at once and nothing needs their work apart; disposal in place is deterministic code, and one commit per card matches the card as the smallest unit.
@@ -222,7 +222,7 @@ Where none is, as in a cloud container, the owner's interactive session relays: 
 The relay works on both harnesses: a stopped session answers question-only resumes without resuming its work or touching files, and a later resume carrying the decision finishes the work against the schema; a fence on question-only resumes is optional insurance, not a requirement.
 `card ask` and `card resume` reach the role session whose answer stopped the run; when the implementer and the reconciler run out their cap, that is the reconciler, which is the role that stops the run.
 `card resume` takes the owner's answer on stdin, or nothing: where the owner answered the session at a terminal, where it retries a role that failed, and after `card stop`, where no session waits.
-`card amend` takes a bounced or stopped plan back to the Cards stage, where an authoring session changes the plan, and `card done` and then `card approve` carry the run on from the stopped card, whose reconciler sees the amendments first.
+`card amend` takes a bounced or stopped plan back to the Cards stage, where an authoring session changes the plan, and `card done` and then `card approve` carry the run on from the first card not yet closed done, so a card added ahead of the stopped one runs first and the stopped card's reconciler sees the amendments.
 A card that reruns from its reconciler starts on a clean worktree: after `card resume` from a stop, when a dead run is carried on, and after `card amend` from a bounce.
 Rejected: the owner's session reading the stopped session's transcript and answering from it, which has one model reading another's reasoning with no way to ask what it meant.
 
@@ -279,7 +279,9 @@ Findings are filed in the card's private register and rewritten only when promot
 
 The reviewer writes it on approval: what landed, how it was verified, and how to see it working.
 It is public-safe — no card ids, written for colleagues — so the one text serves the hand-back, a closed pile and a public tracker, while the card above it keeps the private detail.
-It is also the card's commit message, so it is written to serve as one; the tool appends it, checks it for card ids before committing — a note that fails goes back to the reviewer by the repair prompt under "Delivery", scoped to the close note alone — and prints it for the owner; posting it to a tracker is the owner's act.
+It is also the body of the card's commit message, so it is written to serve as one; the subject is the reviewer's too, one line under the host repository's commit convention, which the plan document records beside the branch ("Authoring" below), and where the document records none, an imperative with a capital letter and no trailing period, as Git's own history is written.
+The tool composes the message — the subject, a blank line, the note wrapped at 72 columns — and checks both for card ids before committing; a subject or note that fails goes back to the reviewer by the repair prompt under "Delivery", scoped to the message alone.
+The note is read where it lands, in the commit and in the closed card, which `git log` on the plan's branch and `deck show` reach; bare `card` lists a closed card by its headline and never prints its note, and posting the note to a tracker is the owner's act.
 
 ### The harness
 
@@ -297,7 +299,7 @@ Claude Code's own `--json-schema` is not passed for now ("What stays open" below
 ## The plan document and the final card
 
 **A document per plan** holds what the plan is: its intent, the design decisions and their reasons, the alternatives rejected and why, and the acceptance criteria.
-Its frontmatter carries the plan's branch and the point the branch starts from, which the tool reads for execution.
+Its frontmatter carries the plan's branch, the point the branch starts from and the host repository's commit convention, which the tool reads for execution.
 Every reconciler reads it, and so do the final card's roles; the implementers and reviewers of other cards never see it.
 During a run only the reconciler changes it, within the plan's intent; changing the intent goes to the owner.
 Why it is not in the cards alone: a reconciler choosing a new approach after a blocking finding needs the rejected alternatives and their reasons, or it can amend towards an approach authoring rejected while every check still passes.
@@ -307,8 +309,8 @@ Which cards make up the plan, and in what order, the tool stores where it likes;
 Authoring writes it as the last card: how to verify end to end that the plan document's acceptance criteria hold on the finished branch, citing the document for the criteria.
 It runs through the same roles as any card, and a gap it finds is a blocking finding: the implementer raises it as one, and a reviewer that finds a gap the implementer missed requests a revision, which brings it to the same place.
 The reconciler cannot close that gap, since amending a verification card into implementation exceeds its intent, and new cards change the plan the owner approved; so the reconciler stops the run for the owner, and the hand-back names the gap.
-The owner answers with `card amend`, in an authoring session that adds cards ahead of the final card, which pass the check before approval like any others, and `card approve` then carries the plan on, reopening the final card and running it again.
-Reopening is in place: the tool moves the final card back to `open/`, removes its `closed:` field and keeps its record, so the roles that run it again see what the last run found.
+The owner answers with `card amend`, in an authoring session that adds cards ahead of the final card, which pass the check before approval like any others, and `card approve` then carries the plan on and runs the final card again; it is still open, since the gap stopped it, and the tool appends the gap to its record, so the roles that run it again see what the last run found.
+A final card closed done is reopened when a finding joins the plan at its end ("Findings" below), in place: the tool moves it back to `open/`, removes its `closed:` field and keeps its record.
 Rejected: the reconciler drafting fix cards as waiting cards, which gives a reconciler authoring's work without the check, and an unattended authoring stage, which drops the interactive check and can loop with no one deciding.
 Chosen over a final step the tool always runs, since authoring writes a check fitted to the plan.
 
@@ -320,7 +322,7 @@ It is written before the build, from the acceptance criteria, to preserve the or
 **Staged**, as an experiment against ad hoc authoring, which "has worked okay, but that doesn't mean it's optimal".
 There are three stages, each in a fresh session:
 
-- **Document** writes the plan document, what the plan is, and settles the plan's branch: its name, following the host repository's convention (at work, `feature/abc-123-...` for a Jira ticket ABC-123), and the point it starts from, such as `develop`.
+- **Document** writes the plan document, what the plan is, and settles what the host repository decides: the plan's branch, its name following the host's convention (at work, `feature/abc-123-...` for a Jira ticket ABC-123) and the point it starts from, such as `develop`, and the commit convention, where the host asks more than the default under "The close note" — a ticket key or a type prefixed to the subject.
 - **Cards** writes the cards, how, ending with the final card.
 - **Check** checks the plan document and the cards before approval.
 
@@ -328,6 +330,7 @@ The Document and Cards stages end with `card done`; the Check stage ends with `c
 The Check stage's prompt says in plain words that `card approve` is the owner's word and starts the run, so a fresh session is told the stakes before it can act.
 
 **The cards are plain files where the Cards stage's prompt says**, and the stage's `card done` takes them in: it assigns ids, checks each file's shape, and records the order, with the last file as the final card.
+A plan amended after it ran keeps the order of its cards: the cards taken in go ahead of the first card not yet closed done, a plan card closed declined or moot leaves the order, and nothing moves a card, so a card in the wrong place is declined and redrafted.
 Cards written for a plan carry no `blocked-by`, since the run follows the order authoring sets.
 A card that joins the plan from outside it may carry entries, and those bind: at take-in no card may come before a card it waits on, and a blocker outside the plan must already be closed done, or `card done` refuses and names it.
 Nothing in `card` reads `blocked-by` after take-in, since the run follows the order.
@@ -487,7 +490,7 @@ A session runs every invocation of the tool, never the owner at a terminal — r
 A session left to its own judgment retells, and a retelling is a second copy that drifts from the first: a promotion text that is retold proves nothing the card-id check said about what the owner posts, and a condensed final-card guide can drop the one step that mattered.
 So the tool's output has two registers: text for the session, and text for the owner, marked as such, which the prompt beside it directs the session to put in its reply unaltered, not summarized — all of it, not only where exactness matters, because one rule asks a literal reader for no judgment of category, and text the tool marks for the owner is already written for the owner.
 This is "code steers" applied to what the owner hears: the tool decides what reaches the owner, not a session's sense of what is worth repeating.
-It binds every site where the tool tells the owner something: the stop and what it waits on, the findings and the settling prompt, promotion text, close notes, the final card's guide, and progress.
+It binds every site where the tool tells the owner something: the stop and what it waits on, the findings and the settling prompt, promotion text, the final card's guide, and progress.
 
 ## The card file and the deck
 
@@ -572,7 +575,7 @@ The design is implemented when every one of these holds on the finished branch; 
    The account, the feedback and the close note are appended beneath the contract.
 5. **Landing.**
    The branch is created from the start point if absent and held in the plan's worktree under `.worktrees/` until `card finish` or `card drop`.
-   Each card lands as one commit with the close note as its message, after the id check on the close note and on the lines the diff adds, an empty commit where the card changed nothing.
+   Each card lands as one commit, its subject under the convention the plan document records and the close note as its body, after the id check on the message and on the lines the diff adds, an empty commit where the card changed nothing.
    An implementer's own commits are undone with the changes kept.
    The main checkout is never touched.
 6. **Stopping and answering.**
@@ -590,7 +593,7 @@ The design is implemented when every one of these holds on the finished branch; 
 8. **The plan document and the final card.**
    Reconcilers and the final card's roles read the plan document, and nobody else does.
    The final card runs last.
-   A gap it finds stops the run; `card amend` adds cards ahead of it, and `card approve` reopens the final card in place and runs it again.
+   A gap it finds stops the run; `card amend` adds cards ahead of it, and `card approve` runs it again with the gap in its record; a finding joined at the plan's end reopens it in place.
 9. **The end.**
    With every card done, bare `card` prints the final card's guide, the branch, the worktree's path, the findings by headline with the role that filed each, and the settling prompt.
    `card join` moves a finding into the plan and takes the plan back to the Cards stage; `card later` records the decision and leaves the card waiting; `card decline` closes it; `card promote` takes two invocations, with the id check first.
