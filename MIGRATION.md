@@ -61,7 +61,9 @@ Each is incidental once its producer and consumer agree, and the cards fix them 
 - `AGENTS.md` is not brought up to date by the series; the owner edits it afterwards.
 - Reference material is not a second specification: `reference/tasktron.clj` is drawn on for the prompts and overrides nothing in the brief.
 
-Open: where the two cold readers run when a card's done-condition names them, since `card run` launches its sessions under a sandbox that may not reach them; the owner settles it before the first payload card runs.
+For cards whose done-condition calls for the two cold readers, the owner invokes `card run` from inside a sandbox using `sbox`'s `all` profile, with sandbox pass-through enabled; both conditions are required for this execution setup.
+Verified on 2026-10-28 under that setup: the executing session invoked both readers using the commands in `AGENTS.md`, each from a fresh empty directory with the question and file text on stdin, and both exited 0 in four seconds and answered the question about `payload/author.md` correctly.
+The run logged `sbox: passing through inside existing session`, and the reader invocations inherited the enclosing sandbox's environment.
 
 ### The pieces
 
