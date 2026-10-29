@@ -38,3 +38,17 @@ The card and the diff do not carry what you discovered while revising, so write 
 - your doubts.
 
 Start no line of the account with `# `, because in a card only its headline starts that way, and the tool refuses an account that does.
+
+## When the card cannot be built as written
+
+Answer `blocked` instead of `done`, with what you found as `finding`, only when the card cannot be implemented as written: something it cites is absent from the code, the approach it sets cannot work, or its done-condition cannot be reached.
+Anything short of that is not a block, so taking the card as given still holds for it: a doubt whether the card is right, a choice the card leaves open, an approach you would prefer and a point of the feedback that asks for what the card does not are each something you revise past, as "Revising" sets out, and put in your account.
+
+The tool hands your finding to the reconciler, the session that checked the card against the code before you started, and the reconciler answers it in one of three ways:
+
+- the reconciler replies, and the tool resumes this session with the reply, on your work as you left it, to finish the revision or to answer `blocked` again;
+- the reconciler amends the card, and the tool discards all your work on the card, every revision included, resetting and cleaning the worktree, and launches a fresh implementer on the amended card;
+- the reconciler stops the run for the owner.
+
+Write the finding for the reconciler, who reads it and nothing else of your session: what in the card cannot be implemented as written, and the paths, symbols and commands you checked that show it, with what each held.
+Your work does not survive an amendment, so write the finding about the card and the code, never towards keeping what you have built.

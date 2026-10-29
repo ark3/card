@@ -259,6 +259,35 @@ test(
   SLOW,
 );
 
+test(
+  "an implementer and a reconciler that have not agreed after the cap bounce the plan with the reconciler as the session to resume",
+  async () => {
+    const { repo, deck, plan, first, base } = await inCheck();
+    const control = stand(["pi"]);
+    const blocked: Reply = { stdout: JSON.stringify({ outcome: "blocked", finding: "The card names no file to write." }) };
+    const reply: Reply = { stdout: JSON.stringify({ outcome: "reply", reply: "It names hello.txt." }) };
+    const question = "We still disagree on whether the card names a file; does it?";
+    const disagreed: Reply = { stdout: JSON.stringify({ outcome: "stop", cause: "disagreement", question }) };
+    queue(control, [proceed(), reply, reply, reply, disagreed], [blocked, blocked, blocked, blocked]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+
+    const { bounce, cycle } = record(plan.dir);
+    const cause = "the reconciler and the implementer had not agreed after 3 exchanges, the most a card gets";
+    expect(bounce).toEqual({ role: "reconciler", session: bounce!.session, cause, question });
+    expect(bounce!.session.id).toBe(cycle!.sessions.reconciler!);
+    expect(cycle!.step).toBe("converse");
+    expect(calls(control, cycle!.sessions.reconciler!)).toHaveLength(5);
+    expect(calls(control, cycle!.sessions.implementer!)).toHaveLength(4);
+    expect(await subjects(repo, base)).toEqual([]);
+    expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
+    const report = bouncedReport(first, "reconciler", cause, `cd ${bounce!.session.dir} && pi --session-id ${bounce!.session.id}`, question);
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
+  },
+  SLOW,
+);
+
 /** Asserts that nothing of a run started: the plan in Check, no branch, no worktree, no log, and no role called. */
 async function nothingLaunched(repo: string, dir: string, control: string): Promise<void> {
   expect(record(dir).state).toBe("Check");

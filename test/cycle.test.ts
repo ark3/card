@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { RECONCILER, REVISION_ROUNDS, runCard } from "../src/cycle.ts";
+import { EXCHANGES, RECONCILER, REVISION_ROUNDS, runCard } from "../src/cycle.ts";
 import { createDeck, type Deck } from "../src/deck.ts";
 import { gitOrThrow, headSha } from "../src/git.ts";
 import { ensureBranch, holdWorktree } from "../src/landing.ts";
@@ -483,4 +483,131 @@ test("feedback with a line starting `# ` draws the repair prompt, and a revision
   expect(first!.stdin).toContain("The previous report was invalid:\nanswer.feedback has a line starting `# `");
   expect(second!.stdin).toContain('The previous report was invalid:\nanswer lacks the field "feedback", which outcome "revision" carries');
   expect(cardFile(deck, id)).toContain(`## Review feedback\n\n${FEEDBACK}\n\n## Account\n`);
+});
+
+const FINDING = "The card's done-condition reads `greeting.txt`, which nothing in the card writes: it asks for `hello.txt` alone.";
+const blocked = (run?: string) => answer({ outcome: "blocked", finding: FINDING }, run);
+const REPLY = "The card asks for hello.txt alone; read its done-condition as naming that file.";
+const reply = (run?: string) => answer({ outcome: "reply", reply: REPLY }, run);
+const AMENDMENT = "The card now writes and checks greeting.txt alone.";
+const amending = (run?: string) => answer({ outcome: "amended", amended: AMENDMENT }, run);
+const DISAGREEMENT = "The implementer and I still disagree on which file the card writes; which does the plan mean?";
+const disagreed = answer({ outcome: "stop", cause: "disagreement", question: DISAGREEMENT });
+
+/** Scripts each session the cycle draws, in the order it draws their ids, and runs the cycle on Pi's stand-in. */
+async function drawn(deck: Deck, plan: Plan, id: string, tree: string, ...sessions: Reply[][]) {
+  const control = stand();
+  sessions.forEach((replies, index) => script(control, ids[index]!, ...replies));
+  return { control, ended: await runCard(deck, plan, id, tree, "pi") };
+}
+
+test("an implementer's blocked answer resumes the reconciler under its recorded id, carrying the finding, and the record has the reconciler conversing", async () => {
+  const { deck, plan, id, tree, base } = await running();
+  const { control, ended } = await drawn(deck, plan, id, tree, [proceed(), stop()], [blocked()]);
+
+  expect(calls(control, ids[1]!)[0]!.stdin).toContain('"enum":["done","blocked"]');
+  const [, conversing, ...more] = calls(control, ids[0]!);
+  expect(more).toEqual([]);
+  expect(conversing!.argv).toEqual(["pi", "-p", "--session-id", ids[0]!]);
+  expect(conversing!.cwd).toBe(tree);
+  expect(conversing!.stdin).toStartWith("# Answering a blocking finding\n");
+  expect(conversing!.stdin).toContain(`<finding>\n${FINDING}\n</finding>\n`);
+  expect(conversing!.stdin).not.toContain("{{");
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reconciler");
+  expect(ended.session).toEqual({ harness: "pi", id: ids[0]!, dir: tree });
+  expect(ended.question).toBe(QUESTION);
+  const sessions = { reconciler: ids[0], implementer: ids[1] };
+  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions });
+  expect((await listPlans(deck))[0]!.cycle).toEqual(ended.plan.cycle);
+  expect(existsSync(path.join(control, ids[2]!, "calls"))).toBe(false);
+});
+
+test("an amendment discards the implementer's work back to the cycle's base, and a fresh implementer builds the amended card with no second reconciling", async () => {
+  const { deck, plan, id, tree, base } = await running();
+  const marks = tempDir();
+  const partway = "printf 'stray\\n' > stray.txt; printf 'more\\n' >> README.md; git commit -qam habit";
+  const amend = `sed -i 's/hello\\.txt/greeting.txt/g' '${path.join(deck.openDir, `${id}.md`)}'`;
+  const afresh = `{ git rev-parse HEAD; git status --porcelain; } > '${marks}/seen'; printf 'hello\\n' > greeting.txt`;
+  const { control, ended } = await drawn(deck, plan, id, tree, [proceed(), amending(amend)], [blocked(partway)], [done(afresh)], [approved()]);
+
+  expect(readFileSync(path.join(marks, "seen"), "utf8")).toBe(`${base}\n`);
+  expect(calls(control, ids[0]!)).toHaveLength(2);
+  expect(calls(control, ids[1]!)).toHaveLength(1);
+  const [fresh, ...more] = calls(control, ids[2]!);
+  expect(more).toEqual([]);
+  expect(fresh!.argv).toEqual(["pi", "-p", "--session-id", ids[2]!]);
+  expect(fresh!.stdin).toStartWith("# Implementing one card\n");
+  expect(fresh!.stdin).toContain(CONTRACT.replaceAll("hello.txt", "greeting.txt"));
+  expect(fresh!.stdin).not.toContain(CONTRACT);
+  expect(readdirSync(control).sort()).toEqual(ids.slice(0, 4).sort());
+  expect(logged).toEqual([`${id}: the reconciler proceeded: ${AMENDED}`, `${id}: the reconciler amended the card: ${AMENDMENT}`]);
+  expect(ended.outcome).toBe("landed");
+  expect((await gitOrThrow(["rev-parse", "HEAD~1"], tree)).trim()).toBe(base);
+  expect(await changed(tree)).toEqual(["greeting.txt"]);
+  expect((await listPlans(deck))[0]!.cycle?.sessions).toEqual({ reconciler: ids[0], implementer: ids[2], reviewer: ids[3] });
+});
+
+test("an implementer's own commit is undone before the reconciler converses, which sees HEAD at the cycle's base and the change uncommitted", async () => {
+  const { deck, plan, id, tree, base } = await running();
+  const marks = tempDir();
+  const habit = "printf 'more\\n' >> README.md; git commit -qam habit";
+  const seeing = `{ git rev-parse HEAD; git status --porcelain; } > '${marks}/seen'`;
+  await drawn(deck, plan, id, tree, [proceed(), stop(seeing)], [blocked(habit)]);
+
+  expect(readFileSync(path.join(marks, "seen"), "utf8")).toBe(`${base}\n M README.md\n`);
+});
+
+test("a reply resumes the implementer under its own id, carrying the reply, on its work as it left it", async () => {
+  const { deck, plan, id, tree } = await running();
+  const finish = "[ \"$(cat hello.txt)\" = hel ] && printf 'hello\\n' > hello.txt";
+  const { control, ended } = await drawn(deck, plan, id, tree, [proceed(), reply()], [blocked("printf 'hel' > hello.txt"), done(finish)], [approved()]);
+
+  expect(calls(control, ids[0]!)).toHaveLength(2);
+  const [, resumed, ...more] = calls(control, ids[1]!);
+  expect(more).toEqual([]);
+  expect(resumed!.argv).toEqual(["pi", "-p", "--session-id", ids[1]!]);
+  expect(resumed!.cwd).toBe(tree);
+  expect(resumed!.stdin).toStartWith("# Resuming after the reconciler's reply\n");
+  expect(resumed!.stdin).toContain(`<reply>\n${REPLY}\n</reply>\n`);
+  expect(resumed!.stdin).toContain('"enum":["done","blocked"]');
+  expect(resumed!.stdin).not.toContain("{{");
+  expect(ended.outcome).toBe("landed");
+  expect(await gitOrThrow(["show", "HEAD:hello.txt"], tree)).toBe("hello\n");
+  expect(cardFile(deck, id).match(/^## Account$/gm)).toHaveLength(1);
+});
+
+test("an implementer revising may answer blocked, which goes to the reconciler it shares the cycle with", async () => {
+  const { deck, plan, id, tree } = await running();
+  const { control, ended } = await drawn(deck, plan, id, tree, [proceed(), stop()], [done(MISSPELT), blocked()], [revision()]);
+
+  const [, revising] = calls(control, ids[1]!);
+  expect(revising!.stdin).toStartWith("# Revising one card\n");
+  expect(revising!.stdin).toContain('"enum":["done","blocked"]');
+  const [, conversing] = calls(control, ids[0]!);
+  expect(conversing!.stdin).toContain(`<finding>\n${FINDING}\n</finding>\n`);
+  expect(ended.outcome === "stopped" && ended.role).toBe("reconciler");
+});
+
+test(`a card gets ${EXCHANGES} exchanges counted across its implementers, and a finding past them gets the reconciler's stop for disagreement alone`, async () => {
+  const { deck, plan, id, tree, base } = await running();
+  const reconciler = [proceed(), amending(), reply(), reply(), disagreed];
+  const { control, ended } = await drawn(deck, plan, id, tree, reconciler, [blocked()], [blocked(), blocked(), blocked()]);
+
+  expect(EXCHANGES).toBe(3);
+  const turns = calls(control, ids[0]!);
+  expect(turns).toHaveLength(2 + EXCHANGES);
+  for (const turn of turns.slice(1, 4)) expect(turn.stdin).toContain('"enum":["amended","reply","stop"]');
+  expect(turns[4]!.stdin).toStartWith("# Answering a blocking finding\n");
+  expect(turns[4]!.stdin).toContain('"enum":["stop"]');
+  expect(turns[4]!.stdin).toContain('"enum":["disagreement"]');
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reconciler");
+  expect(ended.session).toEqual({ harness: "pi", id: ids[0]!, dir: tree });
+  expect(ended.cause).toBe("the reconciler and the implementer had not agreed after 3 exchanges, the most a card gets");
+  expect(ended.question).toBe(DISAGREEMENT);
+  const sessions = { reconciler: ids[0], implementer: ids[2] };
+  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions });
 });

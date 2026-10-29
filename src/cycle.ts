@@ -1,5 +1,7 @@
+import converse from "../payload/converse.md" with { type: "text" };
 import implement from "../payload/implement.md" with { type: "text" };
 import reconcile from "../payload/reconcile.md" with { type: "text" };
+import reply from "../payload/reply.md" with { type: "text" };
 import review from "../payload/review.md" with { type: "text" };
 import revise from "../payload/revise.md" with { type: "text" };
 import type { Answer, ObjectSchema } from "./answer.ts";
@@ -8,7 +10,7 @@ import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { headSha } from "./git.ts";
 import { type Check, type Harness, launch, resume, RoleFailure, type Session } from "./harness.ts";
-import { land, uncommittedDiff, undoMovedHead } from "./landing.ts";
+import { discard, land, uncommittedDiff, undoMovedHead } from "./landing.ts";
 import { appendRecord, closeCard } from "./operations.ts";
 import { fill } from "./payload.ts";
 import { type Plan, writeRecord } from "./plan.ts";
@@ -19,9 +21,10 @@ export type Role = "reconciler" | "implementer" | "reviewer";
 /**
  * Where a cycle is: the reconciler's turn, the implementer's, the reviewer's,
  * or landing the reviewer's answer, which is under the reviewer because its
- * subject and note are what lands.
+ * subject and note are what lands; or the reconciler resumed to answer an
+ * implementer's blocking finding, which is conversing.
  */
-export type Step = "reconcile" | "implement" | "review" | "land";
+export type Step = "reconcile" | "converse" | "implement" | "review" | "land";
 
 /**
  * A card's cycle as the plan's record holds it, written before each step
@@ -38,7 +41,9 @@ export type Cycle = {
   /**
    * Each role's session id, recorded before the session is launched: the
    * reviewer's is the latest revision round's, since each round has a fresh
-   * one, while the implementer is resumed under the one it was launched with.
+   * one, and the implementer's the latest amendment's, since each amendment
+   * has a fresh one, which is resumed under the id it was launched with, as
+   * the reconciler is.
    */
   sessions: Partial<Record<Role, string>>;
   /**
@@ -65,6 +70,13 @@ export type CycleEnd = { plan: Plan } & (
 export const REVISION_ROUNDS = 3;
 
 /**
+ * How many exchanges a card's cycle gets, each an implementer's blocking
+ * finding and the reconciler's reply or amendment answering it, before a
+ * finding past them gets the reconciler's stop for disagreement alone.
+ */
+export const EXCHANGES = 3;
+
+/**
  * The reconciler's answer. Which fields go with which outcome, a schema of
  * this subset cannot state, so `carried` checks it.
  */
@@ -80,12 +92,43 @@ export const RECONCILER: ObjectSchema = {
 };
 
 /**
- * The fields each of the reconciler's and the reviewer's outcomes carries.
- * No two roles share an outcome word, so one table serves both.
+ * The reconciler's answer to an implementer's blocking finding, within the
+ * exchanges a cycle gets; `carried` checks its fields by outcome.
+ */
+const CONVERSE: ObjectSchema = {
+  type: "object",
+  properties: {
+    outcome: { type: "string", enum: ["amended", "reply", "stop"] },
+    amended: { type: "string" },
+    reply: { type: "string" },
+    cause: { type: "string", enum: ["intent", "order"] },
+    question: { type: "string" },
+  },
+  required: ["outcome"],
+};
+
+/** The reconciler's answer to a blocking finding past the exchanges a cycle gets: the stop for disagreement alone. */
+const DISAGREEMENT: ObjectSchema = {
+  type: "object",
+  properties: {
+    outcome: { type: "string", enum: ["stop"] },
+    cause: { type: "string", enum: ["disagreement"] },
+    question: { type: "string" },
+  },
+  required: ["outcome", "cause", "question"],
+};
+
+/**
+ * The fields each role's outcomes carry. No two roles share an outcome word,
+ * so one table serves them all.
  */
 const CARRIES: Record<string, string[]> = {
   proceed: ["amended"],
   stop: ["cause", "question"],
+  amended: ["amended"],
+  reply: ["reply"],
+  done: ["account"],
+  blocked: ["finding"],
   approved: ["subject", "close_note"],
   fixed: ["subject", "close_note"],
   revision: ["feedback"],
@@ -103,12 +146,18 @@ const carried: Check = (answer: Answer) => {
 const CAUSES: Record<string, string> = {
   intent: "the card's intent itself is wrong, which only the owner can change",
   order: "the card depends on work no earlier card has landed, a problem of order for authoring to fix",
+  disagreement: `the reconciler and the implementer had not agreed after ${EXCHANGES} exchanges, the most a card gets`,
 };
 
+/** The implementer's answer, whose fields by outcome `carried` checks, as it does the reconciler's. */
 const IMPLEMENTER: ObjectSchema = {
   type: "object",
-  properties: { outcome: { type: "string", enum: ["done"] }, account: { type: "string" } },
-  required: ["outcome", "account"],
+  properties: {
+    outcome: { type: "string", enum: ["done", "blocked"] },
+    account: { type: "string" },
+    finding: { type: "string" },
+  },
+  required: ["outcome"],
 };
 
 /** The reviewer's answer, whose fields by outcome `carried` checks, as it does the reconciler's. */
@@ -133,6 +182,12 @@ function noHeadlines(...fields: string[]): Check {
     for (const field of fields) if (field in answer) refuseHeadlines(`answer.${field}`, answer[field] as string);
   };
 }
+
+/** Refuses an implementer's answer that lacks a field its outcome carries, or holds a headline in its account. */
+const implemented: Check = (answer: Answer) => {
+  carried(answer);
+  noHeadlines("account")(answer);
+};
 
 /** Refuses a reviewer's answer that lacks a field its outcome carries, or holds a headline in one. */
 const reviewed: Check = (answer: Answer) => {
@@ -172,11 +227,16 @@ export function reconcilerPrompt(card: { path: string; text: string }, document:
  * worktree as the card's one commit before the card closes done. A reviewer
  * may instead ask for a revision: its feedback is appended to the card, the
  * same implementer is resumed with it, and its account of the revision goes
- * to a fresh reviewer, for up to REVISION_ROUNDS rounds. Neither the
- * implementer nor the reviewer is shown the plan document; the reviewer gets
- * its commit convention alone. A reconciler that stops, a reviewer asking for
- * a revision past the cap, or a role that fails, ends the cycle stopped, with
- * its cause and session.
+ * to a fresh reviewer, for up to REVISION_ROUNDS rounds. An implementer may
+ * instead answer that the card cannot be built as written: the reconciler is
+ * resumed with its finding, and either replies, and the implementer is
+ * resumed with the reply, or amends the card, and the worktree goes back to
+ * the cycle's base for a fresh implementer, for up to EXCHANGES exchanges,
+ * after which a finding gets the reconciler's stop for disagreement alone.
+ * Neither the implementer nor the reviewer is shown the plan document; the
+ * reviewer gets its commit convention alone. A reconciler that stops, a
+ * reviewer asking for a revision past the cap, or a role that fails, ends the
+ * cycle stopped, with its cause and session.
  */
 export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, harness: Harness): Promise<CycleEnd> {
   const base = await headSha(tree);
@@ -200,24 +260,64 @@ export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, 
   // The run's log, where the owner reads what the reconciler changed.
   console.log(`${id}: the reconciler proceeded: ${verdict.amended}`);
 
-  const implementer: Session = { harness, id: crypto.randomUUID(), dir: tree };
+  let implementer: Session = { harness, id: crypto.randomUUID(), dir: tree };
   cycle = { ...cycle, role: "implementer", step: "implement", sessions: { ...cycle.sessions, implementer: implementer.id } };
   plan = await writeRecord(plan, { cycle });
 
   // Read after the reconciler has ended, so its amendments reach the implementer.
   let implementing = fill(implement, { CARD_TEXT: await cardText(deck, id) });
+  // A fresh implementer is launched; a revision round or a reply resumes it on the work as it left it.
+  let answering = launch;
+  let rounds = 0;
+  let findings = 0;
   let subject: string;
   let note: string;
-  for (let rounds = 0; ; rounds++) {
-    let account: string;
+  for (;;) {
+    let built: Answer;
     try {
-      // A revision round resumes the implementer on the work as it left it.
-      const answering = rounds === 0 ? launch : resume;
-      ({ account } = (await answering(implementer, implementing, IMPLEMENTER, noHeadlines("account"))) as { account: string });
+      built = await answering(implementer, implementing, IMPLEMENTER, implemented);
     } catch (error) {
       if (!(error instanceof RoleFailure)) throw error;
       return { plan, outcome: "stopped", role: "implementer", session: implementer, cause: error.message };
     }
+
+    if (built.outcome === "blocked") {
+      findings++;
+      // Before the reconciler converses, so HEAD is the branch it amends the card to and the work is uncommitted.
+      await undoMovedHead(base, tree);
+      cycle = { ...cycle, role: "reconciler", step: "converse" };
+      plan = await writeRecord(plan, { cycle });
+      const conversing = fill(converse, { FINDING: (built.finding as string).trimEnd(), NUMBER: String(findings) });
+      let settled: Answer;
+      try {
+        settled = await resume(reconciler, conversing, findings > EXCHANGES ? DISAGREEMENT : CONVERSE, carried);
+      } catch (error) {
+        if (!(error instanceof RoleFailure)) throw error;
+        return { plan, outcome: "stopped", role: "reconciler", session: reconciler, cause: error.message };
+      }
+      if (settled.outcome === "stop") {
+        const { cause, question } = settled as { cause: string; question: string };
+        return { plan, outcome: "stopped", role: "reconciler", session: reconciler, cause: CAUSES[cause]!, question };
+      }
+      if (settled.outcome === "reply") {
+        cycle = { ...cycle, role: "implementer", step: "implement" };
+        plan = await writeRecord(plan, { cycle });
+        implementing = fill(reply, { REPLY: (settled.reply as string).trimEnd() });
+        answering = resume;
+        continue;
+      }
+      console.log(`${id}: the reconciler amended the card: ${settled.amended}`);
+      // Discarded, so the amendment owes nothing to the work it replaces.
+      await discard(tree, base);
+      implementer = { harness, id: crypto.randomUUID(), dir: tree };
+      cycle = { ...cycle, role: "implementer", step: "implement", sessions: { ...cycle.sessions, implementer: implementer.id } };
+      plan = await writeRecord(plan, { cycle });
+      implementing = fill(implement, { CARD_TEXT: await cardText(deck, id) });
+      answering = launch;
+      continue;
+    }
+
+    const { account } = built as { account: string };
     // Before the diff is taken, so the reviewer sees committed work as uncommitted.
     await undoMovedHead(base, tree);
     await appendRecord(deck, id, "Account", account);
@@ -251,10 +351,12 @@ export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, 
       const cause = `the reviewer still asked for a revision after ${REVISION_ROUNDS} revision rounds, the most a card gets`;
       return { plan, outcome: "stopped", role: "reviewer", session: reviewer, cause, feedback };
     }
+    rounds++;
     // The reconciler is not brought back: the card is the contract it was.
     cycle = { ...cycle, role: "implementer", step: "implement" };
     plan = await writeRecord(plan, { cycle });
     implementing = fill(revise, { FEEDBACK: feedback.trimEnd() });
+    answering = resume;
   }
 
   cycle = { ...cycle, step: "land", subject, note };
