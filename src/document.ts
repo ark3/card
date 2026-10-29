@@ -12,7 +12,7 @@ export async function printPrompt({ plan, command }: Context): Promise<void> {
  * `---` lines at its top, and its headline, the first line after them that
  * starts `# `.
  */
-function readDocument(text: string): { fields: Map<string, string>; headline: string | null } {
+export function readDocument(text: string): { fields: Map<string, string>; headline: string | null } {
   const fields = new Map<string, string>();
   let body = text;
   if (text.startsWith("---\n")) {

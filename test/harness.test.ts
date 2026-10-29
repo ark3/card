@@ -1,9 +1,9 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { answerInstruction, type ObjectSchema, readAnswer } from "../src/answer.ts";
 import { chooseHarness, type Harness, launch, REPAIR_PROMPTS, resume, RoleFailure } from "../src/harness.ts";
-import { removeTempDirs, tempDir } from "./helpers.ts";
+import { calls, type Reply, removeTempDirs, script, stand, tempDir } from "./helpers.ts";
 
 const OUTER_PATH = process.env.PATH;
 
@@ -48,8 +48,6 @@ test("--harness naming a harness that is not on PATH is refused", () => {
   expect(() => chooseHarness("pi")).toThrow("--harness names pi, but pi is not on PATH");
 });
 
-const STUB = path.join(import.meta.dir, "harness-stub.sh");
-
 /** A small role answer: an outcome word, a string, and an optional list of findings. */
 const SCHEMA: ObjectSchema = {
   type: "object",
@@ -69,46 +67,6 @@ const SCHEMA: ObjectSchema = {
 };
 
 const GOOD = { outcome: "done", account: "did it" };
-
-type Call = { argv: string[]; stdin: string; cwd: string };
-type Reply = { stdout?: string; stderr?: string; exit?: number };
-
-/**
- * The stand-in linked onto a PATH holding nothing else as both `claude` and
- * `pi`, and a control directory it records into and answers from.
- */
-function stand(): string {
-  const bin = tempDir();
-  for (const name of ["claude", "pi"]) symlinkSync(STUB, path.join(bin, name));
-  const control = tempDir();
-  process.env.PATH = bin;
-  process.env.HARNESS_STUB = control;
-  process.env.HARNESS_STUB_PATH = OUTER_PATH;
-  return control;
-}
-
-/** What the stand-in does on each call to session `id`, in order. */
-function script(control: string, id: string, ...replies: Reply[]): void {
-  replies.forEach((reply, index) => {
-    const dir = path.join(control, id, "answers", String(index + 1));
-    mkdirSync(dir, { recursive: true });
-    if (reply.stdout !== undefined) writeFileSync(path.join(dir, "stdout"), reply.stdout);
-    if (reply.stderr !== undefined) writeFileSync(path.join(dir, "stderr"), reply.stderr);
-    if (reply.exit !== undefined) writeFileSync(path.join(dir, "exit"), String(reply.exit));
-  });
-}
-
-/** Every call the stand-in recorded for session `id`, in order. */
-function calls(control: string, id: string): Call[] {
-  const dir = path.join(control, id, "calls");
-  return readdirSync(dir)
-    .map(Number)
-    .sort((a, b) => a - b)
-    .map((n) => {
-      const read = (name: string) => readFileSync(path.join(dir, String(n), name), "utf8");
-      return { argv: read("argv").trimEnd().split("\n"), stdin: read("stdin"), cwd: read("cwd").trimEnd() };
-    });
-}
 
 /** Claude Code's `--output-format json` result, abridged to the fields the launcher reads. */
 function claudeJson(result: string, isError = false, subtype = "success"): Reply {
@@ -235,6 +193,17 @@ test("an answer still malformed after two repairs is a failure, and no third rep
   await failed.catch(() => {});
   expect(REPAIR_PROMPTS).toBe(2);
   expect(calls(control, ID).map((call) => call.argv[6])).toEqual(["--session-id", "--resume", "--resume"]);
+});
+
+test("an answer its check refuses gets a repair quoting the check's error, as a schema mismatch does", async () => {
+  const control = stand();
+  const refuse = (answer: Record<string, unknown>) => {
+    if (answer.account === "bad") throw new Error("answer.account is bad");
+  };
+  script(control, ID, { stdout: JSON.stringify({ ...GOOD, account: "bad" }) }, { stdout: JSON.stringify(GOOD) });
+  expect(await launch(session("pi"), "go", SCHEMA, refuse)).toEqual(GOOD);
+  const [, repair] = calls(control, ID);
+  expect(repair.stdin).toContain("The previous report was invalid:\nanswer.account is bad\n");
 });
 
 test("the schema yields both the instruction and the validation, so changing it changes both", () => {

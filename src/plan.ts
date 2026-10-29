@@ -1,5 +1,6 @@
 import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { Cycle } from "./cycle.ts";
 import type { Deck } from "./deck.ts";
 import { drawId } from "./id.ts";
 import { type Listed, listCards } from "./operations.ts";
@@ -36,10 +37,15 @@ export type PlanRecord = {
    * every other plan; this plan's Cards stage no longer asks about them.
    */
   later: string[];
+  /**
+   * The card cycle the run is in or last ran, as the cycle records it at each
+   * step; null until the first one starts.
+   */
+  cycle: Cycle | null;
 };
 
 /** What a state file written before a field existed reads as for that field. */
-const EMPTY: Omit<PlanRecord, "state" | "placeholder"> = { cards: [], final: null, joins: [], later: [] };
+const EMPTY: Omit<PlanRecord, "state" | "placeholder"> = { cards: [], final: null, joins: [], later: [], cycle: null };
 
 export type Plan = PlanRecord & {
   slug: string;
@@ -121,8 +127,8 @@ export async function listPlans(deck: Deck): Promise<Plan[]> {
  * records, staged and renamed so no reader sees half of one.
  */
 export async function writeRecord(target: Plan, changes: Partial<PlanRecord>): Promise<Plan> {
-  const { state, placeholder, cards, final, joins, later } = { ...target, ...changes };
-  const record: PlanRecord = { state, placeholder, cards, final, joins, later };
+  const { state, placeholder, cards, final, joins, later, cycle } = { ...target, ...changes };
+  const record: PlanRecord = { state, placeholder, cards, final, joins, later, cycle };
   const staging = path.join(target.dir, `.${STATE_FILE}.writing`);
   await writeFile(staging, `${JSON.stringify(record)}\n`);
   await rename(staging, path.join(target.dir, STATE_FILE));

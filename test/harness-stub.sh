@@ -8,8 +8,9 @@
 # numbered from 1 per id. Call <n> records its argv (the name it ran as first,
 # one per line), its stdin and its working directory under
 # <control>/<id>/calls/<n>/, then answers from <control>/<id>/answers/<n>/:
-# `stderr` and `stdout` are printed as they are, and `exit` holds the status,
-# 0 if absent.
+# `run`, if present, is run with sh in the working directory first, as a
+# session's work, its output on stderr; `stderr` and `stdout` are printed as
+# they are, and `exit` holds the status, 0 if absent.
 set -eu
 PATH="$HARNESS_STUB_PATH"
 name="${0##*/}"
@@ -33,6 +34,7 @@ cat > "$calls/$n/stdin"
 pwd -P > "$calls/$n/cwd"
 
 answer="$HARNESS_STUB/$id/answers/$n"
+if [ -f "$answer/run" ]; then sh "$answer/run" >&2; fi
 if [ -f "$answer/stderr" ]; then cat "$answer/stderr" >&2; fi
 if [ -f "$answer/stdout" ]; then cat "$answer/stdout"; fi
 if [ -f "$answer/exit" ]; then exit "$(cat "$answer/exit")"; fi

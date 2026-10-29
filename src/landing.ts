@@ -61,8 +61,8 @@ export async function undoMovedHead(since: string, tree: string): Promise<boolea
 // the diff or hand it to another program, and either breaks the reading.
 const DIFF = ["diff", "--no-color", "--no-ext-diff"];
 
-/** The lines the worktree's uncommitted diff adds, new untracked files whole. */
-export async function addedLines(tree: string): Promise<string[]> {
+/** The worktree's uncommitted diff against HEAD, new untracked files whole. */
+export async function uncommittedDiff(tree: string): Promise<string> {
   const diffs = [await gitOrThrow([...DIFF, "HEAD"], tree)];
   const untracked = await gitOrThrow(["ls-files", "-z", "--others", "--exclude-standard"], tree);
   for (const file of untracked.split("\0").filter(Boolean)) {
@@ -70,7 +70,12 @@ export async function addedLines(tree: string): Promise<string[]> {
     // lines, as in the tracked diff. It exits 1 because the two differ.
     diffs.push((await git([...DIFF, "--no-index", "--", "/dev/null", file], tree)).stdout);
   }
-  return diffs.flatMap(added);
+  return diffs.join("");
+}
+
+/** The lines the worktree's uncommitted diff adds, new untracked files whole. */
+export async function addedLines(tree: string): Promise<string[]> {
+  return added(await uncommittedDiff(tree));
 }
 
 /**

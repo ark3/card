@@ -86,16 +86,25 @@ async function turn(session: Session, resuming: boolean, prompt: string): Promis
 }
 
 /**
- * Runs `prompt` with `schema`'s instruction appended and reads the answer. A
- * malformed answer gets a repair prompt by resuming the same session, which
- * keeps what the session knows of its work while the prompt fences the work
- * off, up to REPAIR_PROMPTS times.
+ * What an answer has to meet beyond its schema, such as a field's shape the
+ * schema cannot state: it throws an Error saying what is wrong, which the
+ * repair prompt quotes as it quotes a schema mismatch.
  */
-async function ask(session: Session, resuming: boolean, prompt: string, schema: ObjectSchema): Promise<Answer> {
+export type Check = (answer: Answer) => void;
+
+/**
+ * Runs `prompt` with `schema`'s instruction appended and reads the answer. A
+ * malformed answer, one `check` refuses included, gets a repair prompt by
+ * resuming the same session, which keeps what the session knows of its work
+ * while the prompt fences the work off, up to REPAIR_PROMPTS times.
+ */
+async function ask(session: Session, resuming: boolean, prompt: string, schema: ObjectSchema, check: Check): Promise<Answer> {
   let text = await turn(session, resuming, `${prompt}\n\n${answerInstruction(schema)}`);
   for (let repairs = 0; ; repairs++) {
     try {
-      return readAnswer(schema, text);
+      const answer = readAnswer(schema, text);
+      check(answer);
+      return answer;
     } catch (error) {
       const invalid = (error as Error).message;
       if (repairs === REPAIR_PROMPTS) {
@@ -108,11 +117,11 @@ async function ask(session: Session, resuming: boolean, prompt: string, schema: 
 }
 
 /** Starts `session` under the id it names, and returns its answer to `prompt`. */
-export function launch(session: Session, prompt: string, schema: ObjectSchema): Promise<Answer> {
-  return ask(session, false, prompt, schema);
+export function launch(session: Session, prompt: string, schema: ObjectSchema, check: Check = () => {}): Promise<Answer> {
+  return ask(session, false, prompt, schema, check);
 }
 
 /** Continues `session`, launched before in the same directory, and returns its answer to `prompt`. */
-export function resume(session: Session, prompt: string, schema: ObjectSchema): Promise<Answer> {
-  return ask(session, true, prompt, schema);
+export function resume(session: Session, prompt: string, schema: ObjectSchema, check: Check = () => {}): Promise<Answer> {
+  return ask(session, true, prompt, schema, check);
 }
