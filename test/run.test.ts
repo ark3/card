@@ -1791,7 +1791,7 @@ test(
     await closedIn(repo, plan!.dir, "Dead", waiting);
     const log = path.join(plan!.dir, "run.log");
     const carried = `The plan \`greeting\`'s run had died; it is carried on, on pi, in ${tree}; its log is ${log}.\n`;
-    expect(await card([], repo)).toEqual({ code: 0, stdout: carried, stderr: "" });
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(carried), stderr: "" });
     await until("the carried-on reconciler to start", () => existsSync(path.join(control, "carried.started")));
     expect(await stateOf(deck)).toBe("Running");
     release(control, "carried");

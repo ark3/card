@@ -3,6 +3,7 @@ import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { discard, holdWorktree } from "./landing.ts";
 import { closeCard } from "./operations.ts";
+import { forOwner } from "./owner.ts";
 import { bootId, type Context, listPlans, type Plan, writeRecord } from "./plan.ts";
 
 /**
@@ -63,5 +64,5 @@ export async function carryOn({ deck, plan }: Context): Promise<void> {
   // Dead is read, never written, so every write below records Running.
   const { plan: settled, tree } = await settle(deck, { ...(await endRun(deck, plan)), state: "Running" });
   const log = await startRun(settled, settled.harness!, tree, process.cwd());
-  console.log(`The plan \`${settled.slug}\`'s run had died; it is carried on, on ${settled.harness}, in ${tree}; its log is ${log}.`);
+  process.stdout.write(forOwner(`The plan \`${settled.slug}\`'s run had died; it is carried on, on ${settled.harness}, in ${tree}; its log is ${log}.\n`));
 }
