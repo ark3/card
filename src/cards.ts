@@ -3,7 +3,7 @@ import path from "node:path";
 import prompt from "../payload/cards.md" with { type: "text" };
 import { type Card, readCard } from "./cardfile.ts";
 import { type Deck, locate } from "./deck.ts";
-import { fileCard } from "./operations.ts";
+import { closeCard, fileCard } from "./operations.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
 import { type Context, listPlans, listWaiting, type Plan, waitingCards, writeRecord } from "./plan.ts";
@@ -170,4 +170,27 @@ export async function later(context: Context): Promise<void> {
   const later = plan.later.includes(id) ? plan.later : [...plan.later, id];
   await writeRecord(plan, { joins: plan.joins.filter((other) => other !== id), later });
   console.log(`${id} stays waiting, outside the plan \`${plan.slug}\`, for a later plan to take up: ${card.headline}`);
+}
+
+/**
+ * `card decline <id>`, with the owner's reason on stdin: closes a waiting card
+ * declined, the reason its close note. A waiting card belongs to no plan, so
+ * this needs none, and writes no plan's record, which a run going on
+ * meanwhile writes whole and would write over.
+ */
+export async function decline(deck: Deck, args: string[]): Promise<void> {
+  if (args.length !== 1) throw new Error("usage: card decline <id>, with the owner's reason on stdin");
+  const id = args[0]!;
+  const found = await locate(deck, id);
+  if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
+  if (found.closed) throw new Error(`${id} is closed, so it is not waiting`);
+  for (const plan of await listPlans(deck)) {
+    if (plan.cards.includes(id)) throw new Error(`${id} is one of the plan \`${plan.slug}\`'s cards, so it is not waiting`);
+    if (plan.joins.includes(id)) throw new Error(`${id} has joined the plan \`${plan.slug}\`, so it is not waiting`);
+  }
+  const reason = (await Bun.stdin.text()).trim();
+  if (reason === "") throw new Error(`\`card decline ${id}\` needs the owner's reason on stdin, which becomes its close note`);
+  const { headline } = await readCard(found.path);
+  await closeCard(deck, id, "declined", reason);
+  console.log(`${id} is closed declined: ${headline}`);
 }

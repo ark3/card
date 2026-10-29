@@ -11,10 +11,11 @@ const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
 beforeEach(clearCardRoot);
 afterAll(removeTempDirs);
 
-async function card(args: string[], cwd: string) {
+async function card(args: string[], cwd: string, input?: string) {
   const env = { ...process.env };
   delete env.CARD_ROOT;
-  const proc = Bun.spawn([CARD, ...args], { cwd, env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const stdin = input === undefined ? "ignore" : new Blob([input]);
+  const proc = Bun.spawn([CARD, ...args], { cwd, env, stdin, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   return { code: await proc.exited, stdout, stderr };
 }
@@ -187,4 +188,34 @@ test("bare card in Cards prints the stage's prompt with the deck's absolute path
   expect(owner).toContain(`${waiting}  A waiting finding`);
   expect(owner).toContain(`card join ${waiting}`);
   expect(owner).toContain(`card later ${waiting}`);
+});
+
+test("with no plan in progress, card decline closes a waiting card declined, its reason the close note, and refuses one without a reason or already closed", async () => {
+  const repo = await tempRepo();
+  const deck = await createDeck(repo, "proj");
+  const id = await fileCard(deck, finding("A thought put down earlier"));
+
+  const silent = await card(["decline", id], repo);
+  expect(silent).toEqual({ code: 1, stdout: "", stderr: `card: \`card decline ${id}\` needs the owner's reason on stdin, which becomes its close note\n` });
+  expect(existsSync(path.join(deck.openDir, `${id}.md`))).toBe(true);
+
+  const result = await card(["decline", id], repo, "Not wanted after all.\n");
+  expect(result).toEqual({ code: 0, stdout: `${id} is closed declined: A thought put down earlier\n`, stderr: "" });
+  const closed = await Bun.file(path.join(deck.closedDir, `${id}.md`)).text();
+  expect(closed).toContain("closed: declined");
+  expect(closed).toEndWith("## Close note\n\nNot wanted after all.\n");
+  expect(await listPlans(deck)).toEqual([]);
+
+  const again = await card(["decline", id], repo, "Twice.\n");
+  expect(again).toEqual({ code: 1, stdout: "", stderr: `card: ${id} is closed, so it is not waiting\n` });
+});
+
+test("card decline refuses a card a plan has joined", async () => {
+  const { repo, deck } = await inCards();
+  const id = await fileCard(deck, finding("A joined finding"));
+  expect((await card(["join", id], repo)).code).toBe(0);
+
+  const result = await card(["decline", id], repo, "Not wanted.\n");
+  expect(result).toEqual({ code: 1, stdout: "", stderr: `card: ${id} has joined the plan \`the-plan\`, so it is not waiting\n` });
+  expect(existsSync(path.join(deck.openDir, `${id}.md`))).toBe(true);
 });

@@ -5,6 +5,7 @@ import * as cards from "./cards.ts";
 import * as check from "./check.ts";
 import * as dead from "./dead.ts";
 import * as document from "./document.ts";
+import * as ended from "./ended.ts";
 import { forOwner } from "./owner.ts";
 import { type Context, listPlans, listWaiting, type Plan, refuseSlug, startPlan, type State, waitingCards } from "./plan.ts";
 import * as reports from "./reports.ts";
@@ -40,6 +41,9 @@ type VerbName = (typeof VERBS)[number];
  * does in each state, and the verbs open there with the code each runs. Both
  * dispatch and every printed list of open commands read it, so a session is
  * never shown a command that would be refused, nor refused one it was shown.
+ * `decline` is in no row: it is open in every state and with no plan at all,
+ * so `main` runs it ahead of the table, and it is printed only beside the
+ * waiting cards it closes.
  */
 const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Verb>> }> = {
   Document: { bare: document.printPrompt, open: { done: { run: document.done } } },
@@ -55,7 +59,7 @@ const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Verb>
   },
   Stopped: { bare: reports.stopped, open: { resume: { run: stopped.resume }, amend: { run: stopped.amend } } },
   Dead: { bare: dead.carryOn, open: { stop: { run: stopped.stop } } },
-  Ended: { bare: reports.ended, open: {} },
+  Ended: { bare: ended.printPrompt, open: { later: { run: cards.later, args: "<id>" }, finish: { run: ended.finish } } },
 };
 
 const USAGE = `usage: card [<verb>] [--plan <slug>]
@@ -151,6 +155,11 @@ async function main(argv: string[], cwd: string): Promise<void> {
 
   const deck = await requireDeck(cwd);
   const plans = await listPlans(deck);
+  if (name === "decline") {
+    // A slug it is given must still name a plan, so a typo is refused here as everywhere.
+    if (slug !== null) pick(plans, slug, name);
+    return cards.decline(deck, args);
+  }
   const plan = pick(plans, slug, name);
   const command = commandFor(plan, plans.length > 1);
   const verb = TABLE[plan.state].open[name as VerbName];
