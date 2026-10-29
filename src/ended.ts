@@ -1,4 +1,5 @@
 import { rm } from "node:fs/promises";
+import path from "node:path";
 import prompt from "../payload/settle.md" with { type: "text" };
 import { readCard } from "./cardfile.ts";
 import { settling } from "./cards.ts";
@@ -99,7 +100,18 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
 export async function join(context: Context): Promise<void> {
   const { deck, plan, command } = context;
   const { id, card } = await settling(context, "join");
-  await reopenCard(deck, plan.final!);
+  const final = plan.final!;
+  // Reopened first and recorded second, so a retry completes from wherever
+  // an interruption left the join. An Ended plan has every card closed, so
+  // a final card found open is one this join reopened before the record
+  // followed; whole in both `open/` and `closed/`, the copy left in
+  // `closed/` holds nothing the open one lacks but its outcome, and goes as
+  // the reopen's own unlink would have taken it. A death before the reopen's
+  // rename leaves the card closed, and the reopen runs again from the start.
+  // Recorded first instead, a death would leave the plan in Cards with its
+  // final card closed, and the next take-in would place the finding after it.
+  if ((await locate(deck, final))!.closed) await reopenCard(deck, final);
+  else await rm(path.join(deck.closedDir, `${final}.md`), { force: true });
   await writeRecord(plan, { state: "Cards", joins: [...plan.joins, id], later: plan.later.filter((other) => other !== id) });
   console.log(
     `${id} has joined the plan \`${plan.slug}\`, whose final card is reopened; the plan is back in the Cards stage, which a fresh session takes up by running \`${command}\`: ${card.headline}`,

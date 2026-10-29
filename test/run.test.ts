@@ -1586,6 +1586,36 @@ test("card join at Ended refuses a finding awaiting its key, naming the --key fo
   expect(record(plan.dir).state).toBe("Ended");
 });
 
+for (const [left, both] of [
+  ["reopened", false],
+  ["whole in both open/ and closed/", true],
+] as const) {
+  test(`card join at Ended, retried after a join died with the final card ${left} and the plan still in Ended, joins the finding and leaves the final card open once`, async () => {
+    const { repo, deck, plan, first, final } = await inCheck();
+    await ensureBranch("plan/greeting", "main", repo);
+    await holdWorktree(plan.slug, "plan/greeting", repo);
+    await closeCard(deck, first, "done", "Landed.");
+    await closeCard(deck, final, "done", "Guide.");
+    const finding = await fileCard(deck, { labels: [], blockedBy: [], headline: "Nothing says goodbye", body: "Found.\n" });
+    await writeRecord(plan, { state: "Ended", harness: "pi", findings: [{ id: finding, role: "reviewer", card: first }] });
+    const closed = readFileSync(path.join(deck.closedDir, `${final}.md`), "utf8");
+    await reopenCard(deck, final);
+    if (both) writeFileSync(path.join(deck.closedDir, `${final}.md`), closed);
+
+    const joining = await card(["join", finding], repo);
+    expect(joining.stderr).toBe("");
+    expect(joining.code).toBe(0);
+
+    expect(existsSync(path.join(deck.closedDir, `${final}.md`))).toBe(false);
+    const reopened = readFileSync(path.join(deck.openDir, `${final}.md`), "utf8");
+    expect(reopened).not.toMatch(/^closed:/m);
+    expect(reopened).toEndWith("## Close note\n\nGuide.\n");
+    const state = record(plan.dir);
+    expect(state.state).toBe("Cards");
+    expect(state.joins).toEqual([finding]);
+  });
+}
+
 test(
   "after a join at Ended, card done and card approve run the joined card from its reconciler, then the final card again, whose reconciler reads its earlier close note; the plan ends with the final card closed done once, holding both close notes, and one commit per card run",
   async () => {
