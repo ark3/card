@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Card, Outcome } from "./cardfile.ts";
 import { createCard, readCard, refuseHeadlines } from "./cardfile.ts";
 import { type Deck, locate, stagedId, stagingName } from "./deck.ts";
-import { drawId } from "./id.ts";
+import { citedIds, drawId } from "./id.ts";
 
 // Ninety ids per syllable cubed. Ten collisions in a row is not a deck that
 // happens to be full; it is something wrong worth stopping on.
@@ -186,6 +186,12 @@ export async function closeCard(deck: Deck, id: string, outcome: Outcome, note: 
   if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
   if (found.closed) throw new Error(`${id} is already closed`);
   refuseHeadlines(`${id}'s close note`, note);
+  // On every deck: a close note travels into the card's commit, and nothing
+  // public ever cites a card id.
+  const cited = citedIds(note, deck.prefix);
+  if (cited.length > 0) {
+    throw new Error(`${id}'s close note must cite no card id, and it cites ${cited.join(", ")}`);
+  }
 
   // Appended to the card's own text rather than reformatted through
   // `formatCard`, which would rewrite frontmatter the owner hand-wrote.

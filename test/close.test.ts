@@ -127,6 +127,17 @@ test("nothing on stdin refuses and leaves the card untouched in open/", async ()
   expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).exists()).toBe(false);
 });
 
+test("refuses a note citing an id of the deck, naming each, and leaves the card in open/", async () => {
+  const { repo, deck } = await deckIn();
+  const file = await open(deck, "proj-behilo", CARD);
+  onStdin("Superseded by proj-vazuku and proj-dumoka, as proj-vazuku says. PROJ-1 is fine.\n");
+
+  await expect(close(["proj-behilo", "--moot"], repo)).rejects.toThrow(/cites proj-vazuku, proj-dumoka$/);
+
+  expect(await Bun.file(file).text()).toBe(CARD);
+  expect(await Array.fromAsync(new Bun.Glob("*").scan({ cwd: deck.closedDir, dot: true }))).toEqual([]);
+});
+
 test("an interruption before the move leaves the open card whole and closed/ empty", async () => {
   const { repo, deck } = await deckIn();
   const file = await open(deck, "proj-behilo", CARD);
