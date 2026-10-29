@@ -26,6 +26,14 @@ async function members(deck: Deck, plan: Plan): Promise<Member[]> {
   return kept;
 }
 
+/** The plan's cards in its order, each its id, headline and marks, and its path on the next line. */
+export async function planCards(deck: Deck, plan: Plan): Promise<string[]> {
+  return (await members(deck, plan)).map(({ id, path: file, landed, card }) => {
+    const marks = [landed ? "landed" : null, id === plan.final ? "final card" : null].filter((mark) => mark !== null);
+    return `${id}  ${card.headline}${marks.length > 0 ? `  (${marks.join(", ")})` : ""}\n  ${file}\n`;
+  });
+}
+
 /** The Cards stage's prompt, which bare `card` prints for as long as the stage lasts. */
 export async function printPrompt({ deck, plan, command }: Context): Promise<void> {
   // A card the owner put off for later is still waiting, for every other
@@ -34,10 +42,7 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
   const joined = await Promise.all(
     plan.joins.map(async (id) => `${id}  ${(await readCard(path.join(deck.openDir, `${id}.md`))).headline}\n`),
   );
-  const cards = (await members(deck, plan)).map(({ id, path: file, landed, card }) => {
-    const marks = [landed ? "landed" : null, id === plan.final ? "final card" : null].filter((mark) => mark !== null);
-    return `${id}  ${card.headline}${marks.length > 0 ? `  (${marks.join(", ")})` : ""}\n  ${file}\n`;
-  });
+  const cards = await planCards(deck, plan);
 
   const values = {
     CARD: command,

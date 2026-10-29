@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { createDeck, type Deck, DEFAULT_PREFIX, requireDeck, resolveDeck } from "./deck.ts";
 import * as cards from "./cards.ts";
+import * as check from "./check.ts";
 import * as document from "./document.ts";
 import { forOwner } from "./owner.ts";
 import { type Context, listPlans, listWaiting, type Plan, refuseSlug, startPlan, type State, waitingCards } from "./plan.ts";
@@ -42,7 +43,7 @@ const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Verb>
     bare: cards.printPrompt,
     open: { done: { run: cards.done }, join: { run: cards.join, args: "<id>" }, later: { run: cards.later, args: "<id>" } },
   },
-  Check: { bare: report, open: {} },
+  Check: { bare: check.printPrompt, open: { amend: { run: check.amend } } },
   Running: { bare: report, open: {} },
   Bounced: { bare: report, open: {} },
   Stopped: { bare: report, open: {} },
