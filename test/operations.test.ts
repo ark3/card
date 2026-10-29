@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { chmod } from "node:fs/promises";
+import { chmod, utimes } from "node:fs/promises";
 import path from "node:path";
 import { readCard } from "../src/cardfile.ts";
 import { createDeck, locate } from "../src/deck.ts";
@@ -47,6 +47,10 @@ test("lists a bad file and a dangling blocker as warnings, not on the console", 
   const deck = await createDeck(await tempRepo(), "proj");
   await Bun.write(path.join(deck.openDir, "proj-fanovi.md"), "---\nkind: [chore]\n---\n\n# Typo\n\nBody.\n");
   await Bun.write(path.join(deck.openDir, "proj-vezipo.md"), "---\nblocked-by: [proj-nosuch]\n---\n\n# Dangling\n\nBody.\n");
+  // The listing walks newest first, so the warnings' order is the test's
+  // choice and not the clock's.
+  await utimes(path.join(deck.openDir, "proj-fanovi.md"), 2000, 2000);
+  await utimes(path.join(deck.openDir, "proj-vezipo.md"), 1000, 1000);
 
   const { listed, warnings } = await listCards(deck, "open", []);
 
