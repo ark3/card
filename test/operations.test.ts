@@ -1,9 +1,10 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
+import { chmod } from "node:fs/promises";
 import path from "node:path";
 import { readCard } from "../src/cardfile.ts";
 import { createDeck, locate } from "../src/deck.ts";
 import { citedIds } from "../src/id.ts";
-import { closeCard, fileCard, listCards } from "../src/operations.ts";
+import { appendRecord, closeCard, fileCard, listCards, reopenCard } from "../src/operations.ts";
 import { clearCardRoot, removeTempDirs, tempRepo } from "./helpers.ts";
 
 beforeEach(clearCardRoot);
@@ -121,4 +122,106 @@ test("reads a closed card that carries no `closed:` line", async () => {
 
   expect(listed.map((entry) => [entry.id, entry.card.closed])).toEqual([["proj-behilo", undefined]]);
   expect(warnings).toEqual([]);
+});
+
+test("closing, reopening and closing again leaves one closed: line and two close notes, in order", async () => {
+  const deck = await createDeck(await tempRepo(), "proj");
+  const file = path.join(deck.openDir, "proj-behilo.md");
+  await Bun.write(file, "---\nlabels: [T-1]\n---\n\n# The card\n\nBody.\n");
+
+  await closeCard(deck, "proj-behilo", "done", "First.");
+  await reopenCard(deck, "proj-behilo");
+
+  // Back in open/ with its outcome gone and everything below the frontmatter
+  // kept, the first close note included.
+  expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).exists()).toBe(false);
+  expect(await Bun.file(file).text()).toBe(
+    "---\nlabels: [T-1]\n---\n\n# The card\n\nBody.\n\n## Close note\n\nFirst.\n",
+  );
+
+  await closeCard(deck, "proj-behilo", "moot", "Second.");
+
+  expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(
+    "---\nlabels: [T-1]\nclosed: moot\n---\n\n# The card\n\nBody.\n\n## Close note\n\nFirst.\n\n## Close note\n\nSecond.\n",
+  );
+});
+
+test("reopening drops the frontmatter close opened, once removing closed: leaves it empty", async () => {
+  const deck = await createDeck(await tempRepo(), "proj");
+  await Bun.write(path.join(deck.openDir, "proj-behilo.md"), "# No fields\n\nBody.\n");
+
+  await closeCard(deck, "proj-behilo", "declined", "Not now.");
+  await reopenCard(deck, "proj-behilo");
+
+  expect(await Bun.file(path.join(deck.openDir, "proj-behilo.md")).text()).toBe(
+    "# No fields\n\nBody.\n\n## Close note\n\nNot now.\n",
+  );
+});
+
+test("reopening refuses a card that is open, and one that is nowhere", async () => {
+  const deck = await createDeck(await tempRepo(), "proj");
+  await Bun.write(path.join(deck.openDir, "proj-behilo.md"), "# Open\n\nBody.\n");
+
+  await expect(reopenCard(deck, "proj-behilo")).rejects.toThrow(/proj-behilo is already open/);
+  await expect(reopenCard(deck, "proj-nosuch")).rejects.toThrow(/no card proj-nosuch/);
+});
+
+test("an interruption of a reopen leaves the closed card whole, and never a reopened card half-written", async () => {
+  const deck = await createDeck(await tempRepo(), "proj");
+  const closedText = "---\nclosed: done\n---\n\n# Closed\n\nBody.\n\n## Close note\n\nDone.\n";
+  const closedFile = path.join(deck.closedDir, "proj-behilo.md");
+  await Bun.write(closedFile, closedText);
+
+  // `open/` unwritable stops the reopen at its first write, the staged copy.
+  await chmod(deck.openDir, 0o555);
+  try {
+    await expect(reopenCard(deck, "proj-behilo")).rejects.toThrow(/EACCES/);
+  } finally {
+    await chmod(deck.openDir, 0o755);
+  }
+  expect(await Bun.file(closedFile).text()).toBe(closedText);
+  expect(await Array.fromAsync(new Bun.Glob("*").scan({ cwd: deck.openDir, dot: true }))).toEqual([]);
+
+  // `closed/` unwritable lets the reopened card be renamed into `open/`, then
+  // stops the reopen at the unlink.
+  await chmod(deck.closedDir, 0o555);
+  try {
+    await expect(reopenCard(deck, "proj-behilo")).rejects.toThrow(/EACCES/);
+  } finally {
+    await chmod(deck.closedDir, 0o755);
+  }
+  expect(await Bun.file(closedFile).text()).toBe(closedText);
+  expect(await Bun.file(path.join(deck.openDir, "proj-behilo.md")).text()).toBe(
+    "# Closed\n\nBody.\n\n## Close note\n\nDone.\n",
+  );
+});
+
+test("a record section lands at the end of the card, every byte above it kept", async () => {
+  const deck = await createDeck(await tempRepo(), "proj");
+  const byHand = "---\nlabels: [a,b]\n---\n# Squeezed together\nProse.\n";
+  const file = path.join(deck.openDir, "proj-behilo.md");
+  await Bun.write(file, byHand);
+
+  await appendRecord(deck, "proj-behilo", "Account", "What the implementer did.");
+  await appendRecord(deck, "proj-behilo", "Review feedback", "What the reviewer asked for.\n");
+
+  expect(await Bun.file(file).text()).toBe(
+    `${byHand}\n## Account\n\nWhat the implementer did.\n\n## Review feedback\n\nWhat the reviewer asked for.\n`,
+  );
+  expect(await Array.fromAsync(new Bun.Glob("*").scan({ cwd: deck.openDir, dot: true }))).toEqual([
+    "proj-behilo.md",
+  ]);
+});
+
+test("a record section with a `# ` line refuses, naming the line, and writes nothing", async () => {
+  const deck = await createDeck(await tempRepo(), "proj");
+  const card = "# The card\n\nBody.\n";
+  const file = path.join(deck.openDir, "proj-behilo.md");
+  await Bun.write(file, card);
+
+  await expect(appendRecord(deck, "proj-behilo", "Account", "Did it.\n# Not a headline\n")).rejects.toThrow(
+    /`# Not a headline`/,
+  );
+
+  expect(await Bun.file(file).text()).toBe(card);
 });

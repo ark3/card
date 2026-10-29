@@ -161,6 +161,71 @@ function recordOutcome(id: string, text: string, outcome: string): string {
   return `${head}closed: ${outcome}\n${text.slice(end + 1)}`;
 }
 
+/** The headings a record section can carry, all of them written by the tool. */
+export type RecordHeading = "Account" | "Review feedback" | "Close note" | "Promotion";
+
+/**
+ * `text` with a record section appended: `heading`, then `body`. The heading
+ * is what says where the card's contract ends and the record begins; nothing
+ * else marks the seam.
+ */
+function withRecord(text: string, heading: RecordHeading, body: string): string {
+  refuseHeadlines(`the ${heading} section`, body);
+  return `${text.replace(/\n*$/, "\n")}\n## ${heading}\n\n${body.replace(/\n*$/, "\n")}`;
+}
+
+/**
+ * Appends a record section to the card `id`, open or closed, below its
+ * contract and any record already there.
+ */
+export async function appendRecord(deck: Deck, id: string, heading: RecordHeading, text: string): Promise<void> {
+  const found = await locate(deck, id);
+  if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
+  const appended = withRecord(await Bun.file(found.path).text(), heading, text);
+  // Staged and renamed over the card, so no interruption leaves it with half a
+  // section. The staged name is hidden and does not end `.md`, so no listing
+  // shows one left behind, and the card it was for is still whole.
+  const staging = path.join(path.dirname(found.path), `.${id}.md.appending`);
+  await writeFile(staging, appended);
+  await rename(staging, found.path);
+}
+
+/**
+ * The card's own text with its `closed:` line removed, and with it the
+ * frontmatter block when that was its last field, since a card with no fields
+ * has no frontmatter. Everything below the frontmatter is kept as it was.
+ */
+function removeOutcome(id: string, text: string): string {
+  if (!text.startsWith("---\n")) return text;
+  const end = text.indexOf("\n---\n", 3);
+  if (end === -1) throw new Error(`${id}: frontmatter is never closed`);
+  const fields = text.slice(4, end + 1).replace(/^closed:.*\n/gm, "");
+  const below = text.slice(end + 5);
+  // The blank line that set the block off goes with it, as `close` added it.
+  if (fields.trim() === "") return below.replace(/^\n+/, "");
+  return `---\n${fields}---\n${below}`;
+}
+
+/**
+ * Moves the closed card `id` back to `open/` and removes its `closed:` line,
+ * keeping its close notes and everything else below its frontmatter.
+ */
+export async function reopenCard(deck: Deck, id: string): Promise<void> {
+  const found = await locate(deck, id);
+  if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
+  if (!found.closed) throw new Error(`${id} is already open`);
+
+  const staging = path.join(deck.openDir, `.${id}.md.reopening`);
+  await writeFile(staging, removeOutcome(id, await Bun.file(found.path).text()));
+  // Into `open/` in one rename, and only then out of `closed/`, so no
+  // interruption loses the card or leaves it half-written. One between the
+  // two leaves it whole in both, where `locate` finds it open, and its next
+  // close renames over the copy left in `closed/`. A staged copy left behind
+  // is invisible to every listing and holds nothing the closed card lacks.
+  await rename(staging, path.join(deck.openDir, `${id}.md`));
+  await unlink(found.path);
+}
+
 export type Dependent = { id: string; headline: string };
 
 export type CloseReport = {
@@ -185,7 +250,6 @@ export async function closeCard(deck: Deck, id: string, outcome: Outcome, note: 
   const found = await locate(deck, id);
   if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
   if (found.closed) throw new Error(`${id} is already closed`);
-  refuseHeadlines(`${id}'s close note`, note);
   // On every deck: a close note travels into the card's commit, and nothing
   // public ever cites a card id.
   const cited = citedIds(note, deck.prefix);
@@ -196,11 +260,9 @@ export async function closeCard(deck: Deck, id: string, outcome: Outcome, note: 
   // Appended to the card's own text rather than reformatted through
   // `formatCard`, which would rewrite frontmatter the owner hand-wrote.
   const text = await Bun.file(found.path).text();
-  const recorded = recordOutcome(id, text.replace(/\n*$/, "\n"), outcome);
+  const recorded = withRecord(recordOutcome(id, text, outcome), "Close note", note);
   const staging = path.join(deck.closedDir, stagingName(id));
-  // The heading is what says where the card's own prose ends and the note
-  // begins; nothing else marks the seam.
-  await writeFile(staging, `${recorded}\n## Close note\n\n${note}\n`);
+  await writeFile(staging, recorded);
   // The card arrives in `closed/` explanation and all, in one rename. Until
   // the unlink runs the open copy is still the card exactly as it was, so no
   // interruption leaves a closed card without its explanation or an
