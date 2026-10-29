@@ -1048,6 +1048,25 @@ test("card drop refuses while the worktree holds work git would lose, and leaves
   expect(cards()).toEqual(before);
 });
 
+test("card drop in Stopped refuses while the worktree holds work git would lose, and leaves the worktree, the plan and its open cards as they were", async () => {
+  const { repo, deck, plan } = await inCheck();
+  await ensureBranch("plan/greeting", "main", repo);
+  const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+  // Stopped is not settled, so the owner's file reaches the removal with the plan's cards open.
+  await writeRecord(plan, { state: "Stopped", harness: "pi", run: { pid: await deadPid(), boot: BOOT } });
+  writeFileSync(path.join(tree, "tried.txt"), "the owner's trial\n");
+  const cards = () => [deck.openDir, deck.closedDir].map((dir) => readdirSync(dir).map((name) => readFileSync(path.join(dir, name), "utf8")));
+  const before = cards();
+
+  const result = await card(["drop"], repo);
+  expect(result.code).not.toBe(0);
+  expect(result.stderr).toStartWith("card: the plan is not dropped, since git would not remove its worktree:");
+  expect(result.stderr).toContain("untracked");
+  expect(readFileSync(path.join(tree, "tried.txt"), "utf8")).toBe("the owner's trial\n");
+  expect((await listPlans(deck)).map(({ state }) => state)).toEqual(["Stopped"]);
+  expect(cards()).toEqual(before);
+});
+
 const ASKED = "Which file did you expect the greeting in?";
 const RESPONSE = "In hello.txt, which the card names.\n\n## Why\n\nThe card says so.  \n";
 
