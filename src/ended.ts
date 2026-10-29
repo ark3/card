@@ -10,7 +10,7 @@ import { holdWorktree, removeWorktree } from "./landing.ts";
 import { closeCard, reopenCard } from "./operations.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
-import { awaitingKey, type Context, type Plan, writeRecord } from "./plan.ts";
+import { awaitingKey, type Context, listPlans, type Plan, writeRecord } from "./plan.ts";
 import { named } from "./reports.ts";
 
 // What `closeCard` writes above a close note.
@@ -18,16 +18,30 @@ const CLOSE_NOTE = "\n## Close note\n\n";
 
 /**
  * Each finding the run filed, with its headline and how the owner settled it:
- * closed with its outcome, drafted for promotion and awaiting its key, or
- * left for later; null while it is unsettled. `awaiting` is the second.
+ * closed with its outcome, joined to another plan, drafted for promotion and
+ * awaiting its key, or left for later; null while it is unsettled. A join to
+ * another plan is the owner's decision already made, and every settling verb
+ * refuses a card another plan holds, so it settles the finding here, ahead of
+ * a draft whose key that refusal would keep from being recorded. `awaiting`
+ * is the third.
  */
 async function findings(deck: Deck, plan: Plan): Promise<{ id: string; role: Role; headline: string; settled: string | null; awaiting: boolean }[]> {
+  const others = (await listPlans(deck)).filter((other) => other.slug !== plan.slug);
   return Promise.all(
     plan.findings.map(async ({ id, role }) => {
       const found = (await locate(deck, id))!;
       const card = await readCard(found.path);
-      const awaiting = !found.closed && awaitingKey(card);
-      const settled = found.closed ? `closed ${card.closed}` : awaiting ? "drafted for promotion, awaiting its key" : plan.later.includes(id) ? "left for later" : null;
+      const taker = found.closed ? undefined : others.find((other) => other.cards.includes(id) || other.joins.includes(id));
+      const awaiting = !found.closed && taker === undefined && awaitingKey(card);
+      const settled = found.closed
+        ? `closed ${card.closed}`
+        : taker !== undefined
+          ? `joined the plan \`${taker.slug}\``
+          : awaiting
+            ? "drafted for promotion, awaiting its key"
+            : plan.later.includes(id)
+              ? "left for later"
+              : null;
       return { id, role, headline: card.headline, settled, awaiting };
     }),
   );

@@ -100,14 +100,14 @@ const NO_FINDINGS = "The run filed no findings.\n";
 /**
  * What bare `card` prints in Ended for `inCheck`'s plan, its final card closed
  * under `note` and the run's findings listed as `findings`: the report for the
- * owner, then the settling prompt.
+ * owner, then the settling prompt, its commands starting `command`.
  */
-function ended(plan: Plan, final: string, tree: string, note: string, findings = NO_FINDINGS): string {
+function ended(plan: Plan, final: string, tree: string, note: string, findings = NO_FINDINGS, command = "card"): string {
   const report =
     `The plan \`greeting\`'s run has ended, with every card closed.\n\nIts branch is \`plan/greeting\`, checked out in the worktree ${tree}.\n\n` +
-    `${findings}\nOnce every finding is settled, this ends the plan, removing the worktree and keeping the branch:\n\n  card finish\n\n` +
+    `${findings}\nOnce every finding is settled, this ends the plan, removing the worktree and keeping the branch:\n\n  ${command} finish\n\n` +
     `The final card, ${final}  Check the plan, closed with this note, which is the guide to the plan's work:\n\n${note}`;
-  return forOwner(report) + wrapPayload("card", fill(settle, { CARD: "card", PLAN_DOCUMENT: plan.document }));
+  return forOwner(report) + wrapPayload(command, fill(settle, { CARD: command, PLAN_DOCUMENT: plan.document }));
 }
 
 /** A finding as bare `card` lists it in Ended: unsettled, with the commands that settle it, or settled as `settled` says. */
@@ -953,6 +953,35 @@ test("card promote at Ended prints a clean draft for two findings for the owner 
     expect(closed).toEndWith(`## Promotion\n\n${DRAFT}\n\n## Close note\n\nPromoted to GREET-42.\n`);
   }
   expect(await waitingCards(deck)).toEqual([]);
+});
+
+test("a finding another plan joins is settled at Ended, listed with the plan that took it and no command, and card finish ends the plan", async () => {
+  const { repo, deck, plan, first, final } = await inCheck();
+  await ensureBranch("plan/greeting", "main", repo);
+  const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+  await closeCard(deck, first, "done", "Landed.");
+  await closeCard(deck, final, "done", "Guide.\n");
+  const headline = "The README still names greet.sh";
+  const readme = await fileCard(deck, { labels: [], blockedBy: [], headline, body: "Found.\n" });
+  await writeRecord(plan, { state: "Ended", harness: "pi", findings: [{ id: readme, role: "reviewer", card: first }] });
+  const other = await writeRecord(await startPlan(deck, "other"), { state: "Cards", placeholder: false });
+
+  expect((await card(["--plan", "other", "join", readme], repo)).code).toBe(0);
+  const filed = `The run filed these findings, each a waiting card until the owner settles it:\n\n${listed(readme, headline, "joined the plan `other`")}`;
+  const settled = ended(plan, final, tree, "Guide.\n", filed, "card --plan greeting");
+  expect(await card(["--plan", "greeting"], repo)).toEqual({ code: 0, stdout: settled, stderr: "" });
+
+  // Taken in by the other plan's Cards stage, it is one of that plan's cards, and settled all the same.
+  await Bun.write(path.join(other.cardsDir, "01-check-other.md"), "# Check the other plan\n\nBody.\n");
+  expect((await card(["--plan", "other", "done"], repo)).code).toBe(0);
+  expect(record(other.dir).cards).toContain(readme);
+  expect(await card(["--plan", "greeting"], repo)).toEqual({ code: 0, stdout: settled, stderr: "" });
+
+  const finishing = await card(["--plan", "greeting", "finish"], repo);
+  expect(finishing.stderr).toBe("");
+  expect(finishing.code).toBe(0);
+  expect(existsSync(tree)).toBe(false);
+  expect((await listPlans(deck)).map(({ slug }) => slug)).toEqual(["other"]);
 });
 
 test(
