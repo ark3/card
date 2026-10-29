@@ -45,7 +45,11 @@ export async function approve({ plan, command, args }: Context): Promise<void> {
   if (args.length !== 0 && !(args.length === 2 && args[0] === "--harness" && ["claude", "pi"].includes(args[1]!))) {
     throw new Error(usage);
   }
-  const { harness, why } = chooseHarness(args.length === 2 ? (args[1] as Harness) : null);
+  // A run carried on after `card amend` keeps the harness it recorded, unless `--harness` names one.
+  const { harness, why } =
+    args.length === 0 && plan.harness !== null
+      ? { harness: plan.harness, why: "the run already ran on it" }
+      : chooseHarness(args.length === 2 ? (args[1] as Harness) : null);
 
   // `card done` in the Document stage refused a document without either.
   const { fields } = readDocument(await Bun.file(plan.document).text());

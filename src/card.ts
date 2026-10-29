@@ -49,8 +49,11 @@ const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Verb>
   },
   Check: { bare: check.printPrompt, open: { approve: { run: check.approve }, amend: { run: check.amend } } },
   Running: { bare: reports.running, open: { stop: { run: stopped.stop } } },
-  Bounced: { bare: reports.bounced, open: { ask: { run: bounced.ask }, resume: { run: bounced.resume } } },
-  Stopped: { bare: reports.stopped, open: { resume: { run: stopped.resume } } },
+  Bounced: {
+    bare: reports.bounced,
+    open: { ask: { run: bounced.ask }, resume: { run: bounced.resume }, amend: { run: stopped.amend } },
+  },
+  Stopped: { bare: reports.stopped, open: { resume: { run: stopped.resume }, amend: { run: stopped.amend } } },
   Dead: { bare: dead.carryOn, open: { stop: { run: stopped.stop } } },
   Ended: { bare: reports.ended, open: {} },
 };

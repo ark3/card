@@ -994,3 +994,107 @@ test(
   },
   SLOW,
 );
+
+/** The calls of every session whose launch was a reconciler on the card headed `headline`, one list per session. */
+function reconcilersOf(control: string, headline: string): ReturnType<typeof calls>[] {
+  return readdirSync(control)
+    .filter((id) => existsSync(path.join(control, id, "calls")))
+    .map((id) => calls(control, id))
+    .filter(([launched]) => launched!.stdin.startsWith("# Reconciling one card\n") && launched!.stdin.includes(`<card>\n# ${headline}\n`));
+}
+
+test(
+  "card amend after a bounce at the second of three cards discards the bounced work and prints the Cards prompt; a card taken in ahead of it runs first, then the amended card from a fresh reconciler, on the harness the run recorded",
+  async () => {
+    const repo = await tempRepo();
+    const deck = await createDeck(repo, "proj");
+    const finding = (headline: string) => ({ labels: [], blockedBy: [], headline, body: "Body.\n" });
+    const first = await fileCard(deck, finding("Add the greeting"));
+    const second = await fileCard(deck, finding("Use the greeting"));
+    const final = await fileCard(deck, finding("Check the plan"));
+    const plan = await writeRecord(await startPlan(deck, "greeting"), { state: "Check", placeholder: false, cards: [first, second, final], final });
+    await Bun.write(plan.document, `---\nbranch: plan/greeting\nstart-point: main\n---\n\n# Greet\n\n${DOCUMENT_BODY}\n`);
+    const base = (await gitOrThrow(["rev-parse", "main"], repo)).trim();
+    // Both on PATH, so a second approval choosing afresh would pick claude.
+    const control = stand(["claude", "pi"]);
+    const question = "The card uses `greet()`, which no card builds; which card should?";
+    const stop: Reply = { stdout: JSON.stringify({ outcome: "stop", cause: "order", question }), run: "printf 'stray\\n' > stray.txt" };
+    queue(control, [proceed()], [done("printf 'hello\\n' > hello.txt")], [approved("Add the greeting")], [stop]);
+    expect((await card(["approve", "--harness", "pi"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+    const { bounce } = record(plan.dir);
+    expect(bounce!.session.id).toBe(record(plan.dir).cycle!.sessions.reconciler!);
+
+    const amending = await card(["amend"], repo);
+    expect(amending.stderr).toBe("");
+    expect(amending.code).toBe(0);
+    expect(amending.stdout).toContain("# The Cards stage");
+    expect(amending.stdout).toContain(
+      [
+        `${first}  Add the greeting  (landed)`,
+        `  ${path.join(deck.closedDir, `${first}.md`)}`,
+        `${second}  Use the greeting`,
+        `  ${path.join(deck.openDir, `${second}.md`)}`,
+        `${final}  Check the plan  (final card)`,
+      ].join("\n"),
+    );
+    expect(record(plan.dir).state).toBe("Cards");
+    expect(record(plan.dir).bounce).toBeNull();
+    const tree = path.join(repo, ".worktrees", "greeting");
+    const landed = (await gitOrThrow(["rev-parse", "plan/greeting"], repo)).trim();
+    expect((await gitOrThrow(["rev-parse", "HEAD"], tree)).trim()).toBe(landed);
+    expect(await gitOrThrow(["status", "--porcelain", "--untracked-files=all"], tree)).toBe("");
+
+    // The authoring session's amendments: a new card, and the stopped card's file changed in place.
+    await Bun.write(path.join(plan.cardsDir, "01-build-greet.md"), "# Build greet\n\nBody.\n");
+    const amended = "# Use the greeting\n\nBody, amended: call `greet()`, which the card ahead builds.\n";
+    writeFileSync(path.join(deck.openDir, `${second}.md`), amended);
+    const taking = await card(["done"], repo);
+    expect(taking.stderr).toBe("");
+    const cards = record(plan.dir).cards;
+    expect(cards).toHaveLength(4);
+    expect([cards[0], cards[2], cards[3]]).toEqual([first, second, final]);
+
+    queue(
+      control,
+      [proceed()],
+      [done()],
+      [approved("Build greet")],
+      [proceed()],
+      [done()],
+      [approved("Use the greeting")],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
+    const approving = await card(["approve"], repo);
+    expect(approving.stderr).toBe("");
+    expect(approving.stdout).toContain("running on pi");
+    await until("the run to end or bounce", () => record(plan.dir).state !== "Running");
+    expect(record(plan.dir).state).toBe("Ended");
+    expect(record(plan.dir).harness).toBe("pi");
+
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Build greet", "Use the greeting", "Check the plan"]);
+    expect(record(plan.dir).landed.map(({ card }) => card)).toEqual(cards);
+    // The first card's one reconciler is the first run's, and nothing of it ran again.
+    expect(reconcilersOf(control, "Add the greeting").map((made) => made.length)).toEqual([1]);
+    // The bounced reconciler was left behind, and a fresh one read the amended card.
+    expect(calls(control, bounce!.session.id)).toHaveLength(1);
+    const seconds = reconcilersOf(control, "Use the greeting");
+    expect(seconds.map((made) => made.length)).toEqual([1, 1]);
+    expect(seconds.filter(([launched]) => launched!.stdin.includes(amended.trimEnd()))).toHaveLength(1);
+  },
+  SLOW,
+);
+
+test("card amend in Running refuses, and changes nothing", async () => {
+  const { repo, plan, first, base } = await inCheck();
+  const cycle: Cycle = { card: first, base, role: "implementer", step: "implement", sessions: { implementer: crypto.randomUUID() }, rounds: 0, exchanges: 0 };
+  await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: process.pid, boot: BOOT }, cycle });
+  const before = readFileSync(path.join(plan.dir, "state.json"), "utf8");
+
+  const result = await card(["amend"], repo);
+  expect(result.code).not.toBe(0);
+  expect(result.stderr).toStartWith("card: `card amend` is not open while the plan `greeting` is in Running");
+  expect(readFileSync(path.join(plan.dir, "state.json"), "utf8")).toBe(before);
+});

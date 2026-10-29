@@ -1,3 +1,4 @@
+import * as cards from "./cards.ts";
 import { startRun } from "./check.ts";
 import { endRun, settle } from "./dead.ts";
 import { readDocument } from "./document.ts";
@@ -41,4 +42,18 @@ export async function resume({ plan, command, args }: Context): Promise<void> {
   const tree = await holdWorktree(plan.slug, fields.get("branch")!, cwd);
   const log = await startRun(plan, plan.harness!, tree, cwd);
   process.stdout.write(forOwner(`The plan \`${plan.slug}\`'s run is carried on, on ${plan.harness}, in ${tree}; its log is ${log}.\n`));
+}
+
+/**
+ * `card amend` in Bounced or Stopped: the plan goes back to the Cards stage
+ * to be amended, its cards kept. The in-flight card's work is discarded back
+ * to what the state records, as a stop discards it, so the card reruns from a
+ * fresh reconciler on a clean worktree once `card approve` carries the run
+ * on, and the bounced session, if any, is left behind.
+ */
+export async function amend(context: Context): Promise<void> {
+  const { deck, plan, command, args } = context;
+  if (args.length > 0) throw new Error(`usage: ${command} amend`);
+  const { plan: settled } = await settle(deck, plan);
+  await cards.printPrompt({ ...context, plan: await writeRecord(settled, { state: "Cards", bounce: null }) });
 }
