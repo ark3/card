@@ -88,3 +88,37 @@ test("the id check names each distinct id the text cites, once", () => {
   ]);
   expect(citedIds("Rename proj-behilonger, see other-behilo.", "proj")).toEqual([]);
 });
+
+test("filing a body with a `# ` line refuses, naming the line, and writes nothing", async () => {
+  const deck = await createDeck(await tempRepo(), "proj");
+
+  await expect(
+    fileCard(deck, { headline: "One", labels: [], blockedBy: [], body: "Prose.\n\n# Two\n" }),
+  ).rejects.toThrow(/`# Two`/);
+
+  expect(await Array.fromAsync(new Bun.Glob("*").scan({ cwd: deck.openDir, dot: true }))).toEqual([]);
+});
+
+test("a close note with a `# ` line refuses, naming the line, and leaves the card where it was", async () => {
+  const deck = await createDeck(await tempRepo(), "proj");
+  const card = "# The card being closed\n\nBody.\n";
+  const file = path.join(deck.openDir, "proj-behilo.md");
+  await Bun.write(file, card);
+
+  await expect(closeCard(deck, "proj-behilo", "done", "Landed.\n# Not a headline")).rejects.toThrow(
+    /`# Not a headline`/,
+  );
+
+  expect(await Bun.file(file).text()).toBe(card);
+  expect(await Array.fromAsync(new Bun.Glob("*").scan({ cwd: deck.closedDir, dot: true }))).toEqual([]);
+});
+
+test("reads a closed card that carries no `closed:` line", async () => {
+  const deck = await createDeck(await tempRepo(), "proj");
+  await Bun.write(path.join(deck.closedDir, "proj-behilo.md"), "# Closed before close recorded it\n\nBody.\n");
+
+  const { listed, warnings } = await listCards(deck, "closed", []);
+
+  expect(listed.map((entry) => [entry.id, entry.card.closed])).toEqual([["proj-behilo", undefined]]);
+  expect(warnings).toEqual([]);
+});

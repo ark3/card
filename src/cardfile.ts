@@ -52,6 +52,25 @@ function parseOutcome(raw: string): string {
   return outcome;
 }
 
+/**
+ * Refuses `text`, naming `what` it is and every line in it that starts `# `,
+ * since a card's one such line is its headline. Run on any text before it
+ * becomes part of a card, so the rule holds when a card is written rather
+ * than surfacing as an unreadable card at its next read.
+ */
+export function refuseHeadlines(what: string, text: string): void {
+  const lines = text.split("\n").filter((line) => line.startsWith("# "));
+  if (lines.length === 0) return;
+  throw new Error(
+    `${what} has a line starting \`# \`, which only a card's headline may: ${lines.map((line) => `\`${line}\``).join(", ")}`,
+  );
+}
+
+function refuseHeadline(headline: string): void {
+  if (headline.trim() === "") throw new Error("the card's headline is empty");
+  if (headline.includes("\n")) throw new Error("a headline is one line and never wraps");
+}
+
 export function parseCard(text: string): Card {
   let rest = text;
   let labels: string[] = [];
@@ -79,17 +98,23 @@ export function parseCard(text: string): Card {
   const breakAt = rest.indexOf("\n");
   const first = breakAt === -1 ? rest : rest.slice(0, breakAt);
   if (!first.startsWith("# ")) throw new Error("card has no `# ` headline");
+  const headline = first.slice(2).trim();
+  refuseHeadline(headline);
+  const body = breakAt === -1 ? "" : rest.slice(breakAt + 1).replace(/^\n+/, "");
+  refuseHeadlines("the card's body", body);
 
   return {
     labels,
     blockedBy,
     ...(closed === undefined ? {} : { closed }),
-    headline: first.slice(2).trim(),
-    body: breakAt === -1 ? "" : rest.slice(breakAt + 1).replace(/^\n+/, ""),
+    headline,
+    body,
   };
 }
 
 export function formatCard(card: Card): string {
+  refuseHeadline(card.headline);
+  refuseHeadlines("the card's body", card.body);
   const fields = [];
   if (card.labels.length > 0) fields.push(formatList("labels", card.labels));
   if (card.blockedBy.length > 0) fields.push(formatList("blocked-by", card.blockedBy));

@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import path from "node:path";
-import { createCard, formatCard, parseCard, readCard } from "../src/cardfile.ts";
+import { createCard, formatCard, parseCard, readCard, refuseHeadlines } from "../src/cardfile.ts";
 import { removeTempDirs, tempDir } from "./helpers.ts";
 
 afterAll(removeTempDirs);
@@ -81,6 +81,27 @@ test("rejects a field the format does not have", () => {
 test("rejects a card with no headline", () => {
   expect(() => parseCard("no headline here\n")).toThrow(/no `# ` headline/);
   expect(() => parseCard("---\nlabels: [a]\n---\n\n## Not a headline\n")).toThrow(/no `# ` headline/);
+});
+
+test("rejects a card whose headline is empty", () => {
+  expect(() => parseCard("# \n\nBody.\n")).toThrow(/headline is empty/);
+  expect(() => parseCard("---\nlabels: [a]\n---\n\n#    \n")).toThrow(/headline is empty/);
+});
+
+test("rejects a card with a second `# ` line, naming it", () => {
+  expect(() => parseCard("# One\n\nProse.\n\n# Two\n")).toThrow(/`# Two`/);
+});
+
+test("refuses to write a card the parser would refuse", () => {
+  const card = { labels: [], blockedBy: [], headline: "One.", body: "" };
+  expect(() => formatCard({ ...card, headline: "  " })).toThrow(/headline is empty/);
+  expect(() => formatCard({ ...card, headline: "One\nTwo" })).toThrow(/never wraps/);
+  expect(() => formatCard({ ...card, body: "Prose.\n\n# Two\n" })).toThrow(/`# Two`/);
+});
+
+test("the `# `-line check names every line starting `# `, and passes `#` lines that are not", () => {
+  expect(() => refuseHeadlines("note", "a\n# One\nb\n# Two\n")).toThrow(/note .*`# One`, `# Two`$/);
+  expect(() => refuseHeadlines("note", "## Sub\n#hash\n#\n  # indented\n")).not.toThrow();
 });
 
 test("rejects a value that could not be written back", () => {

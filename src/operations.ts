@@ -1,7 +1,7 @@
 import { readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Card, Outcome } from "./cardfile.ts";
-import { createCard, readCard } from "./cardfile.ts";
+import { createCard, readCard, refuseHeadlines } from "./cardfile.ts";
 import { type Deck, locate, stagedId, stagingName } from "./deck.ts";
 import { drawId } from "./id.ts";
 
@@ -185,6 +185,7 @@ export async function closeCard(deck: Deck, id: string, outcome: Outcome, note: 
   const found = await locate(deck, id);
   if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
   if (found.closed) throw new Error(`${id} is already closed`);
+  refuseHeadlines(`${id}'s close note`, note);
 
   // Appended to the card's own text rather than reformatted through
   // `formatCard`, which would rewrite frontmatter the owner hand-wrote.
