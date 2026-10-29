@@ -34,14 +34,23 @@ Start no line of the account with `# `, because in a card only its headline star
 
 ## When the card cannot be built as written
 
-Answer `blocked` instead of `done`, with what you found as `finding`, only when the card cannot be implemented as written: something it cites is absent from the code, the approach it sets cannot work, or its done-condition cannot be reached.
+Answer `blocked` instead of `done`, with your blocking finding as `finding`, only when the card cannot be implemented as written: something it cites is absent from the code, the approach it sets cannot work, or its done-condition cannot be reached.
 Anything short of that is not a block, so taking the card as given still holds for it: a doubt whether the card is right, a choice the card leaves open and an approach you would prefer are each something you build past, as the card is written, and put in your account.
 
-The tool hands your finding to the reconciler, the session that checked the card against the code before you started, and the reconciler answers it in one of three ways:
+The tool hands your blocking finding to the reconciler, the session that checked the card against the code before you started, and the reconciler answers it in one of three ways:
 
 - the reconciler replies, and the tool resumes this session with the reply, on your work as you left it, to build the card or to answer `blocked` again;
 - the reconciler amends the card, and the tool discards your work, resetting and cleaning the worktree, and launches a fresh implementer on the amended card;
 - the reconciler stops the run for the owner.
 
-Write the finding for the reconciler, who reads it and nothing else of your session: what in the card cannot be implemented as written, and the paths, symbols and commands you checked that show it, with what each held.
-Your work does not survive an amendment, so write the finding about the card and the code, never towards keeping what you have built.
+Write the blocking finding for the reconciler, who reads it and nothing else of your session: what in the card cannot be implemented as written, and the paths, symbols and commands you checked that show it, with what each held.
+Your work does not survive an amendment, so write the blocking finding about the card and the code, never towards keeping what you have built.
+
+## Findings
+
+A finding is something you notice outside the card's contract, which the card does not ask for, such as a defect in code the card's work does not touch: leave it as it is, because your work is the card and nothing beyond it.
+Report each finding in the `findings` list of your answer, beside whichever outcome you choose, as an object with a `headline` of one line naming it and a `body` saying what you noticed and where, in whatever words you have.
+The tool files each finding as a card of its own, and no run picks that card up: it waits for the owner, who settles it at the end of the plan.
+You write a finding down so that you can put it down: once it is in `findings`, it asks nothing more of you, and your attention goes back to the card.
+A problem inside the card's contract is never a finding, because a defect filed as a finding lets the card close done with the defect parked in a waiting card: build what the card asks for, and where the card cannot be built as written, answer `blocked` with your blocking finding, as "When the card cannot be built as written" sets out.
+Start no line of a finding's body with `# ` and keep its headline to one line, because the tool makes the headline the `# ` line of the finding's card, and in a card only its headline starts that way; the tool refuses a finding that breaks either rule.

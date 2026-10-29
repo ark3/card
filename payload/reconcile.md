@@ -71,3 +71,12 @@ The cause is one of these:
   Every earlier card has landed on the branch you are on, so what the code lacks, no earlier card built; amending the card to build that work as well would take on another card's work, and which cards the plan holds, and in what order, is for the owner and authoring to change, so stop rather than amend.
 
 The question is what the owner has to decide, with what you found that makes it a question: the paths and symbols you checked and what they hold.
+
+## Findings
+
+A finding is something you notice outside the card's contract, which the card does not ask for and no amendment within its intent would make it ask for, such as a defect in code the card's work does not touch: leave it as it is, and leave the card as it is for it, because amending the card to take it on would widen the card past its intent.
+Report each finding in the `findings` list of your answer, beside whichever outcome you choose, as an object with a `headline` of one line naming it and a `body` saying what you noticed and where, in whatever words you have.
+The tool files each finding as a card of its own, and no run picks that card up: it waits for the owner, who settles it at the end of the plan.
+You write a finding down so that you can put it down: once it is in `findings`, it asks nothing more of you, and your attention goes back to the card.
+A problem inside the card's contract is never a finding, because a defect filed as a finding lets the card close done with the defect parked in a waiting card: amend the card where an amendment within its intent puts the problem right, and stop the run where none does, as "Your answer" sets out.
+Start no line of a finding's body with `# ` and keep its headline to one line, because the tool makes the headline the `# ` line of the finding's card, and in a card only its headline starts that way; the tool refuses a finding that breaks either rule.

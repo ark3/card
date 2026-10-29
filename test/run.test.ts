@@ -167,6 +167,36 @@ test(
 );
 
 test(
+  "a reviewer approving with two findings leaves two waiting cards that no run picks up, and the run goes on to the next card and ends",
+  async () => {
+    const { repo, deck, plan, first, final, base } = await inCheck();
+    const control = stand(["pi"]);
+    const findings = [
+      { headline: "The README still names greet.sh", body: "README.md shows `greet.sh`." },
+      { headline: "Nothing says how the code is licensed", body: "The tree holds no license file." },
+    ];
+    const approvedWith = { stdout: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Landed it.", findings }) };
+    queue(control, [proceed()], [done()], [approvedWith], [proceed()], [done()], [approved("Check the plan")]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan"]);
+    const state = record(plan.dir);
+    expect(state.cards).toEqual([first, final]);
+    expect(state.findings.map(({ role, card }) => ({ role, card }))).toEqual([
+      { role: "reviewer", card: first },
+      { role: "reviewer", card: first },
+    ]);
+    const filed = state.findings.map(({ id }) => readFileSync(path.join(deck.openDir, `${id}.md`), "utf8"));
+    expect(filed).toEqual(
+      findings.map(({ headline, body }) => `# ${headline}\n\nFiled by the reviewer of ${first}, in the plan greeting.\n\n${body}\n`),
+    );
+  },
+  SLOW,
+);
+
+test(
   "a role, and a child process the role starts, run in the run's process group",
   async () => {
     const { repo, plan } = await inCheck();

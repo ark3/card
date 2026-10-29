@@ -54,6 +54,12 @@ export type PlanRecord = {
   /** Every card the run has closed done, with its commit, in the order it closed them. */
   landed: { card: string; commit: string }[];
   /**
+   * Every finding the run has filed, in the order it filed them: the id of the
+   * waiting card it was filed as, the role that filed it and the card it was
+   * found under, for the end of the plan to hand back.
+   */
+  findings: { id: string; role: Role; card: string }[];
+  /**
    * The role that stopped the run, its session and the cause, while the plan
    * is Bounced, with the question for the owner of a reconciler that stopped
    * it, or the last feedback of a reviewer that asked for a revision past the
@@ -72,6 +78,7 @@ const EMPTY: Omit<PlanRecord, "state" | "placeholder"> = {
   harness: null,
   run: null,
   landed: [],
+  findings: [],
   bounce: null,
 };
 
@@ -174,8 +181,8 @@ export async function listPlans(deck: Deck): Promise<Plan[]> {
  * records, staged and renamed so no reader sees half of one.
  */
 export async function writeRecord(target: Plan, changes: Partial<PlanRecord>): Promise<Plan> {
-  const { state, placeholder, cards, final, joins, later, cycle, harness, run, landed, bounce } = { ...target, ...changes };
-  const record: PlanRecord = { state, placeholder, cards, final, joins, later, cycle, harness, run, landed, bounce };
+  const { state, placeholder, cards, final, joins, later, cycle, harness, run, landed, findings, bounce } = { ...target, ...changes };
+  const record: PlanRecord = { state, placeholder, cards, final, joins, later, cycle, harness, run, landed, findings, bounce };
   const staging = path.join(target.dir, `.${STATE_FILE}.writing`);
   await writeFile(staging, `${JSON.stringify(record)}\n`);
   await rename(staging, path.join(target.dir, STATE_FILE));

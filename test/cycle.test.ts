@@ -6,7 +6,7 @@ import { createDeck, type Deck } from "../src/deck.ts";
 import { gitOrThrow, headSha } from "../src/git.ts";
 import { ensureBranch, holdWorktree } from "../src/landing.ts";
 import { fileCard } from "../src/operations.ts";
-import { bootId, listPlans, type Plan, startPlan, writeRecord } from "../src/plan.ts";
+import { bootId, listPlans, type Plan, startPlan, waitingCards, writeRecord } from "../src/plan.ts";
 import { answerInstruction } from "../src/answer.ts";
 import { calls, type Reply, removeTempDirs, script, stand, tempDir, tempRepo } from "./helpers.ts";
 
@@ -610,4 +610,93 @@ test(`a card gets ${EXCHANGES} exchanges counted across its implementers, and a 
   expect(ended.question).toBe(DISAGREEMENT);
   const sessions = { reconciler: ids[0], implementer: ids[2] };
   expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions });
+});
+
+const FOUND = [
+  { headline: "The README still names greet.sh", body: "README.md shows `greet.sh`, which no file in the tree is.\n\nNothing in this card touches the README." },
+  { headline: "Nothing says how the code is licensed", body: "The tree holds no license file." },
+];
+/** `reply`'s answer with `findings` added. */
+const finding = (reply: Reply, findings: { headline: string; body: string }[] = FOUND): Reply => ({
+  ...reply,
+  stdout: JSON.stringify({ ...JSON.parse(reply.stdout!), findings }),
+});
+
+/**
+ * The findings the plan's state records, each with its card's file, which has
+ * to be in `open/`, and the waiting cards' ids, sorted.
+ */
+async function filed(deck: Deck) {
+  const findings = (await listPlans(deck))[0]!.findings;
+  const files = findings.map(({ id }) => readFileSync(path.join(deck.openDir, `${id}.md`), "utf8"));
+  const waiting = (await waitingCards(deck)).map(({ id }) => id).sort();
+  return { findings, files, waiting };
+}
+
+/** The file a finding is filed as, with the role, the card and the plan on its body's first line. */
+const findingFile = (role: string, card: string, { headline, body }: { headline: string; body: string }) =>
+  `# ${headline}\n\nFiled by the ${role} of ${card}, in the plan greeting.\n\n${body}\n`;
+
+test("a reviewer approving with two findings leaves two waiting cards naming the reviewer, the card and the plan, while the card lands", async () => {
+  const { deck, plan, id, tree } = await running();
+  const { ended } = await cycle(deck, plan, id, tree, [done("printf 'hello\\n' > hello.txt")], [finding(approved())]);
+
+  expect(ended.outcome).toBe("landed");
+  expect(existsSync(path.join(deck.closedDir, `${id}.md`))).toBe(true);
+  const { findings, files, waiting } = await filed(deck);
+  expect(findings.map(({ role, card }) => ({ role, card }))).toEqual([
+    { role: "reviewer", card: id },
+    { role: "reviewer", card: id },
+  ]);
+  expect(files).toEqual(FOUND.map((found) => findingFile("reviewer", id, found)));
+  expect(waiting).toEqual(findings.map((found) => found.id).sort());
+  expect(ended.plan.findings).toEqual(findings);
+  expect(cardFile(deck, id)).not.toContain(FOUND[0]!.headline);
+});
+
+test("a reconciler's finding is filed as a waiting card naming the reconciler, and the cycle goes on to land the card", async () => {
+  const { deck, plan, id, tree } = await running();
+  const { ended } = await cycle(deck, plan, id, tree, [done()], [approved()], [finding(proceed(), [FOUND[0]!])]);
+
+  expect(ended.outcome).toBe("landed");
+  const { findings, files, waiting } = await filed(deck);
+  expect(findings).toEqual([{ id: findings[0]!.id, role: "reconciler", card: id }]);
+  expect(files).toEqual([findingFile("reconciler", id, FOUND[0]!)]);
+  expect(waiting).toEqual([findings[0]!.id]);
+});
+
+test("an implementer's finding is filed as a waiting card naming the implementer, and the cycle goes on to land the card", async () => {
+  const { deck, plan, id, tree } = await running();
+  const { ended } = await cycle(deck, plan, id, tree, [finding(done(), [FOUND[1]!])], [approved()]);
+
+  expect(ended.outcome).toBe("landed");
+  const { findings, files, waiting } = await filed(deck);
+  expect(findings).toEqual([{ id: findings[0]!.id, role: "implementer", card: id }]);
+  expect(files).toEqual([findingFile("implementer", id, FOUND[1]!)]);
+  expect(waiting).toEqual([findings[0]!.id]);
+  expect(cardFile(deck, id)).toContain(`## Account\n\n${ACCOUNT}\n`);
+});
+
+test("a finding whose headline wraps, or whose body has a line starting `# `, draws the repair prompt, and the repaired finding is filed", async () => {
+  const { deck, plan, id, tree } = await running();
+  const wraps = finding(done(), [{ headline: "The README\nstill names greet.sh", body: FOUND[0]!.body }]);
+  const headed = finding(done(), [{ headline: FOUND[0]!.headline, body: `# README\n\n${FOUND[0]!.body}` }]);
+  const { control, ended } = await cycle(deck, plan, id, tree, [wraps, headed, finding(done(), [FOUND[0]!])], [approved()]);
+
+  expect(ended.outcome).toBe("landed");
+  const [, first, second] = calls(control, ids[1]!);
+  expect(first!.stdin).toContain("The previous report was invalid:\nanswer.findings[0].headline: a headline is one line and never wraps");
+  expect(second!.stdin).toContain("The previous report was invalid:\nanswer.findings[0].body has a line starting `# `");
+  expect((await filed(deck)).files).toEqual([findingFile("implementer", id, FOUND[0]!)]);
+});
+
+test("every role's answer schema carries the optional findings list of headline and body", async () => {
+  const { deck, plan, id, tree } = await running();
+  const { control } = await drawn(deck, plan, id, tree, [proceed(), reply()], [blocked(), done()], [approved()]);
+
+  const field = '"findings":{"type":"array","items":{"type":"object","properties":{"headline":{"type":"string"},"body":{"type":"string"}},"required":["headline","body"]}}';
+  const turns = [...calls(control, ids[0]!), ...calls(control, ids[1]!), ...calls(control, ids[2]!)];
+  expect(turns).toHaveLength(5);
+  for (const turn of turns) expect(turn.stdin).toContain(field);
+  expect(RECONCILER.required).not.toContain("findings");
 });

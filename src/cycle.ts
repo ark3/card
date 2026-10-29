@@ -4,14 +4,14 @@ import reconcile from "../payload/reconcile.md" with { type: "text" };
 import reply from "../payload/reply.md" with { type: "text" };
 import review from "../payload/review.md" with { type: "text" };
 import revise from "../payload/revise.md" with { type: "text" };
-import type { Answer, ObjectSchema } from "./answer.ts";
-import { refuseHeadlines } from "./cardfile.ts";
+import type { Answer, ObjectSchema, Schema } from "./answer.ts";
+import { refuseHeadline, refuseHeadlines } from "./cardfile.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { headSha } from "./git.ts";
 import { type Check, type Harness, launch, resume, RoleFailure, type Session } from "./harness.ts";
 import { discard, land, uncommittedDiff, undoMovedHead } from "./landing.ts";
-import { appendRecord, closeCard } from "./operations.ts";
+import { appendRecord, closeCard, fileCard } from "./operations.ts";
 import { fill } from "./payload.ts";
 import { type Plan, writeRecord } from "./plan.ts";
 
@@ -72,9 +72,24 @@ export const REVISION_ROUNDS = 3;
 /**
  * How many exchanges a card's cycle gets, each an implementer's blocking
  * finding and the reconciler's reply or amendment answering it, before a
- * finding past them gets the reconciler's stop for disagreement alone.
+ * blocking finding past them gets the reconciler's stop for disagreement
+ * alone.
  */
 export const EXCHANGES = 3;
+
+/**
+ * The findings every role's answer may carry, each something outside the
+ * card's contract that the role must not act on, which the tool files as a
+ * waiting card: its headline, and its body.
+ */
+const FINDINGS: Schema = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: { headline: { type: "string" }, body: { type: "string" } },
+    required: ["headline", "body"],
+  },
+};
 
 /**
  * The reconciler's answer. Which fields go with which outcome, a schema of
@@ -87,6 +102,7 @@ export const RECONCILER: ObjectSchema = {
     amended: { type: "string" },
     cause: { type: "string", enum: ["intent", "order"] },
     question: { type: "string" },
+    findings: FINDINGS,
   },
   required: ["outcome"],
 };
@@ -103,6 +119,7 @@ const CONVERSE: ObjectSchema = {
     reply: { type: "string" },
     cause: { type: "string", enum: ["intent", "order"] },
     question: { type: "string" },
+    findings: FINDINGS,
   },
   required: ["outcome"],
 };
@@ -114,6 +131,7 @@ const DISAGREEMENT: ObjectSchema = {
     outcome: { type: "string", enum: ["stop"] },
     cause: { type: "string", enum: ["disagreement"] },
     question: { type: "string" },
+    findings: FINDINGS,
   },
   required: ["outcome", "cause", "question"],
 };
@@ -142,6 +160,30 @@ const carried: Check = (answer: Answer) => {
   }
 };
 
+type Finding = { headline: string; body: string };
+
+/**
+ * Refuses an answer holding a finding the tool could not file as a card, a
+ * headline that is empty or wraps or a body with a line starting `# `, while
+ * the role can still repair it.
+ */
+const fileable: Check = (answer: Answer) => {
+  for (const [index, { headline, body }] of ((answer.findings ?? []) as Finding[]).entries()) {
+    try {
+      refuseHeadline(headline);
+    } catch (error) {
+      throw new Error(`answer.findings[${index}].headline: ${(error as Error).message}`);
+    }
+    refuseHeadlines(`answer.findings[${index}].body`, body);
+  }
+};
+
+/** Refuses an answer that lacks a field its outcome carries, or holds a finding the tool could not file. */
+const answered: Check = (answer: Answer) => {
+  carried(answer);
+  fileable(answer);
+};
+
 /** Each cause a reconciler stops on, as the owner reads it. */
 const CAUSES: Record<string, string> = {
   intent: "the card's intent itself is wrong, which only the owner can change",
@@ -156,6 +198,7 @@ const IMPLEMENTER: ObjectSchema = {
     outcome: { type: "string", enum: ["done", "blocked"] },
     account: { type: "string" },
     finding: { type: "string" },
+    findings: FINDINGS,
   },
   required: ["outcome"],
 };
@@ -168,6 +211,7 @@ const REVIEWER: ObjectSchema = {
     subject: { type: "string" },
     close_note: { type: "string" },
     feedback: { type: "string" },
+    findings: FINDINGS,
   },
   required: ["outcome"],
 };
@@ -183,17 +227,33 @@ function noHeadlines(...fields: string[]): Check {
   };
 }
 
-/** Refuses an implementer's answer that lacks a field its outcome carries, or holds a headline in its account. */
+/** Refuses an implementer's answer that `answered` refuses, or that holds a headline in its account. */
 const implemented: Check = (answer: Answer) => {
-  carried(answer);
+  answered(answer);
   noHeadlines("account")(answer);
 };
 
-/** Refuses a reviewer's answer that lacks a field its outcome carries, or holds a headline in one. */
+/** Refuses a reviewer's answer that `answered` refuses, or that holds a headline in a field its outcome carries. */
 const reviewed: Check = (answer: Answer) => {
-  carried(answer);
+  answered(answer);
   noHeadlines("subject", "close_note", "feedback")(answer);
 };
+
+/**
+ * Files each finding in `answer`, from the role `role` working the card
+ * `card`, through deck's filing function: into `open/` and in no plan's
+ * order, so it waits and no run picks it up, with the role, the card and the
+ * plan on its body's first line. Each is recorded in the plan's state as it
+ * is filed, for the end of the plan.
+ */
+async function fileFindings(deck: Deck, plan: Plan, role: Role, card: string, answer: Answer): Promise<Plan> {
+  for (const { headline, body } of (answer.findings ?? []) as Finding[]) {
+    const filed = `Filed by the ${role} of ${card}, in the plan ${plan.slug}.\n\n${body}`;
+    const id = await fileCard(deck, { labels: [], blockedBy: [], headline, body: filed });
+    plan = await writeRecord(plan, { findings: [...plan.findings, { id, role, card }] });
+  }
+  return plan;
+}
 
 async function cardPath(deck: Deck, id: string): Promise<string> {
   const found = await locate(deck, id);
@@ -229,14 +289,16 @@ export function reconcilerPrompt(card: { path: string; text: string }, document:
  * same implementer is resumed with it, and its account of the revision goes
  * to a fresh reviewer, for up to REVISION_ROUNDS rounds. An implementer may
  * instead answer that the card cannot be built as written: the reconciler is
- * resumed with its finding, and either replies, and the implementer is
- * resumed with the reply, or amends the card, and the worktree goes back to
- * the cycle's base for a fresh implementer, for up to EXCHANGES exchanges,
- * after which a finding gets the reconciler's stop for disagreement alone.
- * Neither the implementer nor the reviewer is shown the plan document; the
- * reviewer gets its commit convention alone. A reconciler that stops, a
- * reviewer asking for a revision past the cap, or a role that fails, ends the
- * cycle stopped, with its cause and session.
+ * resumed with its blocking finding, and either replies, and the
+ * implementer is resumed with the reply, or amends the card, and the worktree
+ * goes back to the cycle's base for a fresh implementer, for up to EXCHANGES
+ * exchanges, after which a blocking finding gets the reconciler's stop for
+ * disagreement alone. Neither the implementer nor the reviewer is shown the
+ * plan document; the reviewer gets its commit convention alone. Every
+ * answer's findings are filed as waiting cards as the answer is read,
+ * whatever its outcome. A reconciler that stops, a reviewer asking for a
+ * revision past the cap, or a role that fails, ends the cycle stopped, with
+ * its cause and session.
  */
 export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, harness: Harness): Promise<CycleEnd> {
   const base = await headSha(tree);
@@ -248,11 +310,12 @@ export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, 
   const reconciling = reconcilerPrompt(card, { path: plan.document, text: await Bun.file(plan.document).text() });
   let verdict: Answer;
   try {
-    verdict = await launch(reconciler, reconciling, RECONCILER, carried);
+    verdict = await launch(reconciler, reconciling, RECONCILER, answered);
   } catch (error) {
     if (!(error instanceof RoleFailure)) throw error;
     return { plan, outcome: "stopped", role: "reconciler", session: reconciler, cause: error.message };
   }
+  plan = await fileFindings(deck, plan, "reconciler", id, verdict);
   if (verdict.outcome === "stop") {
     const { cause, question } = verdict as { cause: string; question: string };
     return { plan, outcome: "stopped", role: "reconciler", session: reconciler, cause: CAUSES[cause]!, question };
@@ -269,7 +332,7 @@ export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, 
   // A fresh implementer is launched; a revision round or a reply resumes it on the work as it left it.
   let answering = launch;
   let rounds = 0;
-  let findings = 0;
+  let blocking = 0;
   let subject: string;
   let note: string;
   for (;;) {
@@ -280,21 +343,23 @@ export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, 
       if (!(error instanceof RoleFailure)) throw error;
       return { plan, outcome: "stopped", role: "implementer", session: implementer, cause: error.message };
     }
+    plan = await fileFindings(deck, plan, "implementer", id, built);
 
     if (built.outcome === "blocked") {
-      findings++;
+      blocking++;
       // Before the reconciler converses, so HEAD is the branch it amends the card to and the work is uncommitted.
       await undoMovedHead(base, tree);
       cycle = { ...cycle, role: "reconciler", step: "converse" };
       plan = await writeRecord(plan, { cycle });
-      const conversing = fill(converse, { FINDING: (built.finding as string).trimEnd(), NUMBER: String(findings) });
+      const conversing = fill(converse, { FINDING: (built.finding as string).trimEnd(), NUMBER: String(blocking) });
       let settled: Answer;
       try {
-        settled = await resume(reconciler, conversing, findings > EXCHANGES ? DISAGREEMENT : CONVERSE, carried);
+        settled = await resume(reconciler, conversing, blocking > EXCHANGES ? DISAGREEMENT : CONVERSE, answered);
       } catch (error) {
         if (!(error instanceof RoleFailure)) throw error;
         return { plan, outcome: "stopped", role: "reconciler", session: reconciler, cause: error.message };
       }
+      plan = await fileFindings(deck, plan, "reconciler", id, settled);
       if (settled.outcome === "stop") {
         const { cause, question } = settled as { cause: string; question: string };
         return { plan, outcome: "stopped", role: "reconciler", session: reconciler, cause: CAUSES[cause]!, question };
@@ -340,6 +405,7 @@ export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, 
       if (!(error instanceof RoleFailure)) throw error;
       return { plan, outcome: "stopped", role: "reviewer", session: reviewer, cause: error.message };
     }
+    plan = await fileFindings(deck, plan, "reviewer", id, answer);
     if (answer.outcome !== "revision") {
       ({ subject, close_note: note } = answer as { subject: string; close_note: string });
       break;

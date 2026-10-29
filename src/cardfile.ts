@@ -66,7 +66,8 @@ export function refuseHeadlines(what: string, text: string): void {
   );
 }
 
-function refuseHeadline(headline: string): void {
+/** Refuses `headline` as a card's headline: empty, or more than one line. */
+export function refuseHeadline(headline: string): void {
   if (headline.trim() === "") throw new Error("the card's headline is empty");
   if (headline.includes("\n")) throw new Error("a headline is one line and never wraps");
 }
