@@ -1028,6 +1028,26 @@ test("card finish refuses while the worktree holds work git would lose, and leav
   expect((await listPlans(deck)).map(({ state }) => state)).toEqual(["Ended"]);
 });
 
+test("card drop refuses while the worktree holds work git would lose, and leaves the worktree, the plan and its cards as they were", async () => {
+  const { repo, deck, plan, first, final } = await inCheck();
+  await ensureBranch("plan/greeting", "main", repo);
+  const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+  await closeCard(deck, first, "done", "Landed.");
+  await closeCard(deck, final, "done", "Guide.");
+  await writeRecord(plan, { state: "Ended", harness: "pi", run: { pid: await deadPid(), boot: BOOT } });
+  writeFileSync(path.join(tree, "tried.txt"), "the owner's trial\n");
+  const cards = () => [deck.openDir, deck.closedDir].map((dir) => readdirSync(dir).map((name) => readFileSync(path.join(dir, name), "utf8")));
+  const before = cards();
+
+  const result = await card(["drop"], repo);
+  expect(result.code).not.toBe(0);
+  expect(result.stderr).toStartWith("card: the plan is not dropped, since git would not remove its worktree:");
+  expect(result.stderr).toContain("untracked");
+  expect(readFileSync(path.join(tree, "tried.txt"), "utf8")).toBe("the owner's trial\n");
+  expect((await listPlans(deck)).map(({ state }) => state)).toEqual(["Ended"]);
+  expect(cards()).toEqual(before);
+});
+
 const ASKED = "Which file did you expect the greeting in?";
 const RESPONSE = "In hello.txt, which the card names.\n\n## Why\n\nThe card says so.  \n";
 
@@ -1404,6 +1424,33 @@ test(
   },
   SLOW,
 );
+
+test("card drop in Bounced discards the bounced card's work, removes the worktree, keeps the branch, and closes the plan's cards declined", async () => {
+  const { repo, deck, plan, first, final, base } = await inCheck();
+  await ensureBranch("plan/greeting", "main", repo);
+  const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+  // The bounced role's work, left in the worktree uncommitted.
+  writeFileSync(path.join(tree, "hello.txt"), "half\n");
+  const session = { harness: "pi" as const, id: crypto.randomUUID(), dir: tree };
+  const cycle: Cycle = { card: first, base, role: "implementer", step: "implement", sessions: { implementer: session.id }, rounds: 0, exchanges: 0 };
+  const bounce = { role: "implementer" as const, session, cause: "usage limit reached" };
+  await writeRecord(plan, { state: "Bounced", harness: "pi", run: { pid: await deadPid(), boot: BOOT }, cycle, bounce });
+
+  const dropping = await card(["drop"], repo);
+  expect(dropping).toEqual({
+    code: 0,
+    stdout: forOwner(
+      `The plan \`greeting\` is dropped: its worktree ${tree} is removed, and its branch \`plan/greeting\` is kept.\n\n` +
+        `These cards of the plan are closed declined:\n\n${first}  Add the greeting\n${final}  Check the plan\n`,
+    ),
+    stderr: "",
+  });
+  expect(existsSync(tree)).toBe(false);
+  expect((await listWorktrees(repo)).map(({ root }) => root)).toEqual([repo]);
+  expect((await gitOrThrow(["rev-parse", "plan/greeting"], repo)).trim()).toBe(base);
+  expect(readFileSync(path.join(deck.closedDir, `${first}.md`), "utf8")).toContain("closed: declined\n");
+  expect(await listPlans(deck)).toEqual([]);
+});
 
 /** The calls of every session whose launch was a reconciler on the card headed `headline`, one list per session. */
 function reconcilersOf(control: string, headline: string): ReturnType<typeof calls>[] {
