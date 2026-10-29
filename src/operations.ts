@@ -162,7 +162,9 @@ function recordOutcome(id: string, text: string, outcome: string): string {
 }
 
 /** The headings a record section can carry, all of them written by the tool. */
-export type RecordHeading = "Account" | "Review feedback" | "Gap" | "Close note" | "Promotion";
+const RECORD_HEADINGS = ["Account", "Review feedback", "Gap", "Close note", "Promotion"] as const;
+export type RecordHeading = (typeof RECORD_HEADINGS)[number];
+const RECORD_SECTION = new RegExp(`^## (${RECORD_HEADINGS.join("|")})$`, "gm");
 
 /**
  * `text` with a record section appended: `heading`, then `body`. The heading
@@ -187,6 +189,34 @@ export async function appendRecord(deck: Deck, id: string, heading: RecordHeadin
   // shows one left behind, and the card it was for is still whole.
   const staging = path.join(path.dirname(found.path), `.${id}.md.appending`);
   await writeFile(staging, appended);
+  await rename(staging, found.path);
+}
+
+/**
+ * Removes from the open card `id` the `## Account` and `## Review feedback`
+ * sections of every cycle of it that did not land, keeping the rest of its
+ * text as it was. A cycle that lands closes the card under `## Close note`,
+ * so those are the sections below its last close note, or every one where it
+ * has none. A `## Gap` among them is kept, since a gap stop appends it for the
+ * roles that run the card again to read.
+ */
+export async function dropUnlanded(deck: Deck, id: string): Promise<void> {
+  const found = await locate(deck, id);
+  if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
+  const text = await Bun.file(found.path).text();
+  const sections = [...text.matchAll(RECORD_SECTION)];
+  const landed = sections.findLastIndex(([, heading]) => heading === "Close note");
+  let dropped = text;
+  // From the end, so the offsets of the sections still to look at hold.
+  for (let index = sections.length - 1; index > landed; index--) {
+    const [, heading] = sections[index]!;
+    if (heading !== "Account" && heading !== "Review feedback") continue;
+    dropped = dropped.slice(0, sections[index]!.index) + dropped.slice(sections[index + 1]?.index ?? text.length);
+  }
+  if (dropped === text) return;
+  // Staged and renamed over the card, as `appendRecord` writes it.
+  const staging = path.join(path.dirname(found.path), `.${id}.md.dropping`);
+  await writeFile(staging, dropped.replace(/\n*$/, "\n"));
   await rename(staging, found.path);
 }
 

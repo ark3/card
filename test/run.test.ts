@@ -397,6 +397,43 @@ test(
 );
 
 test(
+  "a final card stopped by a gap, rerun after card amend, keeps its gap, which the rerun's reconciler reads, and drops the stopped cycle's account and review feedback",
+  async () => {
+    const { repo, deck, plan, final, base } = await inCheck();
+    const control = stand(["pi"]);
+    const gap = "The plan document's criterion that `hello.txt` holds `hello` does not hold: the branch holds no `hello.txt`.";
+    const account: Reply = { stdout: JSON.stringify({ outcome: "done", account: "The stopped cycle's account." }) };
+    const revision: Reply = { stdout: JSON.stringify({ outcome: "revision", feedback: "The stopped cycle's feedback." }) };
+    const blocked: Reply = { stdout: JSON.stringify({ outcome: "blocked", finding: gap }) };
+    const stop: Reply = { stdout: JSON.stringify({ outcome: "stop", cause: "gap", question: "Should authoring add a card that writes `hello.txt`?" }) };
+    queue(control, [proceed()], [done()], [approved("Add the greeting")], [proceed(), stop], [account, blocked], [revision]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+    const stopped = readFileSync(path.join(deck.openDir, `${final}.md`), "utf8");
+    expect(stopped).toContain("The stopped cycle's account.");
+    expect(stopped).toContain("The stopped cycle's feedback.");
+
+    expect((await card(["amend"], repo)).code).toBe(0);
+    await Bun.write(path.join(plan.cardsDir, "01-write-hello.md"), "# Write hello\n\nBody.\n");
+    const taking = await card(["done"], repo);
+    expect(taking.stderr).toBe("");
+    queue(control, [proceed()], [done()], [approved("Write hello")], [proceed()], [done()], [approved("Check the plan")]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the run to end or bounce", () => record(plan.dir).state !== "Running");
+    expect(record(plan.dir).state).toBe("Ended");
+
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Write hello", "Check the plan"]);
+    const kept = `# Check the plan\n\nBody.\n\n## Gap\n\n${gap}\n`;
+    const reconciling = calls(control, record(plan.dir).cycle!.sessions.reconciler!)[0]!.stdin;
+    expect(reconciling).toContain(`<card>\n${kept}</card>`);
+    expect(readFileSync(path.join(deck.closedDir, `${final}.md`), "utf8")).toBe(
+      `---\nclosed: done\n---\n\n${kept}\n## Account\n\nDid the work.\n\n## Close note\n\nLanded it.\n`,
+    );
+  },
+  SLOW,
+);
+
+test(
   "the final card's reviewer, handed the plan document beside the card, approves with the owner's guide as its close note, which bare card prints at Ended",
   async () => {
     const { repo, plan, final } = await inCheck();
@@ -605,6 +642,52 @@ test(
     expect(reconciling).toStartWith("# Reconciling one card\n");
     expect(reconciling).toContain(`<card>\n# Check the plan\n`);
     expect(reconciling).toContain(DOCUMENT_BODY);
+  },
+  SLOW,
+);
+
+test(
+  "a run killed after a card's account is appended reruns the card, carried on by bare card, from the card as it stood before the killed cycle, so neither the rerun's reconciler nor its implementer reads that account, and the closed card holds one",
+  async () => {
+    const { repo, deck, plan, first } = await inCheck();
+    const control = stand(["pi"]);
+    const discarded = "The killed cycle's account, of work the rerun's worktree does not hold.";
+    queue(
+      control,
+      [proceed()],
+      [{ stdout: JSON.stringify({ outcome: "done", account: discarded }), run: "printf 'hello\\n' > hello.txt" }],
+      [{ run: hold(control, "reviewer") }],
+      [proceed()],
+      [done("printf 'hello\\n' > hello.txt")],
+      [approved("Add the greeting")],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the first card's reviewer to start", () => existsSync(path.join(control, "reviewer.started")));
+    expect(readFileSync(path.join(deck.openDir, `${first}.md`), "utf8")).toContain(discarded);
+    process.kill(-record(plan.dir).run!.pid, "SIGKILL");
+    for (const deadline = Date.now() + 5_000; (await stateOf(deck)) !== "Dead"; await Bun.sleep(50)) {
+      if (Date.now() > deadline) throw new Error("timed out waiting for the run to read as Dead");
+    }
+
+    const carrying = await card([], repo);
+    expect(carrying.stderr).toBe("");
+    expect(carrying.code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const reconcilers = reconcilersOf(control, "Add the greeting");
+    const implementers = readdirSync(control)
+      .filter((id) => existsSync(path.join(control, id, "calls")))
+      .map((id) => calls(control, id))
+      .filter(([launched]) => launched!.stdin.startsWith("# Implementing one card\n") && launched!.stdin.includes("\n# Add the greeting\n"));
+    expect([reconcilers.length, implementers.length]).toEqual([2, 2]);
+    for (const [launched] of [...reconcilers, ...implementers]) expect(launched!.stdin).not.toContain(discarded);
+    const closed = readFileSync(path.join(deck.closedDir, `${first}.md`), "utf8");
+    expect(closed.match(/^## Account$/gm)).toHaveLength(1);
+    expect(closed).not.toContain(discarded);
   },
   SLOW,
 );
@@ -1529,6 +1612,47 @@ test(
     const closed = readFileSync(path.join(deck.closedDir, `${final}.md`), "utf8");
     expect(closed.match(/^closed: .*$/gm)).toEqual(["closed: done"]);
     expect(closed).toEndWith(`## Close note\n\n${NOTE}\n`);
+  },
+  SLOW,
+);
+
+test(
+  "a reopened final card whose run died mid-cycle reruns, carried on by bare card, keeping the account, review feedback and close note of its landed cycle and dropping the dead cycle's",
+  async () => {
+    const { repo, deck, plan, first, final, base } = await inCheck();
+    await ensureBranch("plan/greeting", "main", repo);
+    const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+    const greeting = await land("Add the greeting", "Landed.", tree);
+    await closeCard(deck, first, "done", "Landed.");
+    await appendRecord(deck, final, "Account", "The landed cycle's account.");
+    await appendRecord(deck, final, "Review feedback", "The landed cycle's feedback.");
+    await appendRecord(deck, final, "Account", "The landed cycle's revision.");
+    const checked = await land("Check the plan", GUIDE, tree);
+    await closeCard(deck, final, "done", GUIDE);
+    // Reopened, as a join at the plan's end leaves it, and run again until the run died at a revision round.
+    await reopenCard(deck, final);
+    await appendRecord(deck, final, "Account", "The dead cycle's account.");
+    await appendRecord(deck, final, "Review feedback", "The dead cycle's feedback.");
+    const sessions = { reconciler: crypto.randomUUID(), implementer: crypto.randomUUID() };
+    const cycle: Cycle = { card: final, base: checked, role: "implementer", step: "implement", sessions, rounds: 1, exchanges: 0 };
+    const landed = [{ card: first, commit: greeting }, { card: final, commit: checked }];
+    await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: await deadPid(), boot: BOOT }, cycle, landed });
+    const control = stand(["pi"]);
+    queue(control, [proceed()], [done()], [approved("Check the plan")]);
+
+    const carrying = await card([], repo);
+    expect(carrying.stderr).toBe("");
+    expect(carrying.code).toBe(0);
+    await until("the run to end or bounce", () => record(plan.dir).state !== "Running");
+    expect(record(plan.dir).state).toBe("Ended");
+
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan", "Check the plan"]);
+    expect(readFileSync(path.join(deck.closedDir, `${final}.md`), "utf8")).toBe(
+      "---\nclosed: done\n---\n\n# Check the plan\n\nBody.\n\n" +
+        "## Account\n\nThe landed cycle's account.\n\n## Review feedback\n\nThe landed cycle's feedback.\n\n" +
+        `## Account\n\nThe landed cycle's revision.\n\n## Close note\n\n${GUIDE}\n\n` +
+        "## Account\n\nDid the work.\n\n## Close note\n\nLanded it.\n",
+    );
   },
   SLOW,
 );

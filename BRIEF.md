@@ -226,6 +226,7 @@ The relay works on both harnesses: a stopped session answers question-only resum
 `card resume` takes the owner's answer on stdin, or nothing: where the owner answered the session at a terminal, where it retries a role that failed, and after `card stop`, where no session waits.
 `card amend` takes a bounced or stopped plan back to the Cards stage, where an authoring session changes the plan, and `card done` and then `card approve` carry the run on from the first card not yet closed done, so a card added ahead of the stopped one runs first and the stopped card's reconciler sees the amendments.
 A card that reruns from its reconciler starts on a clean worktree: after `card resume` from a stop, when a dead run is carried on, and after `card amend` from a bounce.
+It starts from the card as it was before the discarded cycle began, too: the tool removes the `## Account` and `## Review feedback` sections that cycle appended, so no role of the rerun reads an account of work its worktree does not hold, and keeps the rest, a landed cycle's record on a reopened final card and the `## Gap` a gap stop appended included.
 Rejected: the owner's session reading the stopped session's transcript and answering from it, which has one model reading another's reasoning with no way to ask what it meant.
 
 The tool launches every role session with a session id it chooses, a fresh uuid it records, and resumes by that id.

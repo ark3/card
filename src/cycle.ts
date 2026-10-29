@@ -17,7 +17,7 @@ import { headSha } from "./git.ts";
 import { type Check, correct, type Harness, launch, resume, RoleFailure, type Session } from "./harness.ts";
 import { citedIds } from "./id.ts";
 import { addedLines, CommitRefused, discard, land, uncommittedDiff, undoMovedHead } from "./landing.ts";
-import { appendRecord, closeCard, fileCard } from "./operations.ts";
+import { appendRecord, closeCard, dropUnlanded, fileCard } from "./operations.ts";
 import { fill } from "./payload.ts";
 import { type Plan, writeRecord } from "./plan.ts";
 
@@ -442,6 +442,9 @@ export function reconcilerPrompt(card: { path: string; text: string }, document:
  */
 export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, harness: Harness): Promise<CycleEnd> {
   const base = await headSha(tree);
+  // Every cycle starts here, a rerun's included, so no role of it reads an
+  // account of work a discarded cycle left in no worktree.
+  await dropUnlanded(deck, id);
   const cycle: Cycle = {
     card: id,
     base,
