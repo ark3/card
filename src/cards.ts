@@ -41,7 +41,10 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
   // plan, but this plan's sessions have the owner's answer already.
   const waiting = await waitingCards(deck, plan.later);
   const joined = await Promise.all(
-    plan.joins.map(async (id) => `${id}  ${(await readCard(path.join(deck.openDir, `${id}.md`))).headline}\n`),
+    plan.joins.map(async (id) => {
+      const file = path.join(deck.openDir, `${id}.md`);
+      return `${id}  ${(await readCard(file)).headline}\n  ${file}\n`;
+    }),
   );
   const cards = await planCards(deck, plan);
 
@@ -134,7 +137,7 @@ export async function done({ deck, plan, command, args }: Context): Promise<void
 }
 
 /** The waiting card `join` or `later` names: an open card no other plan holds, and none of this plan's cards. */
-async function settling({ deck, plan, command, args }: Context, verb: string): Promise<{ id: string; card: Card }> {
+export async function settling({ deck, plan, command, args }: Context, verb: string): Promise<{ id: string; card: Card }> {
   if (args.length !== 1) throw new Error(`usage: ${command} ${verb} <id>`);
   const id = args[0]!;
   const found = await locate(deck, id);

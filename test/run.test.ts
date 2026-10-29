@@ -7,7 +7,7 @@ import { type Cycle, RECONCILER } from "../src/cycle.ts";
 import { createDeck, type Deck } from "../src/deck.ts";
 import { branchExists, git, gitOrThrow, listWorktrees } from "../src/git.ts";
 import { ensureBranch, holdWorktree, land } from "../src/landing.ts";
-import { appendRecord, closeCard, fileCard } from "../src/operations.ts";
+import { appendRecord, closeCard, fileCard, reopenCard } from "../src/operations.ts";
 import { forOwner } from "../src/owner.ts";
 import { fill, wrapPayload } from "../src/payload.ts";
 import { listPlans, type Plan, type PlanRecord, startPlan, waitingCards, writeRecord } from "../src/plan.ts";
@@ -105,7 +105,7 @@ function ended(plan: Plan, final: string, tree: string, note: string, findings =
 /** A finding as bare `card` lists it in Ended: unsettled, with the commands that settle it, or settled as `settled` says. */
 function listed(id: string, headline: string, settled?: string): string {
   if (settled !== undefined) return `${id}  ${headline}\n  filed by the reviewer, ${settled}\n`;
-  return `${id}  ${headline}\n  filed by the reviewer\n  card later ${id}\n  card decline ${id}\n  card promote ${id}\n`;
+  return `${id}  ${headline}\n  filed by the reviewer\n  card join ${id}\n  card later ${id}\n  card decline ${id}\n  card promote ${id}\n`;
 }
 
 /** The subjects of the commits the plan's branch holds beyond `base`, oldest first. */
@@ -1276,3 +1276,154 @@ test("card amend in Running refuses, and changes nothing", async () => {
   expect(result.stderr).toStartWith("card: `card amend` is not open while the plan `greeting` is in Running");
   expect(readFileSync(path.join(plan.dir, "state.json"), "utf8")).toBe(before);
 });
+
+// The final card's close note on the plan's first end, which the run after a join hands back to it.
+const GUIDE = "The guide, as the final card first closed with it.";
+
+/**
+ * Runs `inCheck`'s plan to its end, the first card's reviewer filing one
+ * finding and the final card closing under GUIDE, and returns the finding.
+ */
+async function endWithFinding(repo: string, plan: Plan, control: string): Promise<string> {
+  const findings = [{ headline: "Nothing says goodbye", body: "The greeting has no farewell." }];
+  const approvedWith = { stdout: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Landed it.", findings }) };
+  const guided = { stdout: JSON.stringify({ outcome: "approved", subject: "Check the plan", close_note: GUIDE }) };
+  queue(control, [proceed()], [done()], [approvedWith], [proceed()], [done()], [guided]);
+  expect((await card(["approve"], repo)).code).toBe(0);
+  await until("the plan to end", () => record(plan.dir).state === "Ended");
+  return record(plan.dir).findings[0]!.id;
+}
+
+/** Joins `finding` at the plan's end, rewrites it as the Cards stage's session would, and takes it in. */
+async function joinAndTakeIn(repo: string, deck: Deck, plan: Plan, finding: string): Promise<void> {
+  expect((await card(["join", finding], repo)).code).toBe(0);
+  writeFileSync(path.join(deck.openDir, `${finding}.md`), "# Add a farewell\n\nPrint goodbye after the greeting.\n");
+  const taking = await card(["done"], repo);
+  expect(taking.stderr).toBe("");
+  expect(taking.code).toBe(0);
+}
+
+test("card join at Ended reopens the final card in place, keeping its record, and takes the plan back to Cards, whose prompt names the finding's file", async () => {
+  const { repo, deck, plan, first, final } = await inCheck();
+  await ensureBranch("plan/greeting", "main", repo);
+  await holdWorktree(plan.slug, "plan/greeting", repo);
+  await closeCard(deck, first, "done", "Landed.");
+  await closeCard(deck, final, "done", "Guide.");
+  const finding = await fileCard(deck, { labels: [], blockedBy: [], headline: "Nothing says goodbye", body: "Found.\n" });
+  await writeRecord(plan, { state: "Ended", harness: "pi", findings: [{ id: finding, role: "reviewer", card: first }] });
+
+  const joining = await card(["join", finding], repo);
+  expect(joining.stderr).toBe("");
+  expect(joining.code).toBe(0);
+
+  expect(existsSync(path.join(deck.closedDir, `${final}.md`))).toBe(false);
+  const reopened = readFileSync(path.join(deck.openDir, `${final}.md`), "utf8");
+  expect(reopened).not.toMatch(/^closed:/m);
+  expect(reopened).toEndWith("## Close note\n\nGuide.\n");
+  const state = record(plan.dir);
+  expect(state.state).toBe("Cards");
+  expect(state.joins).toEqual([finding]);
+
+  const prompt = await card([], repo);
+  expect(prompt.stderr).toBe("");
+  expect(prompt.stdout).toContain("# The Cards stage");
+  expect(prompt.stdout).toContain(`${finding}  Nothing says goodbye\n  ${path.join(deck.openDir, `${finding}.md`)}\n`);
+  expect(prompt.stdout).toContain(`${final}  Check the plan  (final card)\n`);
+});
+
+test(
+  "after a join at Ended, card done and card approve run the joined card from its reconciler, then the final card again, whose reconciler reads its earlier close note; the plan ends with the final card closed done once, holding both close notes, and one commit per card run",
+  async () => {
+    const { repo, deck, plan, first, final, base } = await inCheck();
+    const control = stand(["pi"]);
+    const finding = await endWithFinding(repo, plan, control);
+    await joinAndTakeIn(repo, deck, plan, finding);
+    expect(record(plan.dir).cards).toEqual([first, finding, final]);
+
+    queue(control, [proceed()], [done()], [approved("Add a farewell")], [proceed()], [done()], [approved("Check the plan")]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the run to end or bounce", () => record(plan.dir).state !== "Running");
+    expect(record(plan.dir).state).toBe("Ended");
+
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan", "Add a farewell", "Check the plan"]);
+    expect(record(plan.dir).landed.map(({ card }) => card)).toEqual([first, final, finding, final]);
+    expect(reconcilersOf(control, "Add a farewell").map((made) => made.length)).toEqual([1]);
+    // The last cycle recorded is the final card's second, and its reconciler read the record the first left.
+    const reconciling = calls(control, record(plan.dir).cycle!.sessions.reconciler!)[0]!.stdin;
+    expect(reconciling).toContain(`<card>\n# Check the plan\n`);
+    expect(reconciling).toContain(`## Close note\n\n${GUIDE}\n`);
+
+    expect(existsSync(path.join(deck.openDir, `${final}.md`))).toBe(false);
+    const closed = readFileSync(path.join(deck.closedDir, `${final}.md`), "utf8");
+    expect(closed.match(/^closed: .*$/gm)).toEqual(["closed: done"]);
+    expect(closed.match(/^## Close note$/gm)).toHaveLength(2);
+    expect(closed).toEndWith("## Close note\n\nLanded it.\n");
+  },
+  SLOW,
+);
+
+test(
+  "a run after a join at Ended, killed during the joined card and carried on by bare card, runs the joined card and then the final card again",
+  async () => {
+    const { repo, deck, plan, first, final, base } = await inCheck();
+    const control = stand(["pi"]);
+    const finding = await endWithFinding(repo, plan, control);
+    await joinAndTakeIn(repo, deck, plan, finding);
+
+    queue(control, [proceed()], [done(hold(control, "farewell"))]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the joined card's implementer to start", () => existsSync(path.join(control, "farewell.started")));
+    process.kill(-record(plan.dir).run!.pid, "SIGKILL");
+    for (const deadline = Date.now() + 5_000; (await stateOf(deck)) !== "Dead"; await Bun.sleep(50)) {
+      if (Date.now() > deadline) throw new Error("timed out waiting for the run to read as Dead");
+    }
+
+    queue(control, [proceed()], [done()], [approved("Add a farewell")], [proceed()], [done()], [approved("Check the plan")]);
+    const carrying = await card([], repo);
+    expect(carrying.stderr).toBe("");
+    expect(carrying.code).toBe(0);
+    await until("the run to end or bounce", () => record(plan.dir).state !== "Running");
+    expect(record(plan.dir).state).toBe("Ended");
+
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan", "Add a farewell", "Check the plan"]);
+    expect(record(plan.dir).landed.map(({ card }) => card)).toEqual([first, final, finding, final]);
+    expect(reconcilersOf(control, "Check the plan")).toHaveLength(2);
+    const closed = readFileSync(path.join(deck.closedDir, `${final}.md`), "utf8");
+    expect(closed.match(/^## Close note$/gm)).toHaveLength(2);
+  },
+  SLOW,
+);
+
+test(
+  "a run killed after the reopened final card's commit, before its close, is carried on by bare card, closing the final card from its record with no third commit",
+  async () => {
+    const { repo, deck, plan, first, final, base } = await inCheck();
+    await ensureBranch("plan/greeting", "main", repo);
+    const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+    const greeting = await land("Add the greeting", "Landed.", tree);
+    await closeCard(deck, first, "done", "Landed.");
+    const checked = await land("Check the plan", GUIDE, tree);
+    await closeCard(deck, final, "done", GUIDE);
+    // Reopened, as a join at the plan's end leaves it, and landed again before the run died.
+    await reopenCard(deck, final);
+    const again = await land("Check the plan", NOTE, tree);
+    const sessions = { reviewer: crypto.randomUUID() };
+    const cycle: Cycle = { card: final, base: checked, role: "reviewer", step: "land", sessions, rounds: 0, exchanges: 0, subject: "Check the plan", note: NOTE, commit: again };
+    const landed = [{ card: first, commit: greeting }, { card: final, commit: checked }];
+    await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: await deadPid(), boot: BOOT }, cycle, landed });
+    stand(["pi"]);
+
+    const carrying = await card([], repo);
+    expect(carrying.stderr).toBe("");
+    expect(carrying.code).toBe(0);
+    await until("the run to end or bounce", () => record(plan.dir).state !== "Running");
+    expect(record(plan.dir).state).toBe("Ended");
+
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan", "Check the plan"]);
+    expect(record(plan.dir).landed).toEqual([...landed, { card: final, commit: again }]);
+    const closed = readFileSync(path.join(deck.closedDir, `${final}.md`), "utf8");
+    expect(closed.match(/^closed: .*$/gm)).toEqual(["closed: done"]);
+    expect(closed).toEndWith(`## Close note\n\n${NOTE}\n`);
+  },
+  SLOW,
+);

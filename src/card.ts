@@ -60,7 +60,10 @@ const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Verb>
   },
   Stopped: { bare: reports.stopped, open: { resume: { run: stopped.resume }, amend: { run: stopped.amend } } },
   Dead: { bare: dead.carryOn, open: { stop: { run: stopped.stop } } },
-  Ended: { bare: ended.printPrompt, open: { later: { run: cards.later, args: "<id>" }, finish: { run: ended.finish } } },
+  Ended: {
+    bare: ended.printPrompt,
+    open: { join: { run: ended.join, args: "<id>" }, later: { run: cards.later, args: "<id>" }, finish: { run: ended.finish } },
+  },
 };
 
 const USAGE = `usage: card [<verb>] [--plan <slug>]

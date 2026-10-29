@@ -1,13 +1,15 @@
 import { rm } from "node:fs/promises";
 import prompt from "../payload/settle.md" with { type: "text" };
 import { readCard } from "./cardfile.ts";
+import { settling } from "./cards.ts";
 import type { Role } from "./cycle.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { holdWorktree, removeWorktree } from "./landing.ts";
+import { reopenCard } from "./operations.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
-import { awaitingKey, type Context, type Plan } from "./plan.ts";
+import { awaitingKey, type Context, type Plan, writeRecord } from "./plan.ts";
 import { named } from "./reports.ts";
 
 // What `closeCard` writes above a close note.
@@ -53,7 +55,7 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
   const tree = await holdWorktree(plan.slug, branch, process.cwd());
   const listed = (await findings(deck, plan)).map(({ id, role, headline, settled, awaiting }) =>
     settled === null
-      ? `${id}  ${headline}\n  filed by the ${role}\n  ${command} later ${id}\n  ${command} decline ${id}\n  ${command} promote ${id}\n`
+      ? `${id}  ${headline}\n  filed by the ${role}\n  ${command} join ${id}\n  ${command} later ${id}\n  ${command} decline ${id}\n  ${command} promote ${id}\n`
       : `${id}  ${headline}\n  filed by the ${role}, ${settled}\n${awaiting ? `  ${command} promote ${id} --key <KEY>\n` : ""}`,
   );
   const filed =
@@ -70,6 +72,23 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
     ),
   );
   process.stdout.write(wrapPayload(command, fill(prompt, { CARD: command, PLAN_DOCUMENT: plan.document })));
+}
+
+/**
+ * `card join <id>` in Ended: the owner takes a finding into the plan at its
+ * end. The final card is reopened in place, so from here the plan is not
+ * done until it closes done again, and it is the first card not closed done,
+ * which the next take-in puts the finding ahead of. The plan goes back to the
+ * Cards stage, where a fresh session rewrites the finding as a card.
+ */
+export async function join(context: Context): Promise<void> {
+  const { deck, plan, command } = context;
+  const { id, card } = await settling(context, "join");
+  await reopenCard(deck, plan.final!);
+  await writeRecord(plan, { state: "Cards", joins: [...plan.joins, id], later: plan.later.filter((other) => other !== id) });
+  console.log(
+    `${id} has joined the plan \`${plan.slug}\`, whose final card is reopened; the plan is back in the Cards stage, which a fresh session takes up by running \`${command}\`: ${card.headline}`,
+  );
 }
 
 /**

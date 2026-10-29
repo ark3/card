@@ -45,7 +45,8 @@ export async function settle(deck: Deck, plan: Plan): Promise<{ plan: Plan; tree
   // the card in flight, which reruns from the start of its cycle.
   const { cycle } = plan;
   await discard(tree, cycle?.commit ?? cycle?.base);
-  if (cycle?.commit !== undefined && !plan.landed.some(({ card }) => card === cycle.card)) {
+  // By its commit, since a final card reopened by a join has landed once already.
+  if (cycle?.commit !== undefined && !plan.landed.some(({ commit }) => commit === cycle.commit)) {
     // Its commit landed, so it closes from the reviewer's note, never committed again.
     if (!(await locate(deck, cycle.card))!.closed) await closeCard(deck, cycle.card, "done", cycle.note!);
     plan = await writeRecord(plan, { landed: [...plan.landed, { card: cycle.card, commit: cycle.commit }] });
