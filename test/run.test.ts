@@ -1566,6 +1566,28 @@ test(
 );
 
 test(
+  "bare card in a run after a join at Ended, at the joined card, counts and lists as closed only the cards closed done, not the reopened final card",
+  async () => {
+    const { repo, deck, plan, first } = await inCheck();
+    const control = stand(["pi"]);
+    const finding = await endWithFinding(repo, plan, control);
+    await joinAndTakeIn(repo, deck, plan, finding);
+
+    queue(control, [proceed()], [done(hold(control, "farewell"))], [approved("Add a farewell")], [proceed()], [done()], [approved("Check the plan")]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the joined card's implementer to start", () => existsSync(path.join(control, "farewell.started")));
+
+    const report = `The plan \`greeting\`'s run is at this card, with the implementer:\n\n${finding}  Add a farewell\n\n1 of the plan's 3 cards have closed:\n\n${first}  Add the greeting\n`;
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
+
+    release(control, "farewell");
+    await until("the run to end or bounce", () => record(plan.dir).state !== "Running");
+    expect(record(plan.dir).state).toBe("Ended");
+  },
+  SLOW,
+);
+
+test(
   "a run after a join at Ended, killed during the joined card and carried on by bare card, runs the joined card and then the final card again",
   async () => {
     const { repo, deck, plan, first, final, base } = await inCheck();

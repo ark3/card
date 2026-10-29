@@ -15,7 +15,7 @@ type Member = { id: string; path: string; landed: boolean; card: Card };
  * The plan's cards in its order, less every card closed other than done,
  * which leaves the order. `landed` is a card closed done.
  */
-async function members(deck: Deck, plan: Plan): Promise<Member[]> {
+export async function members(deck: Deck, plan: Plan): Promise<Member[]> {
   const kept: Member[] = [];
   for (const id of plan.cards) {
     const found = await locate(deck, id);

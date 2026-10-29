@@ -1,4 +1,5 @@
 import { readCard } from "./cardfile.ts";
+import { members } from "./cards.ts";
 import { type Deck, locate } from "./deck.ts";
 import { resumeCommand } from "./harness.ts";
 import { forOwner } from "./owner.ts";
@@ -22,7 +23,7 @@ export async function running({ deck, plan }: Context): Promise<void> {
     cycle === null || cycle.commit !== undefined
       ? "between cards.\n"
       : `at this card, with the ${cycle.role}:\n\n${await named(deck, cycle.card)}\n`;
-  const closed = await Promise.all(plan.landed.map(async ({ card }) => `${await named(deck, card)}\n`));
+  const closed = (await members(deck, plan)).filter(({ landed }) => landed).map(({ id, card }) => `${id}  ${card.headline}\n`);
   const count = `${closed.length} of the plan's ${plan.cards.length} cards have closed`;
   process.stdout.write(
     forOwner(`The plan \`${plan.slug}\`'s run is ${now}\n${count}${closed.length > 0 ? `:\n\n${closed.join("")}` : ".\n"}`),
