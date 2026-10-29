@@ -1,8 +1,14 @@
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { gitCommonDir } from "./git.ts";
 
 export const CONFIG_NAME = "card-config.toml";
 export const DEFAULT_DECK = "deck";
+
+const PREFIX = /^[A-Za-z][A-Za-z0-9_-]*$/;
+// Prefixes are letters, digits, `-` and `_`; syllables are letters. Anything
+// else is not an id, and must never be joined onto the deck's path.
+const ID = /^[A-Za-z0-9_-]+$/;
 
 export type Deck = {
   /** Holds `card-config.toml`. `.git/card/` in an ordinary checkout. */
@@ -82,4 +88,54 @@ export async function requireDeck(cwd: string): Promise<Deck> {
   const deck = await resolveDeck(cwd);
   if (deck === null) throw new Error("no deck here");
   return deck;
+}
+
+/**
+ * Creates the deck for `cwd` under `prefix` and returns it: the two
+ * directories, `.ignore`, and the config, which is written last.
+ */
+export async function createDeck(cwd: string, prefix: string): Promise<Deck> {
+  if (!PREFIX.test(prefix)) {
+    throw new Error(`\`${prefix}\` is not a usable prefix: a letter, then letters, digits, - or _`);
+  }
+
+  const cardDir = await findCardDir(cwd);
+  if (cardDir === null) {
+    throw new Error("not in a git repository and CARD_ROOT is unset, so there is nowhere to put a deck");
+  }
+
+  const configPath = path.join(cardDir, CONFIG_NAME);
+  if (await Bun.file(configPath).exists()) {
+    throw new Error(`a deck is already configured by ${configPath}`);
+  }
+
+  const deckDir = path.join(cardDir, DEFAULT_DECK);
+  await mkdir(path.join(deckDir, "open"), { recursive: true });
+  await mkdir(path.join(deckDir, "closed"), { recursive: true });
+  // Ripgrep and fd walk up to the repository's root `.gitignore`, which can
+  // hide the whole deck. `.ignore` beats it in both, and git never reads it.
+  await Bun.write(path.join(deckDir, ".ignore"), "!*\n");
+  // Last, and exclusively: until this exists, there is no deck here.
+  await writeFile(configPath, `prefix = "${prefix}"\ndeck = "${DEFAULT_DECK}"\n`, { flag: "wx" });
+
+  return {
+    cardDir,
+    deckDir,
+    openDir: path.join(deckDir, "open"),
+    closedDir: path.join(deckDir, "closed"),
+    prefix,
+  };
+}
+
+/** Where the card with this id is, whichever directory it sits in. */
+export async function locate(
+  deck: Deck,
+  id: string,
+): Promise<{ path: string; closed: boolean } | null> {
+  if (!ID.test(id)) throw new Error(`\`${id}\` is not a card id`);
+  for (const closed of [false, true]) {
+    const file = path.join(closed ? deck.closedDir : deck.openDir, `${id}.md`);
+    if (await Bun.file(file).exists()) return { path: file, closed };
+  }
+  return null;
 }

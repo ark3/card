@@ -25,3 +25,18 @@ export function idPattern(prefix: string): RegExp {
   const syllable = `[${CONSONANTS}][${VOWELS}]`;
   return new RegExp(`(?<![0-9A-Za-z])${escaped}-(?:${syllable}){3}(?![0-9A-Za-z])`, "g");
 }
+
+/**
+ * Each distinct id of a `prefix` deck that `text` cites, in order of first
+ * citation.
+ *
+ * The pattern alone, with no check that the id names a card in `open/` or
+ * `closed/`: what the rule forbids is a public citation of a card id, and a
+ * string shaped like one cites a card whether or not this deck still holds
+ * it. Cross-checking would also go quiet exactly where the deck has moved on
+ * — an id closed and archived elsewhere, or drawn in another checkout — and a
+ * check that passes because the card is gone is worse than none.
+ */
+export function citedIds(text: string, prefix: string): string[] {
+  return [...new Set(text.match(idPattern(prefix)) ?? [])];
+}

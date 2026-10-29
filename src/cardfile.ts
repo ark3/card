@@ -18,7 +18,8 @@ export type Card = {
 
 const FLOW_SEQUENCE = /^\[(.*)\]$/;
 /** The outcomes `deck close` takes, and the only values `closed` can hold. */
-const OUTCOMES = ["done", "promoted", "declined", "moot"];
+export const OUTCOMES = ["done", "promoted", "declined", "moot"] as const;
+export type Outcome = (typeof OUTCOMES)[number];
 // A value that would need quoting to survive the flow-sequence grammar, or a
 // line break that would break `^labels:` as a grep.
 const UNWRITABLE = /[,[\]\n]/;
@@ -45,7 +46,7 @@ function formatList(field: string, values: string[]): string {
 
 function parseOutcome(raw: string): string {
   const outcome = raw.trim();
-  if (!OUTCOMES.includes(outcome)) {
+  if (!(OUTCOMES as readonly string[]).includes(outcome)) {
     throw new Error(`closed: \`${outcome}\` is not one of ${OUTCOMES.join(", ")}`);
   }
   return outcome;

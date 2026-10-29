@@ -1,30 +1,8 @@
-import { readdir, stat } from "node:fs/promises";
-import path from "node:path";
-import type { Card } from "../cardfile.ts";
-import { readCard } from "../cardfile.ts";
-import { requireDeck, stagedId } from "../deck.ts";
+import { requireDeck } from "../deck.ts";
+import { type Listing, listCards } from "../operations.ts";
 
 const USAGE = "usage: deck list [--open | --ready | --closed] [--label L]...";
 const LISTINGS = ["--open", "--ready", "--closed"];
-
-function message(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * The ids in a directory, from the `<id>.md` filenames, most recently updated
- * first, with the id breaking a tie so a listing is deterministic.
- */
-async function ids(dir: string): Promise<string[]> {
-  const names = (await readdir(dir)).filter((name) => name.endsWith(".md"));
-  const entries = await Promise.all(
-    names.map(async (name) => ({
-      id: name.slice(0, -3),
-      mtime: (await stat(path.join(dir, name))).mtimeMs,
-    })),
-  );
-  return entries.sort((a, b) => b.mtime - a.mtime || a.id.localeCompare(b.id)).map((entry) => entry.id);
-}
 
 export async function run(args: string[], cwd: string): Promise<void> {
   const labels: string[] = [];
@@ -48,59 +26,9 @@ export async function run(args: string[], cwd: string): Promise<void> {
   const wantsReady = listing === "--ready";
 
   const deck = await requireDeck(cwd);
-  // `close` stages under a name no listing shows, so a close that died between
-  // its write and its rename leaves a file that is otherwise invisible to every
-  // verb, for good. This line is where a deck says it happened, on stderr beside
-  // the other reports of a deck in disrepair, since stdout is the listing and a
-  // leftover is not a card. Named, never removed: the file is the only copy of
-  // a close note somebody typed, and unlinking one under a close still in
-  // flight would take out the rename that makes a close atomic.
-  for (const name of (await readdir(deck.closedDir)).sort()) {
-    const id = stagedId(name);
-    if (id === null) continue;
-    console.error(
-      `deck: ${path.join(deck.closedDir, name)} is a close that stopped before its rename, so ${id} is still open and its close note is in that file alone; close ${id} again to replace it, or delete it`,
-    );
-  }
-  const dir = wantsClosed ? deck.closedDir : deck.openDir;
-  const listedIds = await ids(dir);
-  // A closed card's blockers are history, so only an open listing pays for the
-  // other directory.
-  const open = wantsClosed ? new Set<string>() : new Set(listedIds);
-  const closed = wantsClosed ? new Set<string>() : new Set(await ids(deck.closedDir));
-
-  const listed: { id: string; card: Card; waiting: string[] }[] = [];
-  let blocked = 0;
-  for (const id of listedIds) {
-    let card: Card;
-    try {
-      card = await readCard(path.join(dir, `${id}.md`));
-    } catch (error) {
-      // One bad file must not take down the listing, and passing over it in
-      // silence is the failure the strict parser exists to prevent.
-      console.error(`deck: skipped ${message(error)}`);
-      continue;
-    }
-    if (!labels.every((label) => card.labels.includes(label))) continue;
-
-    // An open card whose frontmatter says closed is as wrong as a dangling
-    // blocker, and passing over it in silence is the same failure.
-    if (!wantsClosed && card.closed !== undefined) {
-      console.error(`deck: ${id} is in open/ but its frontmatter says closed: ${card.closed}`);
-    }
-
-    const waiting = wantsClosed ? [] : card.blockedBy.filter((blocker) => !closed.has(blocker));
-    for (const blocker of waiting) {
-      if (!open.has(blocker)) {
-        console.error(`deck: ${id} is blocked by ${blocker}, which is in neither open/ nor closed/`);
-      }
-    }
-    if (waiting.length > 0) {
-      blocked++;
-      if (wantsReady) continue;
-    }
-    listed.push({ id, card, waiting });
-  }
+  const { listed, blocked, warnings } = await listCards(deck, (listing?.slice(2) ?? "open") as Listing, labels);
+  // On stderr, since stdout is the listing and none of these is a card.
+  for (const warning of warnings) console.error(`deck: ${warning}`);
 
   if (listed.length > 0) {
     for (const { id, card, waiting } of listed) {
