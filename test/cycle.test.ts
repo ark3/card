@@ -6,7 +6,7 @@ import { createDeck, type Deck } from "../src/deck.ts";
 import { gitOrThrow, headSha } from "../src/git.ts";
 import { ensureBranch, holdWorktree } from "../src/landing.ts";
 import { fileCard } from "../src/operations.ts";
-import { listPlans, type Plan, startPlan, writeRecord } from "../src/plan.ts";
+import { bootId, listPlans, type Plan, startPlan, writeRecord } from "../src/plan.ts";
 import { calls, type Reply, removeTempDirs, script, stand, tempRepo } from "./helpers.ts";
 
 const OUTER_PATH = process.env.PATH;
@@ -56,6 +56,7 @@ async function running(frontmatter = `commit-convention: ${CONVENTION}\n`) {
     placeholder: false,
     cards: [id],
     final: id,
+    run: { pid: process.pid, boot: await bootId() },
   });
   await Bun.write(
     plan.document,
@@ -127,7 +128,16 @@ test("each role is launched fresh under its own id, which the plan's record hold
   }
   const record = (await listPlans(deck))[0]!.cycle;
   const commit = ended.outcome === "landed" ? ended.sha : "";
-  expect(record).toEqual({ card: id, base: record!.base, role: "reviewer", step: "land", sessions: { implementer, reviewer }, commit });
+  expect(record).toEqual({
+    card: id,
+    base: record!.base,
+    role: "reviewer",
+    step: "land",
+    sessions: { implementer, reviewer },
+    subject: SUBJECT,
+    note: NOTE,
+    commit,
+  });
   expect(ended.plan.cycle).toEqual(record);
 });
 

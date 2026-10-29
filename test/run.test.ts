@@ -1,10 +1,12 @@
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { createDeck } from "../src/deck.ts";
+import type { Cycle } from "../src/cycle.ts";
+import { createDeck, type Deck } from "../src/deck.ts";
 import { git, gitOrThrow } from "../src/git.ts";
-import { fileCard } from "../src/operations.ts";
-import { type PlanRecord, startPlan, writeRecord } from "../src/plan.ts";
+import { ensureBranch, holdWorktree, land } from "../src/landing.ts";
+import { appendRecord, closeCard, fileCard } from "../src/operations.ts";
+import { listPlans, type PlanRecord, startPlan, writeRecord } from "../src/plan.ts";
 import { clearCardRoot, queue, type Reply, removeTempDirs, stand, tempRepo } from "./helpers.ts";
 
 const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
@@ -198,3 +200,179 @@ test("card approve with a start point git cannot resolve refuses before anything
   expect(result.stderr).toContain("`nosuch`");
   await nothingLaunched(repo, plan.dir, control);
 });
+
+const BOOT = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+
+/** The pid of a process that has exited. */
+async function deadPid(): Promise<number> {
+  const proc = Bun.spawn([process.execPath, "-e", ""]);
+  await proc.exited;
+  return proc.pid;
+}
+
+async function stateOf(deck: Deck): Promise<string> {
+  return (await listPlans(deck))[0]!.state;
+}
+
+test("a Running plan reads as Dead when its run's pid is gone, or its boot id is another boot's, and its state file still says Running", async () => {
+  const { deck, plan } = await inCheck();
+  await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: process.pid, boot: BOOT } });
+  expect(await stateOf(deck)).toBe("Running");
+
+  await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: await deadPid(), boot: BOOT } });
+  expect(await stateOf(deck)).toBe("Dead");
+  expect(record(plan.dir).state).toBe("Running");
+
+  // The pid is live, but it names this process on another boot's count.
+  await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: process.pid, boot: "another boot" } });
+  expect(await stateOf(deck)).toBe("Dead");
+  expect(record(plan.dir).state).toBe("Running");
+});
+
+// Long enough that the commit's body refills it, so a close note taken from the
+// commit rather than the record would differ.
+const NOTE = "Adds hello.txt holding hello, and this line runs long enough that the commit message refills it at seventy-two columns.\n\nVerified by reading it back.";
+
+/**
+ * Where the run died while landing the first card, after the reviewer
+ * approved it: no role runs from there to the state write, so each row is
+ * built as the run leaves it rather than timed with a kill.
+ */
+const ROWS = [
+  "after the commit, before its record",
+  "after the record, before the close",
+  "between the close's rename and its unlink",
+  "after the close, before the state write",
+  "after the state write, before the next card",
+] as const;
+
+for (const row of ROWS) {
+  test(
+    `a run killed ${row} is carried on by bare card, with one commit for the card and the card closed once`,
+    async () => {
+      const { repo, deck, plan, first, final, base } = await inCheck();
+      await ensureBranch("plan/greeting", "main", repo);
+      const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+      await appendRecord(deck, first, "Account", "Did the work.");
+      writeFileSync(path.join(tree, "hello.txt"), "hello\n");
+      const commit = await land("Add the greeting", NOTE, tree);
+      const sessions = { implementer: crypto.randomUUID(), reviewer: crypto.randomUUID() };
+      const cycle: Cycle = { card: first, base, role: "reviewer", step: "land", sessions, subject: "Add the greeting", note: NOTE };
+      const recorded = row !== ROWS[0];
+      if (recorded) cycle.commit = commit;
+      const open = path.join(deck.openDir, `${first}.md`);
+      const text = readFileSync(open, "utf8");
+      if (row === ROWS[2] || row === ROWS[3] || row === ROWS[4]) await closeCard(deck, first, "done", NOTE);
+      if (row === ROWS[2]) writeFileSync(open, text);
+      const landed = row === ROWS[4] ? [{ card: first, commit }] : [];
+      await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: await deadPid(), boot: BOOT }, cycle, landed });
+
+      const control = stand(["pi"]);
+      const rerun = recorded ? [] : [[done("printf 'hello\\n' > hello.txt")], [approved("Add the greeting")]];
+      queue(control, ...rerun, [done()], [approved("Check the plan")]);
+      expect(await stateOf(deck)).toBe("Dead");
+
+      const carrying = await card([], repo);
+      expect(carrying.stderr).toBe("");
+      expect(carrying.code).toBe(0);
+      await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+      expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan"]);
+      const ended = record(plan.dir).landed;
+      expect(ended.map(({ card }) => card)).toEqual([first, final]);
+      expect(existsSync(open)).toBe(false);
+      const closed = readFileSync(path.join(deck.closedDir, `${first}.md`), "utf8");
+      expect(closed.match(/^closed: /gm)).toHaveLength(1);
+      expect(closed.match(/^## Close note$/gm)).toHaveLength(1);
+      if (recorded) {
+        expect(ended[0]!.commit).toBe(commit);
+        expect(closed).toEndWith(`## Close note\n\n${NOTE}\n`);
+      } else {
+        // The commit no record named went with the card's work, and the rerun landed its own.
+        expect(ended[0]!.commit).not.toBe(commit);
+        expect((await git(["merge-base", "--is-ancestor", commit, "plan/greeting"], repo)).ok).toBe(false);
+      }
+    },
+    SLOW,
+  );
+}
+
+test(
+  "a run killed mid-card reruns that card from the start of its cycle on a clean worktree, and runs no closed card again",
+  async () => {
+    const { repo, deck, plan, first, final, base } = await inCheck();
+    const control = stand(["pi"]);
+    const seen = path.join(control, "seen");
+    // The final card's implementer commits part of its work and leaves the rest uncommitted before the run dies.
+    const partway = `printf 'half\\n' > half.txt; git add half.txt; git commit -q -m half; printf 'more\\n' > more.txt; ${hold(control, "final")}`;
+    queue(
+      control,
+      [done("printf 'hello\\n' > hello.txt")],
+      [approved("Add the greeting")],
+      [done(partway)],
+      [done(`{ git rev-parse HEAD; git status --porcelain; } > '${seen}'`)],
+      [approved("Check the plan")],
+    );
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the final card's implementer to start", () => existsSync(path.join(control, "final.started")));
+    process.kill(-record(plan.dir).run!.pid, "SIGKILL");
+    for (const deadline = Date.now() + 5_000; (await stateOf(deck)) !== "Dead"; await Bun.sleep(50)) {
+      if (Date.now() > deadline) throw new Error("timed out waiting for the run to read as Dead");
+    }
+
+    const carrying = await card([], repo);
+    expect(carrying.stderr).toBe("");
+    expect(carrying.code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const landed = record(plan.dir).landed;
+    expect(landed.map(({ card }) => card)).toEqual([first, final]);
+    expect(readFileSync(seen, "utf8")).toBe(`${landed[0]!.commit}\n`);
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan"]);
+    expect(await gitOrThrow(["show", "--name-only", "--format=", "plan/greeting"], repo)).toBe("");
+    const closed = readFileSync(path.join(deck.closedDir, `${first}.md`), "utf8");
+    expect(closed.match(/^## Account$/gm)).toHaveLength(1);
+  },
+  SLOW,
+);
+
+/** Whether `pid` names a process still running: a zombie has ended, and only waits to be reaped. */
+function running(pid: number): boolean {
+  try {
+    return !readFileSync(`/proc/${pid}/stat`, "utf8").replace(/^.*\) /s, "").startsWith("Z");
+  } catch {
+    return false;
+  }
+}
+
+test(
+  "bare card in Dead ends the role a run killed alone left running, and the role's child, before the next role launches",
+  async () => {
+    const { repo, deck, plan, first, final } = await inCheck();
+    const control = stand(["pi"]);
+    const pids = path.join(control, "pids");
+    const after = path.join(control, "after");
+    // The stand-in is the role; the sleep is a child of the shell it runs as the session's work.
+    const sleeping = `sleep 30 & echo $PPID $! > '${pids}'; ${hold(control, "first")}`;
+    const check = `for pid in $(cat '${pids}'); do if ps -o stat= -p $pid | grep -qv Z; then echo $pid; fi; done > '${after}'`;
+    queue(control, [done(sleeping)], [done(check)], [approved("Add the greeting")], [done()], [approved("Check the plan")]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the first role to start", () => existsSync(path.join(control, "first.started")) && existsSync(pids));
+    process.kill(record(plan.dir).run!.pid, "SIGKILL");
+    for (const deadline = Date.now() + 5_000; (await stateOf(deck)) !== "Dead"; await Bun.sleep(50)) {
+      if (Date.now() > deadline) throw new Error("timed out waiting for the run to read as Dead");
+    }
+    const left = readFileSync(pids, "utf8").trim().split(" ").map(Number);
+    expect(left.map(running)).toEqual([true, true]);
+
+    expect((await card([], repo)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    expect(readFileSync(after, "utf8")).toBe("");
+    expect(left.map(running)).toEqual([false, false]);
+    expect(record(plan.dir).landed.map(({ card }) => card)).toEqual([first, final]);
+  },
+  SLOW,
+);

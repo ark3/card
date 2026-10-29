@@ -2,6 +2,7 @@
 import { createDeck, type Deck, DEFAULT_PREFIX, requireDeck, resolveDeck } from "./deck.ts";
 import * as cards from "./cards.ts";
 import * as check from "./check.ts";
+import * as dead from "./dead.ts";
 import * as document from "./document.ts";
 import { forOwner } from "./owner.ts";
 import { type Context, listPlans, listWaiting, type Plan, refuseSlug, startPlan, type State, waitingCards } from "./plan.ts";
@@ -47,7 +48,7 @@ const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Verb>
   Running: { bare: printState, open: {} },
   Bounced: { bare: printState, open: {} },
   Stopped: { bare: report, open: {} },
-  Dead: { bare: report, open: {} },
+  Dead: { bare: dead.carryOn, open: {} },
   Ended: { bare: printState, open: {} },
 };
 

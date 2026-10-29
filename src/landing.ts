@@ -37,12 +37,12 @@ export async function holdWorktree(slug: string, branch: string, cwd: string): P
 }
 
 /**
- * Resets and cleans the worktree: tracked edits and untracked files go, and
- * ignored files stay, since installed dependencies are why there is one
- * worktree per plan.
+ * Resets the worktree hard to `commit` and cleans it: tracked edits, untracked
+ * files and any commit past `commit` go, and ignored files stay, since
+ * installed dependencies are why there is one worktree per plan.
  */
-export async function discard(tree: string): Promise<void> {
-  await gitOrThrow(["reset", "-q", "--hard"], tree);
+export async function discard(tree: string, commit = "HEAD"): Promise<void> {
+  await gitOrThrow(["reset", "-q", "--hard", commit], tree);
   await gitOrThrow(["clean", "-q", "-f", "-d"], tree);
 }
 

@@ -35,6 +35,12 @@ export type Cycle = {
   step: Step;
   /** Each role's session id, recorded before the session is launched. */
   sessions: Partial<Record<Role, string>>;
+  /**
+   * The reviewer's subject and close note, recorded with step land, so a card
+   * whose commit lands and whose run dies before it closes closes from them.
+   */
+  subject?: string;
+  note?: string;
   /** The card's commit, recorded once it lands and before the card closes. */
   commit?: string;
 };
@@ -124,7 +130,7 @@ export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, 
     return { plan, outcome: "stopped", role: "reviewer", session: reviewer, cause: error.message };
   }
 
-  cycle = { ...cycle, step: "land" };
+  cycle = { ...cycle, step: "land", subject, note };
   plan = await writeRecord(plan, { cycle });
   // A reviewer committing its fixes would otherwise give the card two commits.
   await undoMovedHead(base, tree);

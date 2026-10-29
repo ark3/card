@@ -124,9 +124,25 @@ export function refuseSlug(slug: string): void {
 }
 
 /**
+ * Whether the run a Running plan records has died: its pid is gone, or the
+ * kernel has booted since it started, when the pid names nothing of the run's.
+ */
+async function died({ pid, boot }: { pid: number; boot: string }): Promise<boolean> {
+  if (boot !== (await bootId())) return true;
+  try {
+    process.kill(pid, 0);
+  } catch (error) {
+    // EPERM is a live process another user owns.
+    return (error as NodeJS.ErrnoException).code === "ESRCH";
+  }
+  return false;
+}
+
+/**
  * Every plan in progress, by slug. A plan is a directory under `plans/` with a
  * state file; one without, a start that stopped before its record was
- * written, is not a plan.
+ * written, is not a plan. A Running plan whose run has died reads as Dead,
+ * which is never written.
  */
 export async function listPlans(deck: Deck): Promise<Plan[]> {
   let names: string[];
@@ -140,7 +156,10 @@ export async function listPlans(deck: Deck): Promise<Plan[]> {
   for (const slug of names) {
     const file = Bun.file(path.join(plansDir(deck), slug, STATE_FILE));
     if (!(await file.exists())) continue;
-    plans.push(plan(deck, slug, { ...EMPTY, ...((await file.json()) as PlanRecord) }));
+    const record: PlanRecord = { ...EMPTY, ...((await file.json()) as PlanRecord) };
+    // `card approve` records the run with the state that names it.
+    if (record.state === "Running" && (await died(record.run!))) record.state = "Dead";
+    plans.push(plan(deck, slug, record));
   }
   return plans;
 }

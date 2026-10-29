@@ -7,7 +7,7 @@ import { resolveCommit } from "./git.ts";
 import { chooseHarness, type Harness } from "./harness.ts";
 import { ensureBranch, holdWorktree } from "./landing.ts";
 import { fill, wrapPayload } from "./payload.ts";
-import { bootId, type Context, writeRecord } from "./plan.ts";
+import { bootId, type Context, type Plan, writeRecord } from "./plan.ts";
 
 const RUN = path.join(import.meta.dir, "run.ts");
 
@@ -57,10 +57,18 @@ export async function approve({ plan, command, args }: Context): Promise<void> {
   }
   await ensureBranch(branch, start, cwd);
   const tree = await holdWorktree(plan.slug, branch, cwd);
+  const log = await startRun(plan, harness, tree, cwd);
+  console.log(`The plan \`${plan.slug}\` is running on ${harness}, since ${why}, in ${tree}; its log is ${log}.`);
+}
 
+/**
+ * Starts the plan's run on `harness` in the worktree `tree`, detached, the
+ * leader of its own process group, from `cwd`, so it resolves the deck as
+ * this process did, and records it Running. Returns the run's log.
+ */
+export async function startRun(plan: Plan, harness: Harness, tree: string, cwd: string): Promise<string> {
   const log = path.join(plan.dir, "run.log");
   const output = openSync(log, "a");
-  // From this directory, so the run resolves the deck as this process did.
   const run = Bun.spawn([process.execPath, RUN, plan.slug, tree], {
     cwd,
     env: process.env,
@@ -74,5 +82,5 @@ export async function approve({ plan, command, args }: Context): Promise<void> {
   await writeRecord(plan, { state: "Running", harness, run: { pid: run.pid, boot: await bootId() }, bounce: null });
   run.stdin.end();
   run.unref();
-  console.log(`The plan \`${plan.slug}\` is running on ${harness}, since ${why}, in ${tree}; its log is ${log}.`);
+  return log;
 }
