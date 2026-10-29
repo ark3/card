@@ -1,11 +1,13 @@
 #!/usr/bin/env bun
 import { createDeck, type Deck, DEFAULT_PREFIX, requireDeck, resolveDeck } from "./deck.ts";
+import * as cards from "./cards.ts";
 import * as document from "./document.ts";
-import { listCards } from "./operations.ts";
 import { forOwner } from "./owner.ts";
-import { type Context, listPlans, type Plan, refuseSlug, startPlan, type State } from "./plan.ts";
+import { type Context, listPlans, listWaiting, type Plan, refuseSlug, startPlan, type State, waitingCards } from "./plan.ts";
 
 type Handler = (context: Context) => Promise<void>;
+/** A verb's code, and the arguments every printed command shows it with. */
+type Verb = { run: Handler; args?: string };
 
 /**
  * Every verb of `BRIEF.md`'s surface but bare `card`, named from the start:
@@ -34,9 +36,12 @@ type VerbName = (typeof VERBS)[number];
  * dispatch and every printed list of open commands read it, so a session is
  * never shown a command that would be refused, nor refused one it was shown.
  */
-const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Handler>> }> = {
-  Document: { bare: document.printPrompt, open: { done: document.done } },
-  Cards: { bare: report, open: {} },
+const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Verb>> }> = {
+  Document: { bare: document.printPrompt, open: { done: { run: document.done } } },
+  Cards: {
+    bare: cards.printPrompt,
+    open: { done: { run: cards.done }, join: { run: cards.join, args: "<id>" }, later: { run: cards.later, args: "<id>" } },
+  },
   Check: { bare: report, open: {} },
   Running: { bare: report, open: {} },
   Bounced: { bare: report, open: {} },
@@ -56,8 +61,8 @@ function commandFor(plan: Plan, many: boolean): string {
 
 /** The commands open in the plan's state, bare `card` first, one per line. */
 function openCommands(plan: Plan, command: string): string {
-  const verbs = Object.keys(TABLE[plan.state].open);
-  return [command, ...verbs.map((verb) => `${command} ${verb}`)].map((line) => `  ${line}\n`).join("");
+  const verbs = Object.entries(TABLE[plan.state].open).map(([name, verb]) => `${command} ${name}${verb.args ? ` ${verb.args}` : ""}`);
+  return [command, ...verbs].map((line) => `  ${line}\n`).join("");
 }
 
 /** Bare `card` in a state whose own printout is later work: where the plan stands, and what is open. */
@@ -65,18 +70,11 @@ async function report({ plan, command }: Context): Promise<void> {
   process.stdout.write(`The plan \`${plan.slug}\` is in ${plan.state}, where these commands are open:\n${openCommands(plan, command)}`);
 }
 
-/**
- * The waiting cards, for the owner: every open card no plan's order lists.
- * No plan records an order yet, so that is every card in `open/`.
- */
+/** The waiting cards, for the owner, when there are any. */
 async function printWaiting(deck: Deck, command: string): Promise<void> {
-  const { listed, warnings } = await listCards(deck, "open", []);
-  for (const warning of warnings) console.error(`card: ${warning}`);
+  const listed = await waitingCards(deck);
   if (listed.length === 0) return;
-  const lines = listed.map(
-    ({ id, card }) => `${id}  ${card.headline}\n  ${command} decline ${id}\n  ${command} promote ${id}\n`,
-  );
-  process.stdout.write(forOwner(`Cards waiting in no plan, which no run picks up:\n\n${lines.join("\n")}`));
+  process.stdout.write(forOwner(listWaiting(listed, command, ["decline", "promote"])));
 }
 
 /** Starts a plan, under `slug` or a placeholder, and prints what a start prints. */
@@ -152,13 +150,13 @@ async function main(argv: string[], cwd: string): Promise<void> {
   const plans = await listPlans(deck);
   const plan = pick(plans, slug, name);
   const command = commandFor(plan, plans.length > 1);
-  const handler = TABLE[plan.state].open[name as VerbName];
-  if (handler === undefined) {
+  const verb = TABLE[plan.state].open[name as VerbName];
+  if (verb === undefined) {
     throw new Error(
       `\`${command} ${name}\` is not open while the plan \`${plan.slug}\` is in ${plan.state}, where these commands are open:\n${openCommands(plan, command).trimEnd()}`,
     );
   }
-  await handler({ deck, plan, command, args });
+  await verb.run({ deck, plan, command, args });
 }
 
 try {

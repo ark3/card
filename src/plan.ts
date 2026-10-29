@@ -2,6 +2,7 @@ import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Deck } from "./deck.ts";
 import { drawId } from "./id.ts";
+import { type Listed, listCards } from "./operations.ts";
 
 /**
  * The rows of `BRIEF.md`'s table under "The plan's states and the verb
@@ -20,7 +21,25 @@ export type PlanRecord = {
    * started under `--plan <slug>` keeps the name it was given.
    */
   placeholder: boolean;
+  /**
+   * The plan's cards, by id, in the order the run takes them, as the Cards
+   * stage's `card done` last set it. A card closed done keeps its place; one
+   * closed any other way stays listed until the next take-in drops it.
+   */
+  cards: string[];
+  /** The card that checks the whole plan, which runs last; null until the first take-in. */
+  final: string | null;
+  /** Waiting cards `card join` took into the plan, in join order, which the next take-in places. */
+  joins: string[];
+  /**
+   * Waiting cards `card later` left outside this plan. They stay waiting for
+   * every other plan; this plan's Cards stage no longer asks about them.
+   */
+  later: string[];
 };
+
+/** What a state file written before a field existed reads as for that field. */
+const EMPTY: Omit<PlanRecord, "state" | "placeholder"> = { cards: [], final: null, joins: [], later: [] };
 
 export type Plan = PlanRecord & {
   slug: string;
@@ -92,13 +111,18 @@ export async function listPlans(deck: Deck): Promise<Plan[]> {
   for (const slug of names) {
     const file = Bun.file(path.join(plansDir(deck), slug, STATE_FILE));
     if (!(await file.exists())) continue;
-    plans.push(plan(deck, slug, (await file.json()) as PlanRecord));
+    plans.push(plan(deck, slug, { ...EMPTY, ...((await file.json()) as PlanRecord) }));
   }
   return plans;
 }
 
-/** Writes the plan's state file whole, staged and renamed so no reader sees half of one. */
-export async function writeRecord(target: Plan, record: PlanRecord): Promise<Plan> {
+/**
+ * Writes the plan's state file whole, `changes` over what the plan already
+ * records, staged and renamed so no reader sees half of one.
+ */
+export async function writeRecord(target: Plan, changes: Partial<PlanRecord>): Promise<Plan> {
+  const { state, placeholder, cards, final, joins, later } = { ...target, ...changes };
+  const record: PlanRecord = { state, placeholder, cards, final, joins, later };
   const staging = path.join(target.dir, `.${STATE_FILE}.writing`);
   await writeFile(staging, `${JSON.stringify(record)}\n`);
   await rename(staging, path.join(target.dir, STATE_FILE));
@@ -115,7 +139,7 @@ export async function startPlan(deck: Deck, slug: string | null): Promise<Plan> 
   // The id alphabet's syllables, so the placeholder is short enough to type
   // in `--plan`, and a drawn slug is never handed to a second plan, as a
   // counter's next number would be once its plan took a headline's name.
-  const record: PlanRecord = { state: "Document", placeholder: slug === null };
+  const record: PlanRecord = { ...EMPTY, state: "Document", placeholder: slug === null };
   const started = plan(deck, slug ?? drawId("draft"), record);
   // Not recursive, so a slug already taken fails here rather than sharing a
   // directory; a drawn one collides once in 729,000, and a rerun draws again.
@@ -129,4 +153,24 @@ export async function renamePlan(deck: Deck, from: Plan, slug: string): Promise<
   const moved = plan(deck, slug, from);
   await rename(from.dir, moved.dir);
   return moved;
+}
+
+/**
+ * The waiting cards: every card in `open/` that no plan's order lists and no
+ * plan has joined, since a join is the owner's decision already made, and
+ * listing its card as waiting would offer it to a second plan. Cards in
+ * `except` are left out as well. Prints the deck's disrepair to stderr.
+ */
+export async function waitingCards(deck: Deck, except: string[] = []): Promise<Listed[]> {
+  const { listed, warnings } = await listCards(deck, "open", []);
+  for (const warning of warnings) console.error(`card: ${warning}`);
+  const taken = new Set(except);
+  for (const other of await listPlans(deck)) for (const id of [...other.cards, ...other.joins]) taken.add(id);
+  return listed.filter(({ id }) => !taken.has(id));
+}
+
+/** The waiting cards for the owner, each with its id and headline and the commands that settle it beside it. */
+export function listWaiting(listed: Listed[], command: string, verbs: string[]): string {
+  const lines = listed.map(({ id, card }) => `${id}  ${card.headline}\n${verbs.map((verb) => `  ${command} ${verb} ${id}\n`).join("")}`);
+  return `Cards waiting in no plan, which no run picks up:\n\n${lines.join("\n")}`;
 }

@@ -124,10 +124,9 @@ test("card done refuses a document without a start point, then moves the plan to
     "# Add the export button",
   );
 
-  // Cards is later work's to fill in; bare card there only has to say where things stand.
   const bare = await card([], repo);
   expect(bare.code).toBe(0);
-  expect(bare.stdout).toContain("Cards");
+  expect(bare.stdout).toContain("# The Cards stage");
 });
 
 test("card approve in Document refuses, naming the state and the commands open in it", async () => {
