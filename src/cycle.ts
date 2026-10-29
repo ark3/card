@@ -286,10 +286,26 @@ const implemented: Check = (answer: Answer) => {
   noHeadlines("account")(answer);
 };
 
-/** Refuses a reviewer's answer that `answered` refuses, or that holds a headline in a field its outcome carries. */
+/**
+ * Refuses an answer whose subject, where it holds one, is empty or spans
+ * more than one line, while the reviewer can still repair it, rather than
+ * when the card's commit lands with a malformed first line.
+ */
+const oneLineSubject: Check = (answer: Answer) => {
+  if (!("subject" in answer)) return;
+  const subject = answer.subject as string;
+  if (subject.trim() === "") throw new Error("answer.subject is empty");
+  if (subject.includes("\n")) throw new Error("answer.subject spans more than one line, and a commit's subject is one line");
+};
+
+/**
+ * Refuses a reviewer's answer that `answered` refuses, that holds a headline
+ * in a field its outcome carries, or whose subject is not one line.
+ */
 const reviewed: Check = (answer: Answer) => {
   answered(answer);
   noHeadlines("subject", "close_note", "feedback")(answer);
+  oneLineSubject(answer);
 };
 
 /**

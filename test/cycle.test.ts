@@ -254,6 +254,26 @@ test("a subject or a close note with a line starting `# ` draws the repair promp
   expect(await message(tree)).toBe(`${SUBJECT}\n\n${NOTE}\n`);
 });
 
+test("a subject spanning more than one line draws the repair prompt, and the repaired subject is the commit's first line", async () => {
+  const { deck, plan, id, tree } = await running();
+  const wraps = answer({ outcome: "approved", subject: `${SUBJECT}\nand more`, close_note: NOTE });
+  const { control } = await cycle(deck, plan, id, tree, [done()], [wraps, approved()]);
+
+  const [, repair] = calls(control, ids[2]!);
+  expect(repair!.stdin).toContain("The previous report was invalid:\nanswer.subject spans more than one line");
+  expect(await message(tree)).toBe(`${SUBJECT}\n\n${NOTE}\n`);
+});
+
+test("an empty subject draws the repair prompt, and the repaired subject is the commit's first line", async () => {
+  const { deck, plan, id, tree } = await running();
+  const empty = answer({ outcome: "approved", subject: " ", close_note: NOTE });
+  const { control } = await cycle(deck, plan, id, tree, [done()], [empty, approved()]);
+
+  const [, repair] = calls(control, ids[2]!);
+  expect(repair!.stdin).toContain("The previous report was invalid:\nanswer.subject is empty");
+  expect(await message(tree)).toBe(`${SUBJECT}\n\n${NOTE}\n`);
+});
+
 test("an implementer that fails stops the cycle at its step, with the cause and the session, and lands nothing", async () => {
   const { repo, deck, plan, id, tree, base, before } = await running();
   const { control, ended } = await cycle(deck, plan, id, tree, [{ stderr: "usage limit reached\n", exit: 1 }], []);
