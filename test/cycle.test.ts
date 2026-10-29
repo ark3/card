@@ -712,6 +712,19 @@ test("only the plan's final card has its implementer and reviewer handed the pla
   expect(ended.outcome).toBe("landed");
 });
 
+for (const final of [true, false]) {
+  test(`the reconciler is told whether its card is the plan's final card, on ${final ? "the final card" : "any other card"}`, async () => {
+    const { deck, plan, id, tree } = await running(undefined, { final });
+    const { control } = await cycle(deck, plan, id, tree, [done("printf 'hello\\n' > hello.txt")], [approved()]);
+
+    const reconciler = calls(control, ids[0]!)[0]!.stdin;
+    expect(reconciler).toStartWith("# Reconciling one card\n");
+    expect(reconciler).not.toContain("{{");
+    expect(reconciler.includes("This card is the plan's final card.")).toBe(final);
+    expect(reconciler.includes("This card is not the plan's final card.")).toBe(!final);
+  });
+}
+
 test("the final card's revision resumes its implementer under the final card's revision prompt, and a fresh reviewer under the final card's review prompt", async () => {
   const { deck, plan, id, tree } = await running(undefined, { final: true });
   const { control, ended } = await cycle(deck, plan, id, tree, [done(MISSPELT), revised(RESPELT)], [revision()], [proceed()], [[approved()]]);

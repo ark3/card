@@ -392,14 +392,16 @@ async function cardText(deck: Deck, id: string): Promise<string> {
 /**
  * The reconciler's prompt, but for the answer's instruction, which `launch`
  * appends: the card and the plan document, each with the absolute path the
- * reconciler edits it at, since both live outside the worktree it runs in.
+ * reconciler edits it at, since both live outside the worktree it runs in,
+ * and whether the card is the plan's final card, where `final` says so.
  */
-export function reconcilerPrompt(card: { path: string; text: string }, document: { path: string; text: string }): string {
+export function reconcilerPrompt(card: { path: string; text: string }, document: { path: string; text: string }, final: boolean): string {
   return fill(reconcile, {
     CARD_PATH: card.path,
     CARD_TEXT: card.text,
     DOCUMENT_PATH: document.path,
     DOCUMENT_TEXT: document.text.trimEnd(),
+    FINAL: final ? "the plan's final card" : "not the plan's final card",
   });
 }
 
@@ -459,7 +461,7 @@ export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, 
   plan = await writeRecord(plan, { cycle });
 
   const card = { path: await cardPath(deck, id), text: await cardText(deck, id) };
-  const reconciling = reconcilerPrompt(card, { path: plan.document, text: await Bun.file(plan.document).text() });
+  const reconciling = reconcilerPrompt(card, { path: plan.document, text: await Bun.file(plan.document).text() }, id === plan.final);
   return cycleFrom(deck, plan, tree, harness, reconciling, launch);
 }
 
