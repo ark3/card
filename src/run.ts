@@ -33,10 +33,10 @@ for (const id of plan.cards) {
     ended =
       resuming === null ? await runCard(deck, plan, id, tree, plan.harness!) : await resumeCard(deck, plan, tree, plan.harness!, resuming);
   } catch (error) {
-    // An error no role's failure is, such as a hook refusing the commit, stops
-    // the run as a role that failed does, rather than leaving it to read as
-    // Dead and rerun into the same error. The record is as the cycle last
-    // wrote it, which `plan` predates.
+    // An error no role's failure is, such as git failing to stage the card's
+    // work, stops the run as a role that failed does, rather than leaving it
+    // to read as Dead and rerun into the same error. The record is as the
+    // cycle last wrote it, which `plan` predates.
     console.error(error);
     const cause = (error as Error).message;
     const current = (await listPlans(deck)).find((listed) => listed.slug === slug)!;

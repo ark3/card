@@ -663,10 +663,9 @@ test(
   "an error a card's cycle throws that is no role's failure bounces the plan with the error as its cause, naming the recorded step's session, and ends the run, so bare card reports the bounce rather than carrying the run on",
   async () => {
     const { repo, plan, first } = await inCheck();
-    // A hook refusing the commit throws while the card lands, with no role running.
-    writeFileSync(path.join(repo, ".git", "hooks", "pre-commit"), "#!/bin/sh\necho 'the hook says no' >&2\nexit 1\n", { mode: 0o755 });
+    // A file git cannot read makes staging it throw while the card lands, with no role running.
     const control = stand(["pi"]);
-    queue(control, [proceed()], [done("printf 'hello\\n' > hello.txt")], [approved("Add the greeting")]);
+    queue(control, [proceed()], [done("printf 'hello\\n' > hello.txt && chmod 000 hello.txt")], [approved("Add the greeting")]);
 
     expect((await card(["approve"], repo)).code).toBe(0);
     const { pid } = record(plan.dir).run!;
@@ -674,7 +673,7 @@ test(
 
     const { state, cycle, bounce } = record(plan.dir);
     expect(state).toBe("Bounced");
-    expect(bounce!.cause).toContain("the hook says no");
+    expect(bounce!.cause).toContain("Permission denied");
     const tree = path.join(repo, ".worktrees", "greeting");
     expect(bounce).toEqual({ role: "reviewer", session: { harness: "pi", id: cycle!.sessions.reviewer!, dir: tree }, cause: bounce!.cause });
     const report = bouncedReport(first, "reviewer", bounce!.cause, `cd ${tree} && pi --session-id ${bounce!.session.id}`);

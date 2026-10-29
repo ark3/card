@@ -2,6 +2,7 @@ import converse from "../payload/converse.md" with { type: "text" };
 import finalImplement from "../payload/final-implement.md" with { type: "text" };
 import finalReview from "../payload/final-review.md" with { type: "text" };
 import finalRevise from "../payload/final-revise.md" with { type: "text" };
+import hookRefused from "../payload/hook-refused.md" with { type: "text" };
 import implement from "../payload/implement.md" with { type: "text" };
 import reconcile from "../payload/reconcile.md" with { type: "text" };
 import reply from "../payload/reply.md" with { type: "text" };
@@ -15,7 +16,7 @@ import { readDocument } from "./document.ts";
 import { headSha } from "./git.ts";
 import { type Check, correct, type Harness, launch, resume, RoleFailure, type Session } from "./harness.ts";
 import { citedIds } from "./id.ts";
-import { addedLines, discard, land, uncommittedDiff, undoMovedHead } from "./landing.ts";
+import { addedLines, CommitRefused, discard, land, uncommittedDiff, undoMovedHead } from "./landing.ts";
 import { appendRecord, closeCard, fileCard } from "./operations.ts";
 import { fill } from "./payload.ts";
 import { type Plan, writeRecord } from "./plan.ts";
@@ -102,7 +103,8 @@ export const EXCHANGES = 3;
  * before a third failure has the reviewer failed: the subject and close note
  * get this many returns, and the lines the diff adds as many again, each
  * counted apart from the other and from the repair prompts of a malformed
- * answer.
+ * answer. A commit the host repository's hook refuses gets as many returns
+ * again, counted apart from those.
  */
 export const ID_RETURNS = 2;
 
@@ -291,9 +293,10 @@ const reviewed: Check = (answer: Answer) => {
 };
 
 /**
- * The reviewer's answer when the landing sends it back for a card id: its
- * whole report again, under an outcome that lands, findings included, since
- * the answer that passes the checks is the one whose findings are filed.
+ * The reviewer's answer when the landing sends it back for a card id or a
+ * hook's refusal: its whole report again, under an outcome that lands,
+ * findings included, since the answer that lands is the one whose findings
+ * are filed.
  */
 const LANDING: ObjectSchema = {
   type: "object",
@@ -423,13 +426,19 @@ export function reconcilerPrompt(card: { path: string; text: string }, document:
  * tool appends to the card's record under `## Gap`. Nothing is
  * committed until the reviewer's subject and close note, and the lines the
  * diff adds, cite no card id of the deck, as `referenceChecked` holds them.
- * Every answer's findings are filed as waiting cards as the answer is read,
- * whatever its outcome, but for a reviewer's `approved` or `fixed`: each
- * answer the landing sends back is replaced by the reviewer's next, which
- * restates the whole report, so the findings filed are those of the answer
- * that passes, and a reviewer that fails at its last return files none. A
- * reconciler that stops, a reviewer asking for a revision past the cap, or a
- * role that fails, ends the cycle stopped, with its cause and session.
+ * A commit the host repository's hook refuses resumes the reviewer under
+ * hook-refused.md with git's output quoted, to fix what the hook refused as a
+ * small fix, and its answer goes through the id checks and the commit again,
+ * for up to ID_RETURNS returns, after which the reviewer has failed; no hook
+ * is ever bypassed. Every answer's findings are filed as waiting cards as the
+ * answer is read, whatever its outcome, but for a reviewer's `approved` or
+ * `fixed`: each answer the landing sends back, for a card id or a hook, is
+ * replaced by the reviewer's next, which restates the whole report, so the
+ * findings filed are those of the answer that lands, filed once its commit is
+ * made and before the commit is recorded, and a reviewer that fails at its
+ * last return files none. A reconciler that stops, a reviewer asking for a
+ * revision past the cap, or a role that fails, ends the cycle stopped, with
+ * its cause and session.
  */
 export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, harness: Harness): Promise<CycleEnd> {
   const base = await headSha(tree);
@@ -530,16 +539,35 @@ async function cycleFrom(
   for (;;) {
     const { role, step } = cycle;
     let answer: Answer;
+    // The card's commit, once a reviewer's answer has landed.
+    let sha = "";
     try {
       answer = await answering(session(role), prompt, ...asked(step, exchanges, final));
-      if (step === "review" && answer.outcome !== "revision") {
+      for (let hookReturns = 0; step === "review" && answer.outcome !== "revision"; hookReturns++) {
         answer = await referenceChecked(deck, session(role), tree, base, answer);
+        const { subject, close_note: note } = answer as { subject: string; close_note: string };
+        cycle = { ...cycle, step: "land", subject, note };
+        plan = await writeRecord(plan, { cycle });
+        try {
+          // `referenceChecked` undid any commit of the reviewer's before it read the diff.
+          sha = await land(subject, note, tree);
+          break;
+        } catch (error) {
+          // The tool never passes --no-verify: the host repository's rules are not its to waive.
+          if (!(error instanceof CommitRefused)) throw error;
+          if (hookReturns === ID_RETURNS) {
+            throw new RoleFailure(`the host repository's hook still refused the commit after ${ID_RETURNS} returns: ${error.message}`);
+          }
+          answer = await resume(session(role), fill(hookRefused, { OUTPUT: error.message }), LANDING, reviewed);
+        }
       }
     } catch (error) {
       if (!(error instanceof RoleFailure)) throw error;
       return { plan, outcome: "stopped", role, session: session(role), cause: error.message };
     }
-    // For a reviewer, from the answer that passed, which restates its whole report.
+    // For a reviewer, from the answer that landed, which restates its whole
+    // report, and before its commit is recorded, so a run dying between the
+    // two reruns the card rather than losing them.
     plan = await fileFindings(deck, plan, role, id, answer);
 
     if (answer.outcome === "stop") {
@@ -611,13 +639,8 @@ async function cycleFrom(
       prompt = fill(final ? finalRevise : revise, { FEEDBACK: feedback.trimEnd() });
       answering = resume;
     } else {
-      const { subject, close_note: note } = answer as { subject: string; close_note: string };
-      cycle = { ...cycle, step: "land", subject, note };
-      plan = await writeRecord(plan, { cycle });
-      // `referenceChecked` undid any commit of the reviewer's before it read the diff.
-      const sha = await land(subject, note, tree);
       plan = await writeRecord(plan, { cycle: { ...cycle, commit: sha } });
-      await closeCard(deck, id, "done", note);
+      await closeCard(deck, id, "done", cycle.note!);
       return { plan, outcome: "landed", sha };
     }
   }

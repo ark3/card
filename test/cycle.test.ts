@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { EXCHANGES, ID_RETURNS, RECONCILER, REVISION_ROUNDS, runCard } from "../src/cycle.ts";
 import { createDeck, type Deck } from "../src/deck.ts";
@@ -957,4 +957,92 @@ test("a reviewer that fails at the third return files none of its findings, as a
   expect(ended.outcome).toBe("stopped");
   expect((await filed(deck)).findings).toEqual([]);
   expect(ended.plan.findings).toEqual([]);
+});
+
+// What the host repository's pre-commit hook says when it refuses the commit.
+const HOOK_SAYS = "hello.txt: a TODO is left in";
+/** A pre-commit hook in `repo`, which its worktrees share, refusing while hello.txt holds a TODO. */
+function refusing(repo: string): void {
+  const hook = `#!/bin/sh\nif grep -q TODO hello.txt; then echo '${HOOK_SAYS}' >&2; exit 1; fi\n`;
+  writeFileSync(path.join(repo, ".git", "hooks", "pre-commit"), hook, { mode: 0o755 });
+}
+// The implementer's work with a TODO the hook refuses.
+const TODO_WORK = "printf 'hello\\nTODO\\n' > hello.txt";
+// A reviewer's answer after removing the TODO, as its small fix.
+const linted = (run = "sed -i '/TODO/d' hello.txt") => answer({ outcome: "fixed", subject: SUBJECT, close_note: NOTE }, run);
+
+test("a commit the host repository's hook refuses resumes the reviewer under hook-refused with git's output quoted, and lands one commit once the hook passes", async () => {
+  const { repo, deck, plan, id, tree, base, before } = await running();
+  refusing(repo);
+  const { control, ended } = await cycle(deck, plan, id, tree, [done(TODO_WORK)], [approved(), linted()]);
+
+  const [, fixing, ...more] = calls(control, ids[2]!);
+  expect(more).toEqual([]);
+  expect(fixing!.argv).toEqual(["pi", "-p", "--session-id", ids[2]!]);
+  expect(fixing!.cwd).toBe(tree);
+  expect(fixing!.stdin).toStartWith("# Fixing what a hook refused\n");
+  expect(fixing!.stdin).toMatch(new RegExp(`<output>\\n[^<]*${HOOK_SAYS}[^<]*\\n</output>\\n`));
+  expect(fixing!.stdin).toContain(LANDING_ENUM);
+  expect(fixing!.stdin).not.toContain("{{");
+  expect(ended.outcome).toBe("landed");
+  expect((await gitOrThrow(["rev-parse", "HEAD~1"], tree)).trim()).toBe(base);
+  expect(await gitOrThrow(["show", "HEAD:hello.txt"], tree)).toBe("hello\n");
+  expect(await message(tree)).toBe(`${SUBJECT}\n\n${NOTE}\n`);
+  expect(await gitOrThrow(["status", "--porcelain"], tree)).toBe("");
+  expect(existsSync(path.join(deck.closedDir, `${id}.md`))).toBe(true);
+  expect(await mainState(repo)).toEqual(before);
+});
+
+test("a reviewer committing its fix for the hook has the commit undone, and the card still lands as one commit", async () => {
+  const { repo, deck, plan, id, tree, base } = await running();
+  refusing(repo);
+  const committing = linted("sed -i '/TODO/d' hello.txt && git add -A && git commit -q -m 'Remove the TODO'");
+  const { ended } = await cycle(deck, plan, id, tree, [done(TODO_WORK)], [approved(), committing]);
+
+  expect(ended.outcome).toBe("landed");
+  expect((await gitOrThrow(["rev-parse", "HEAD~1"], tree)).trim()).toBe(base);
+  expect(await gitOrThrow(["show", "HEAD:hello.txt"], tree)).toBe("hello\n");
+  expect(await message(tree)).toBe(`${SUBJECT}\n\n${NOTE}\n`);
+});
+
+test("the landing runs the id check again on the answer to a hook's refusal", async () => {
+  const { repo, deck, plan, id, tree } = await running();
+  refusing(repo);
+  const { control, ended } = await cycle(deck, plan, id, tree, [done(TODO_WORK)], [approved(), linted(`sed -i 's/TODO/see ${CITED}/' hello.txt`), stripped()]);
+
+  const turns = calls(control, ids[2]!);
+  expect(turns.map(({ stdin }) => stdin.split("\n")[0])).toEqual(["# Reviewing one card", "# Fixing what a hook refused", "# Removing card ids from the diff"]);
+  expect(ended.outcome).toBe("landed");
+  expect(await gitOrThrow(["show", "HEAD:hello.txt"], tree)).toBe("hello\n");
+});
+
+test("findings across a hook's refusal are filed from the answer that lands, each restated finding once and a new one too", async () => {
+  const { repo, deck, plan, id, tree } = await running();
+  refusing(repo);
+  const [first, added] = FOUND as [{ headline: string; body: string }, { headline: string; body: string }];
+  const { ended } = await cycle(deck, plan, id, tree, [done(TODO_WORK)], [finding(approved(), [first]), finding(linted(), [first, added])]);
+
+  expect(ended.outcome).toBe("landed");
+  const { findings, files, waiting } = await filed(deck);
+  expect(files).toEqual([findingFile("reviewer", id, first), findingFile("reviewer", id, added)]);
+  expect(waiting).toEqual(findings.map((found) => found.id).sort());
+});
+
+test(`a commit the hook still refuses after ${ID_RETURNS} returns stops the cycle as a reviewer that failed, with git's output as the cause, and commits nothing`, async () => {
+  const { repo, deck, plan, id, tree, base, before } = await running();
+  refusing(repo);
+  const unfixed = finding(answer({ outcome: "fixed", subject: SUBJECT, close_note: NOTE }));
+  const { control, ended } = await cycle(deck, plan, id, tree, [done(TODO_WORK)], [finding(approved()), unfixed, unfixed]);
+
+  expect(calls(control, ids[2]!)).toHaveLength(1 + ID_RETURNS);
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reviewer");
+  expect(ended.session).toEqual({ harness: "pi", id: ids[2]!, dir: tree });
+  expect(ended.cause).toStartWith(`the host repository's hook still refused the commit after ${ID_RETURNS} returns: git refused the commit:`);
+  expect(ended.cause).toContain(HOOK_SAYS);
+  expect(await headSha(tree)).toBe(base);
+  expect(existsSync(path.join(deck.openDir, `${id}.md`))).toBe(true);
+  expect((await filed(deck)).findings).toEqual([]);
+  expect(await mainState(repo)).toEqual(before);
 });

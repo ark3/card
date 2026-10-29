@@ -195,6 +195,8 @@ Execution starts by making sure the plan's branch, named by authoring, exists: t
 The tool then holds that branch checked out in a worktree for the plan, under `.worktrees/`, from the start of the run until the plan ends, so git itself refuses to check it out anywhere else meanwhile, and the tool never touches the main checkout or cares what it has checked out.
 Cards run in series in that one worktree: the implementer works there uncommitted, the reviewer reviews the uncommitted diff and makes its small fixes in place, revision rounds continue on the same state, and on approval the tool makes the card's one commit, the reviewer's subject over the close note as its body, and closes the card done.
 Before committing, the tool checks the lines the card's diff adds for card ids, as it checks the close note: a diff that fails goes back to the reviewer, resumed with the offending lines quoted, to remove the id as one of its small fixes, and a diff still failing after two tries stops the run as a role that failed.
+A commit the host repository's hook refuses goes back to the reviewer the same way, resumed with git's output quoted, to fix what the hook refused as one of its small fixes, in the worktree's files or in its subject and close note, and a commit still refused after two tries stops the run as a role that failed, with git's output as the cause and nothing committed.
+The tool never passes `--no-verify`, because at work the host repository's rules are not the owner's to waive, and most hooks are linters and message-format checks, which are the reviewer's small fixes anyway.
 A card that changed nothing, as the final card usually does, still gets its commit, an empty one, so that every card's close note lands in git, the final card's guide included.
 This was chosen over a worktree per card, cut from the plan's tip and fast-forwarded back, because a fresh tree can need its dependencies installed before anything runs, once per card, while the roles of one card never run at once and nothing needs their work apart; disposal in place is deterministic code, and one commit per card matches the card as the smallest unit.
 An implementer that commits out of habit moves the worktree's HEAD, which the tool detects and undoes, keeping the changes.
@@ -231,7 +233,7 @@ Choosing the id is required, not only convenient: in a cloud container every `cl
 Unsetting `CLAUDE_CODE_SESSION_ID` does not help; only choosing the id does.
 
 **When a role fails.**
-A role that ends without a valid answer — a crash, an error, a usage limit, an answer still malformed after two repair prompts, or a close note or diff still citing a card id after two — stops the run with the cause named, as a bounce.
+A role that ends without a valid answer — a crash, an error, a usage limit, an answer still malformed after two repair prompts, a close note or diff still citing a card id after two, or a commit the host repository's hook still refuses after two — stops the run with the cause named, as a bounce.
 `card resume` retries it by resuming the same session, and `card ask` can ask that session what happened.
 A usage limit stops the run like any other failure; waiting it out instead stays open ("What stays open" below).
 A role running short of context needs no route of its own: it answers, or it fails into this one.
