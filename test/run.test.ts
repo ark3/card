@@ -259,7 +259,7 @@ test(
     expect(bounce?.cause).toContain("usage limit reached");
     expect(await subjects(repo, base)).toEqual([]);
     expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
-    const report = bouncedReport(first, "implementer", bounce!.cause, `cd ${bounce!.session.dir} && pi --session-id ${bounce!.session.id}`);
+    const report = bouncedReport(first, "implementer", bounce!.cause, `cd '${bounce!.session.dir}' && pi --session-id ${bounce!.session.id}`);
     expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
   },
   SLOW,
@@ -285,7 +285,7 @@ test(
     expect(existsSync(path.join(control, "queue", "2", "answers"))).toBe(true);
     expect(await subjects(repo, base)).toEqual([]);
     expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
-    const report = bouncedReport(first, "reconciler", cause, `cd ${bounce!.session.dir} && pi --session-id ${bounce!.session.id}`, question);
+    const report = bouncedReport(first, "reconciler", cause, `cd '${bounce!.session.dir}' && pi --session-id ${bounce!.session.id}`, question);
     expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
     expect(readFileSync(path.join(plan.dir, "run.log"), "utf8")).toContain(`It asks the owner: ${question}`);
   },
@@ -310,7 +310,7 @@ test(
     expect(calls(control, cycle!.sessions.implementer!)).toHaveLength(4);
     expect(await subjects(repo, base)).toEqual([]);
     expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
-    const resume = `cd ${bounce!.session.dir} && pi --session-id ${bounce!.session.id}`;
+    const resume = `cd '${bounce!.session.dir}' && pi --session-id ${bounce!.session.id}`;
     const report = bouncedReport(first, "reviewer", cause, resume, undefined, "Round 4: not yet.");
     expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
   },
@@ -363,7 +363,7 @@ test(
     expect(calls(control, cycle!.sessions.implementer!)).toHaveLength(4);
     expect(await subjects(repo, base)).toEqual([]);
     expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
-    const report = bouncedReport(first, "reconciler", cause, `cd ${bounce!.session.dir} && pi --session-id ${bounce!.session.id}`, question);
+    const report = bouncedReport(first, "reconciler", cause, `cd '${bounce!.session.dir}' && pi --session-id ${bounce!.session.id}`, question);
     expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
   },
   SLOW,
@@ -392,7 +392,7 @@ test(
     expect(await subjects(repo, base)).toEqual(["Add the greeting"]);
     expect(existsSync(path.join(deck.openDir, `${final}.md`))).toBe(true);
     expect(readFileSync(path.join(deck.openDir, `${final}.md`), "utf8")).toBe(`# Check the plan\n\nBody.\n\n## Gap\n\n${gap}\n`);
-    const resume = `cd ${bounce!.session.dir} && pi --session-id ${bounce!.session.id}`;
+    const resume = `cd '${bounce!.session.dir}' && pi --session-id ${bounce!.session.id}`;
     const report =
       `The plan \`greeting\`'s run bounced at this card, where the reconciler stopped it:\n\n${final}  Check the plan\n\n` +
       `The cause recorded for it:\n\n${cause}\n\nThe gap the final card found:\n\n${gap}\n\nThe question it asks:\n\n${question}\n\n` +
@@ -765,7 +765,7 @@ test(
     expect(bounce!.cause).toContain("Permission denied");
     const tree = path.join(repo, ".worktrees", "greeting");
     expect(bounce).toEqual({ role: "reviewer", session: { harness: "pi", id: cycle!.sessions.reviewer!, dir: tree }, cause: bounce!.cause });
-    const report = bouncedReport(first, "reviewer", bounce!.cause, `cd ${tree} && pi --session-id ${bounce!.session.id}`);
+    const report = bouncedReport(first, "reviewer", bounce!.cause, `cd '${tree}' && pi --session-id ${bounce!.session.id}`);
     expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
     expect(record(plan.dir).state).toBe("Bounced");
   },
@@ -821,8 +821,8 @@ for (const [harness, resume] of [
     await writeRecord(plan, { state: "Bounced", harness, cycle, bounce: { role: "reviewer", session, cause: RECORDED } });
 
     const result = await card([], repo);
-    expect(result.stdout).toBe(forOwner(bouncedReport(first, "reviewer", RECORDED, `cd ${session.dir} && ${resume(session.id)}`)));
-    expect(result.stdout).toContain(`  cd ${session.dir} && ${resume(session.id)}\n`);
+    expect(result.stdout).toBe(forOwner(bouncedReport(first, "reviewer", RECORDED, `cd '${session.dir}' && ${resume(session.id)}`)));
+    expect(result.stdout).toContain(`  cd '${session.dir}' && ${resume(session.id)}\n`);
   });
 }
 
@@ -1807,7 +1807,7 @@ test(
     await until("the plan to bounce", () => record(plan!.dir).state === "Bounced");
     const tree = path.join(repo, ".worktrees", "greeting");
     const { bounce } = record(plan!.dir);
-    const report = bouncedReport(first, "reconciler", bounce!.cause, `cd ${tree} && pi --session-id ${bounce!.session.id}`, question);
+    const report = bouncedReport(first, "reconciler", bounce!.cause, `cd '${tree}' && pi --session-id ${bounce!.session.id}`, question);
     expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
     await closedIn(repo, plan!.dir, "Bounced", waiting);
     expect((await card(["resume"], repo, `${OWNER_ANSWER}\n`)).code).toBe(0);

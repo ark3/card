@@ -1,8 +1,8 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { answerInstruction, type ObjectSchema, readAnswer } from "../src/answer.ts";
-import { chooseHarness, type Harness, launch, REPAIR_PROMPTS, resume, RoleFailure } from "../src/harness.ts";
+import { chooseHarness, type Harness, launch, REPAIR_PROMPTS, resume, resumeCommand, RoleFailure } from "../src/harness.ts";
 import { calls, type Reply, removeTempDirs, script, stand, tempDir } from "./helpers.ts";
 
 const OUTER_PATH = process.env.PATH;
@@ -110,6 +110,17 @@ test("Pi launches and resumes alike with --session-id, the prompt on stdin, in t
   expect(second.stdin).toBe(`second prompt\n\n${answerInstruction(SCHEMA)}`);
   expect(first.cwd).toBe(role.dir);
   expect(second.cwd).toBe(role.dir);
+});
+
+test("the resume command runs from its directory even when the path holds a space or a quote", () => {
+  const dir = path.join(tempDir(), "it's a dir");
+  mkdirSync(dir);
+  const bin = tempDir();
+  for (const harness of ["claude", "pi"] as const) {
+    writeFileSync(path.join(bin, harness), "#!/bin/sh\npwd\n", { mode: 0o755 });
+    const ran = Bun.spawnSync(["/bin/sh", "-c", resumeCommand({ harness, id: ID, dir })], { env: { PATH: bin } });
+    expect(ran.stdout.toString()).toBe(`${dir}\n`);
+  }
 });
 
 test("a Claude Code result holding one JSON object is the answer", async () => {

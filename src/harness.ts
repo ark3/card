@@ -48,11 +48,12 @@ function command(harness: Harness, id: string, resuming: boolean): string[] {
 
 /**
  * The command that resumes `session` interactively at a terminal, from the
- * directory it ran in. Pi's `--session-id` takes the exact id, as at launch,
- * where its `--session` would also match a partial one.
+ * directory it ran in, quoted for a POSIX shell because the repository root
+ * it sits under is wherever the owner cloned. Pi's `--session-id` takes the
+ * exact id, as at launch, where its `--session` would also match a partial one.
  */
 export function resumeCommand({ harness, id, dir }: Session): string {
-  return `cd ${dir} && ${harness === "pi" ? `pi --session-id ${id}` : `claude --resume ${id}`}`;
+  return `cd '${dir.replaceAll("'", "'\\''")}' && ${harness === "pi" ? `pi --session-id ${id}` : `claude --resume ${id}`}`;
 }
 
 /**
