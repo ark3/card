@@ -2,7 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Card } from "../cardfile.ts";
 import { readCard } from "../cardfile.ts";
-import { requireDeck } from "../deck.ts";
+import { requireDeck, stagedId } from "../deck.ts";
 
 const USAGE = "usage: card list [--open | --ready | --closed] [--label L]...";
 const LISTINGS = ["--open", "--ready", "--closed"];
@@ -48,6 +48,20 @@ export async function run(args: string[], cwd: string): Promise<void> {
   const wantsReady = listing === "--ready";
 
   const deck = await requireDeck(cwd);
+  // `close` stages under a name no listing shows, so a close that died between
+  // its write and its rename leaves a file that is otherwise invisible to every
+  // verb, for good. This line is where a deck says it happened, on stderr beside
+  // the other reports of a deck in disrepair, since stdout is the listing and a
+  // leftover is not a card. Named, never removed: the file is the only copy of
+  // a close note somebody typed, and unlinking one under a close still in
+  // flight would take out the rename that makes a close atomic.
+  for (const name of (await readdir(deck.closedDir)).sort()) {
+    const id = stagedId(name);
+    if (id === null) continue;
+    console.error(
+      `card: ${path.join(deck.closedDir, name)} is a close that stopped before its rename, so ${id} is still open and its close note is in that file alone; close ${id} again to replace it, or delete it`,
+    );
+  }
   const dir = wantsClosed ? deck.closedDir : deck.openDir;
   const listedIds = await ids(dir);
   // A closed card's blockers are history, so only an open listing pays for the

@@ -64,3 +64,22 @@ test("refuses a prefix that would not make a filename", async () => {
   await expect(init(["--prefix"], repo)).rejects.toThrow(/not a usable prefix/);
   expect(await resolveDeck(repo)).toBeNull();
 });
+
+test("rg reaches the cards from a repository whose .gitignore hides *.md", async () => {
+  const repo = await tempRepo();
+  // The hostile case the deck's `.ignore` exists to defeat: ripgrep walks up
+  // from its working directory and would otherwise honour this.
+  await Bun.write(path.join(repo, ".gitignore"), "*.md\n");
+  await init(["proj"], repo);
+  const deck = (await resolveDeck(repo))!;
+  await Bun.write(
+    path.join(deck.openDir, "proj-aaaaaa.md"),
+    "---\nblocked-by: [proj-bbbbbb]\n---\n\n# waiting\n",
+  );
+  await Bun.write(path.join(deck.openDir, "proj-bbbbbb.md"), "# free\n");
+
+  const proc = Bun.spawn(["rg", "^blocked-by:", "open"], { cwd: deck.deckDir, stdout: "pipe" });
+  const stdout = await new Response(proc.stdout).text();
+  expect(await proc.exited).toBe(0);
+  expect(stdout).toBe("open/proj-aaaaaa.md:blocked-by: [proj-bbbbbb]\n");
+});

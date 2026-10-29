@@ -5,8 +5,7 @@ import { type Deck, resolveDeck } from "../src/deck.ts";
 import { git } from "../src/git.ts";
 import { run as close } from "../src/verbs/close.ts";
 import { run as init } from "../src/verbs/init.ts";
-import { run as worktree } from "../src/verbs/worktree.ts";
-import { bareCloneWithWorktree, clearCardRoot, removeTempDirs, tempRepo } from "./helpers.ts";
+import { clearCardRoot, removeTempDirs, tempRepo } from "./helpers.ts";
 
 const CARD = "---\nlabels: [PROJ-1]\n---\n\n# The card being closed\n\nIts body.\n";
 const NOTE = "Landed as PROJ-1. Verified by the suite in test/close.test.ts.";
@@ -306,24 +305,6 @@ test("a close whose card was blocking nothing says so rather than printing nothi
   expect(logged).toEqual(["closed proj-behilo", "nothing was waiting on it."]);
 });
 
-test("names a worktree still standing for the card, and the commands that remove it", async () => {
-  const { repo, deck } = await deckIn();
-  await open(deck, "proj-behilo", CARD);
-  await worktree(["proj-behilo"], repo);
-  logged = [];
-  onStdin(`${NOTE}\n`);
-
-  await close(["proj-behilo", "--done"], repo);
-
-  const treePath = path.join(repo, ".worktrees", "proj-behilo");
-  expect(logged[0]).toBe("closed proj-behilo");
-  const printed = logged.join("\n");
-  expect(printed).toContain(treePath);
-  expect(printed).toContain("card/proj-behilo");
-  expect(printed).toContain(`git worktree remove ${treePath} && git branch -D card/proj-behilo`);
-  expect(printed).toContain("nothing was waiting on it.");
-});
-
 test("refuses without a flag, with two flags, and with the retired spellings", async () => {
   const { repo, deck } = await deckIn();
   const file = await open(deck, "proj-behilo", CARD);
@@ -352,52 +333,16 @@ test("refuses when there is no deck", async () => {
   await expect(close(["proj-behilo", "--done"], repo)).rejects.toThrow(/no deck here/);
 });
 
-test("refuses from a linked worktree, naming the main checkout, and closes from the main checkout itself", async () => {
+test("closes from a linked worktree, into the deck the main checkout reaches", async () => {
   const { repo, deck } = await deckIn();
-  const file = await open(deck, "proj-behilo", CARD);
-  await worktree(["proj-behilo"], repo);
+  await open(deck, "proj-behilo", CARD);
   const tree = path.join(repo, ".worktrees", "proj-behilo");
+  expect((await git(["worktree", "add", "-q", "-b", "card/proj-behilo", tree], repo)).ok).toBe(true);
   onStdin(`${NOTE}\n`);
 
-  await expect(close(["proj-behilo", "--done"], tree)).rejects.toThrow(
-    new RegExp(`dispatching session.*main checkout at ${repo}$`),
-  );
-  expect(await Bun.file(file).text()).toBe(CARD);
+  await close(["proj-behilo", "--done"], tree);
 
-  onStdin(`${NOTE}\n`);
-  await close(["proj-behilo", "--done"], repo);
-
+  expect(await Bun.file(path.join(deck.openDir, "proj-behilo.md")).exists()).toBe(false);
   expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toBe(closedFile("done"));
-});
-
-test("refuses from a linked worktree of a detached main checkout without mentioning the branch it cannot cut", async () => {
-  const { repo, deck } = await deckIn();
-  const file = await open(deck, "proj-behilo", CARD);
-  await worktree(["proj-behilo"], repo);
-  const tree = path.join(repo, ".worktrees", "proj-behilo");
-  await git(["checkout", "-q", "--detach"], repo);
-  onStdin(`${NOTE}\n`);
-
-  await expect(close(["proj-behilo", "--done"], tree)).rejects.toThrow(
-    new RegExp(`dispatching session.*main checkout at ${repo}$`),
-  );
-  expect(await Bun.file(file).text()).toBe(CARD);
-});
-
-test("refuses from a linked worktree of a bare repository, which has no checkout to name", async () => {
-  const { bare, tree } = await bareCloneWithWorktree(await tempRepo());
-  await init(["proj"], bare);
-  const deck = (await resolveDeck(bare))!;
-  const file = await open(deck, "proj-behilo", CARD);
-  onStdin(`${NOTE}\n`);
-
-  const error = await close(["proj-behilo", "--done"], tree).then(
-    () => null,
-    (thrown: Error) => thrown,
-  );
-
-  expect(error?.message).toContain("dispatching session");
-  expect(error?.message).toContain(`${bare}, the bare repository the deck is reached from`);
-  expect(error?.message).not.toMatch(/branch|no main checkout/);
-  expect(await Bun.file(file).text()).toBe(CARD);
+  expect(logged).toEqual(["closed proj-behilo", "nothing was waiting on it."]);
 });

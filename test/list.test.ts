@@ -272,3 +272,23 @@ test("a listing is ordered by when each card was last updated, newest first", as
     "proj-dddddd  closed first",
   ]);
 });
+
+// A close that dies between its write and its rename leaves a hidden staging
+// file that no listing shows and no count includes, so this line is the only
+// thing standing between a deck and a leftover nobody ever hears about.
+test("names a staging file a close died before renaming, and leaves it there", async () => {
+  const { repo, deck } = await fixture();
+  await put(deck, "open", "proj-behilo", { headline: "one" });
+  const leftover = path.join(deck.closedDir, ".proj-behilo.md.closing");
+  await Bun.write(leftover, "# one\n\nThe close note that never landed.\n");
+
+  const { out, err } = await run([], repo);
+
+  expect(err.join("\n")).toContain(leftover);
+  expect(err.join("\n")).toContain("stopped before its rename");
+  expect(err.join("\n")).toContain("proj-behilo is still open");
+  // Still listed as open, and the file it named is still on disk with the
+  // note inside it.
+  expect(out).toEqual(["proj-behilo  one"]);
+  expect(await Bun.file(leftover).text()).toContain("The close note that never landed.");
+});

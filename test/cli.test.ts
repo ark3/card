@@ -1,17 +1,15 @@
 import { afterAll, expect, test } from "bun:test";
-import { chmodSync } from "node:fs";
 import path from "node:path";
-import { removeTempDirs, tempDir, tempRepo } from "./helpers.ts";
+import { removeTempDirs, tempRepo } from "./helpers.ts";
 
 const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
 
 afterAll(removeTempDirs);
 
 /** Runs the entry point as the shell would: shebang, executable bit and all. */
-async function card(args: string[], cwd: string, options: { stdin?: string; home?: string } = {}) {
+async function card(args: string[], cwd: string, options: { stdin?: string } = {}) {
   const env = { ...process.env };
   delete env.CARD_ROOT;
-  if (options.home !== undefined) env.HOME = options.home;
   const proc = Bun.spawn([CARD, ...args], {
     cwd,
     env,
@@ -24,16 +22,6 @@ async function card(args: string[], cwd: string, options: { stdin?: string; home
     new Response(proc.stderr).text(),
   ]);
   return { code: await proc.exited, stdout, stderr };
-}
-
-/**
- * A read-only `$HOME`, which is what the sandbox looks like to the probe. Real
- * runs get this from the sandbox; tests must not depend on being inside one.
- */
-function sandboxedHome(): string {
-  const home = tempDir();
-  chmodSync(home, 0o500);
-  return home;
 }
 
 test("no verb prints usage and fails", async () => {
@@ -51,16 +39,18 @@ test("an unknown verb prints usage and fails", async () => {
   expect(result.stderr).toContain("usage: card <verb>");
 });
 
+test("the retired workflow verbs are each refused as unknown", async () => {
+  const repo = await tempRepo();
+  for (const name of ["status", "cmd", "worktree", "author", "execute", "run", "workflow"]) {
+    const result = await card([name], repo);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain(`no such verb as \`${name}\``);
+  }
+});
+
 test("one card walks the whole loop, through the real executable", async () => {
   const repo = await tempRepo();
-  const home = sandboxedHome();
-  const run = (args: string[], stdin?: string) => card(args, repo, { home, stdin });
-
-  // Nothing about cards before there is a deck: that is what makes `card
-  // status` safe to run unconditionally in a project that never adopts it.
-  const cold = await run(["status"]);
-  expect(cold.code).toBe(0);
-  expect(cold.stdout).not.toContain("card workflow");
+  const run = (args: string[], stdin?: string) => card(args, repo, { stdin });
 
   expect((await run(["init", "proj"])).code).toBe(0);
 
@@ -90,14 +80,6 @@ test("one card walks the whole loop, through the real executable", async () => {
   const shown = await run(["show", blocker]);
   expect(shown.code).toBe(0);
   expect(shown.stdout).toContain("Landed in abc1234.");
-
-  // The payload reaches a session only once there is a deck, and it carries
-  // the counts rather than describing them.
-  const warm = await run(["status"]);
-  expect(warm.stdout).toContain("1 open, 1 closed");
-  expect(warm.stdout).toContain("run `card workflow` first");
-
-  chmodSync(home, 0o700);
 });
 
 test("init, then a second init that refuses", async () => {

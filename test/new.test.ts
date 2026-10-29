@@ -4,7 +4,6 @@ import { git } from "../src/git.ts";
 import { type Deck, resolveDeck } from "../src/deck.ts";
 import { run as init } from "../src/verbs/init.ts";
 import { run as neu } from "../src/verbs/new.ts";
-import { run as worktree } from "../src/verbs/worktree.ts";
 import { bareCloneWithWorktree, clearCardRoot, removeTempDirs, tempRepo } from "./helpers.ts";
 
 const realStdin = Bun.stdin;
@@ -163,8 +162,8 @@ test("refuses when there is no deck", async () => {
 
 test("refuses from a linked worktree, naming the main checkout, and files from the main checkout itself", async () => {
   const { repo, deck } = await deckIn();
-  await worktree(["proj-behilo"], repo);
   const tree = path.join(repo, ".worktrees", "proj-behilo");
+  await git(["worktree", "add", "-q", "-b", "card/proj-behilo", tree], repo);
   onStdin("A body that must not land.\n");
 
   await expect(neu(["Filed from a dispatched tree"], tree)).rejects.toThrow(
@@ -183,8 +182,8 @@ test("refuses from a linked worktree, naming the main checkout, and files from t
 
 test("refuses from a linked worktree of a detached main checkout without mentioning the branch it cannot cut", async () => {
   const { repo, deck } = await deckIn();
-  await worktree(["proj-behilo"], repo);
   const tree = path.join(repo, ".worktrees", "proj-behilo");
+  await git(["worktree", "add", "-q", "-b", "card/proj-behilo", tree], repo);
   await git(["checkout", "-q", "--detach"], repo);
   onStdin("A body that must not land.\n");
 

@@ -58,3 +58,32 @@ export async function listWorktrees(cwd: string): Promise<Worktree[]> {
     return [{ root, bare: lines.includes("bare"), sha: field("HEAD"), branch: field("branch") }];
   });
 }
+
+/**
+ * The first record of `git worktree list --porcelain`, which is the main
+ * checkout, or the repository itself where that is bare and so has no checkout
+ * of its own.
+ */
+export async function firstListed(cwd: string): Promise<Worktree> {
+  const first = (await listWorktrees(cwd))[0];
+  if (first === undefined) throw new Error("git named no worktree");
+  return first;
+}
+
+/**
+ * Refuses a deck-writing verb run from a linked worktree, which is where a
+ * dispatched session works: filing is the dispatching session's work, and
+ * where the deck is committed in the tree the write lands in the main
+ * checkout's tree, uncommitted, where the dispatched session's branch never
+ * sees it.
+ */
+export async function refuseFromLinkedWorktree(verb: string, cwd: string): Promise<void> {
+  if (!(await inLinkedWorktree(cwd))) return;
+  // The root alone, with no branch resolved: a detached or bare main checkout
+  // has no branch, and this refusal holds either way.
+  const { root, bare } = await firstListed(cwd);
+  const where = bare ? `${root}, the bare repository the deck is reached from` : `the main checkout at ${root}`;
+  throw new Error(
+    `card ${verb} writes the deck, which is the dispatching session's work, not a dispatched one's; run it from ${where}`,
+  );
+}

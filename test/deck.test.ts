@@ -107,14 +107,22 @@ describe("the config", () => {
     expect(deck?.deckDir).toBe(path.join(repo, "docs", "work"));
   });
 
-  test("with a non-boolean public is reported rather than guessed at", async () => {
-    const repo = await tempRepo();
-    const cardDir = path.join(repo, ".git", "card");
-    mkdirSync(cardDir, { recursive: true });
-    await Bun.write(path.join(cardDir, "card-config.toml"), 'prefix = "OW"\npublic = "true"\n');
+  for (const value of ["true", "false"]) {
+    test(`with public = ${value} is refused, naming the file and saying the flag is gone`, async () => {
+      const repo = await tempRepo();
+      const cardDir = path.join(repo, ".git", "card");
+      mkdirSync(cardDir, { recursive: true });
+      const configPath = path.join(cardDir, "card-config.toml");
+      await Bun.write(configPath, `prefix = "OW"\npublic = ${value}\n`);
 
-    await expect(resolveDeck(repo)).rejects.toThrow(/non-boolean public/);
-  });
+      const error = await resolveDeck(repo).then(
+        () => null,
+        (thrown: Error) => thrown,
+      );
+      expect(error?.message).toContain(configPath);
+      expect(error?.message).toContain("public flag is gone");
+    });
+  }
 
   test("without a prefix is reported rather than guessed at", async () => {
     const repo = await tempRepo();
