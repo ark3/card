@@ -4,6 +4,8 @@ import { gitCommonDir } from "./git.ts";
 
 export const CONFIG_NAME = "card-config.toml";
 export const DEFAULT_DECK = "deck";
+/** The prefix a deck gets when it is created without anyone choosing one. */
+export const DEFAULT_PREFIX = "card";
 
 const PREFIX = /^[A-Za-z][A-Za-z0-9_-]*$/;
 // Prefixes are letters, digits, `-` and `_`; syllables are letters. Anything

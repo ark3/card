@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import path from "node:path";
 import { git } from "../src/git.ts";
+import { idPattern } from "../src/id.ts";
 import { type Deck, resolveDeck } from "../src/deck.ts";
 import { run as init } from "../src/verbs/init.ts";
 import { run as neu } from "../src/verbs/new.ts";
@@ -155,9 +156,22 @@ test("refuses a flag with no value, and a flag it does not know", async () => {
   await expect(neu(["A headline", "--kind", "bug"], repo)).rejects.toThrow(/no such option as `--kind`/);
 });
 
-test("refuses when there is no deck", async () => {
+test("creates the deck under the prefix card where there is none, and files into it", async () => {
   const repo = await tempRepo();
-  await expect(neu(["A headline"], repo)).rejects.toThrow(/no deck here/);
+  onStdin("The first thought put down here.\n");
+
+  await neu(["A headline"], repo);
+
+  expect(await Bun.file(path.join(repo, ".git", "card", "card-config.toml")).text()).toBe(
+    'prefix = "card"\ndeck = "deck"\n',
+  );
+  // By pattern, never by literal: a literal id under this prefix in the source
+  // is a citation as far as the id check can tell.
+  expect(logged[0]).toMatch(new RegExp(`^${idPattern("card").source}$`));
+  const deck = (await resolveDeck(repo))!;
+  expect(await Bun.file(path.join(deck.openDir, `${logged[0]}.md`)).text()).toBe(
+    "# A headline\n\nThe first thought put down here.\n",
+  );
 });
 
 test("refuses from a linked worktree, naming the main checkout, and files from the main checkout itself", async () => {
