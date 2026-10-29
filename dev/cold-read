@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Cold-read a file: give a question and the file's text to two readers that
+# carry none of this repo's prompting, and print both answers.
+#
+# Usage: dev/cold-read <file> <question>
+#
+# Each reader starts in its own fresh empty directory. Claude runs with no
+# tools and no MCP servers, under a throwaway config directory holding only the
+# login, because the user's own config directory would hand the reader the
+# user's instructions; a tool-less reader that obeys a startup instruction in
+# them emits a tool call that never returns. Terra runs in a read-only sandbox.
+
+set -euo pipefail
+
+[[ $# -eq 2 && -f $1 ]] || { echo "usage: dev/cold-read <file> <question>" >&2; exit 2; }
+limit=180
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+mkdir "$work/config" "$work/claude" "$work/terra"
+cp "$HOME/.claude/.credentials.json" "$work/config/"
+{ printf '%s\n\n' "$2"; cat "$1"; } > "$work/stdin"
+
+read_with() { # name, then the reader's command
+  local name=$1; shift
+  local start=$SECONDS status=0
+  (cd "$work/$name" && timeout --kill-after=10 "$limit" "$@" < "$work/stdin" > "$work/$name.out" 2> "$work/$name.err") || status=$?
+  echo "$status $((SECONDS - start))" > "$work/$name.status"
+}
+
+read_with claude env CLAUDE_CONFIG_DIR="$work/config" claude -p --tools "" --strict-mcp-config &
+read_with terra codex exec -m gpt-5.6-terra -s read-only --ephemeral --skip-git-repo-check - &
+wait
+
+failed=0
+for name in claude terra; do
+  read -r status secs < "$work/$name.status"
+  if [[ $status -eq 0 ]]; then
+    echo "== $name (${secs}s)"
+    cat "$work/$name.out"
+  else
+    failed=1
+    if [[ $status -eq 124 || $status -eq 137 ]]; then
+      echo "== $name: no answer, timed out after ${limit}s"
+    else
+      echo "== $name: exited $status after ${secs}s"
+      cat "$work/$name.err"
+    fi
+  fi
+  echo
+done
+exit "$failed"
