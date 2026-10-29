@@ -43,12 +43,12 @@ const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Verb>
     bare: cards.printPrompt,
     open: { done: { run: cards.done }, join: { run: cards.join, args: "<id>" }, later: { run: cards.later, args: "<id>" } },
   },
-  Check: { bare: check.printPrompt, open: { amend: { run: check.amend } } },
-  Running: { bare: report, open: {} },
-  Bounced: { bare: report, open: {} },
+  Check: { bare: check.printPrompt, open: { approve: { run: check.approve }, amend: { run: check.amend } } },
+  Running: { bare: printState, open: {} },
+  Bounced: { bare: printState, open: {} },
   Stopped: { bare: report, open: {} },
   Dead: { bare: report, open: {} },
-  Ended: { bare: report, open: {} },
+  Ended: { bare: printState, open: {} },
 };
 
 const USAGE = `usage: card [<verb>] [--plan <slug>]
@@ -69,6 +69,11 @@ function openCommands(plan: Plan, command: string): string {
 /** Bare `card` in a state whose own printout is later work: where the plan stands, and what is open. */
 async function report({ plan, command }: Context): Promise<void> {
   process.stdout.write(`The plan \`${plan.slug}\` is in ${plan.state}, where these commands are open:\n${openCommands(plan, command)}`);
+}
+
+/** Bare `card` in a state whose report is later work: the state's name and nothing more. */
+async function printState({ plan }: Context): Promise<void> {
+  process.stdout.write(`${plan.state}\n`);
 }
 
 /** The waiting cards, for the owner, when there are any. */

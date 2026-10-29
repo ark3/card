@@ -21,6 +21,12 @@ export async function headSha(cwd: string): Promise<string> {
   return (await gitOrThrow(["rev-parse", "HEAD"], cwd)).trim();
 }
 
+/** The commit `name` resolves to, or null where git cannot resolve it to one. */
+export async function resolveCommit(name: string, cwd: string): Promise<string | null> {
+  const result = await git(["rev-parse", "--verify", "--quiet", `${name}^{commit}`], cwd);
+  return result.ok ? result.stdout.trim() : null;
+}
+
 /** Whether a local branch named `branch` exists. */
 export async function branchExists(branch: string, cwd: string): Promise<boolean> {
   return (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], cwd)).ok;

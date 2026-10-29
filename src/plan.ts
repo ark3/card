@@ -1,7 +1,8 @@
 import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Cycle } from "./cycle.ts";
+import type { Cycle, Role } from "./cycle.ts";
 import type { Deck } from "./deck.ts";
+import type { Harness, Session } from "./harness.ts";
 import { drawId } from "./id.ts";
 import { type Listed, listCards } from "./operations.ts";
 
@@ -42,10 +43,32 @@ export type PlanRecord = {
    * step; null until the first one starts.
    */
   cycle: Cycle | null;
+  /** The harness `card approve` chose for the run, which every launch and resume of the run uses; null until then. */
+  harness: Harness | null;
+  /**
+   * The run's process, with the kernel's boot id at its start, since a pid
+   * alone can name an unrelated live process after a reboot; null until the
+   * first `card approve`.
+   */
+  run: { pid: number; boot: string } | null;
+  /** Every card the run has closed done, with its commit, in the order it closed them. */
+  landed: { card: string; commit: string }[];
+  /** The role that stopped the run, its session and the cause, while the plan is Bounced. */
+  bounce: { role: Role; session: Session; cause: string } | null;
 };
 
 /** What a state file written before a field existed reads as for that field. */
-const EMPTY: Omit<PlanRecord, "state" | "placeholder"> = { cards: [], final: null, joins: [], later: [], cycle: null };
+const EMPTY: Omit<PlanRecord, "state" | "placeholder"> = {
+  cards: [],
+  final: null,
+  joins: [],
+  later: [],
+  cycle: null,
+  harness: null,
+  run: null,
+  landed: [],
+  bounce: null,
+};
 
 export type Plan = PlanRecord & {
   slug: string;
@@ -127,8 +150,8 @@ export async function listPlans(deck: Deck): Promise<Plan[]> {
  * records, staged and renamed so no reader sees half of one.
  */
 export async function writeRecord(target: Plan, changes: Partial<PlanRecord>): Promise<Plan> {
-  const { state, placeholder, cards, final, joins, later, cycle } = { ...target, ...changes };
-  const record: PlanRecord = { state, placeholder, cards, final, joins, later, cycle };
+  const { state, placeholder, cards, final, joins, later, cycle, harness, run, landed, bounce } = { ...target, ...changes };
+  const record: PlanRecord = { state, placeholder, cards, final, joins, later, cycle, harness, run, landed, bounce };
   const staging = path.join(target.dir, `.${STATE_FILE}.writing`);
   await writeFile(staging, `${JSON.stringify(record)}\n`);
   await rename(staging, path.join(target.dir, STATE_FILE));
@@ -152,6 +175,11 @@ export async function startPlan(deck: Deck, slug: string | null): Promise<Plan> 
   await mkdir(started.dir);
   await mkdir(started.cardsDir);
   return writeRecord(started, record);
+}
+
+/** The kernel's boot id, which changes at every boot. */
+export async function bootId(): Promise<string> {
+  return (await Bun.file("/proc/sys/kernel/random/boot_id").text()).trim();
 }
 
 /** Moves the plan, everything in its directory with it, to `slug`. */

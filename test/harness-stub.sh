@@ -11,6 +11,11 @@
 # `run`, if present, is run with sh in the working directory first, as a
 # session's work, its output on stderr; `stderr` and `stdout` are printed as
 # they are, and `exit` holds the status, 0 if absent.
+#
+# An id with nothing under <control>/<id>/ when its first call comes takes the
+# answers of the lowest-numbered session queued under <control>/queue/<k>/
+# that no id has taken yet, so a test scripts sessions whose ids another
+# process draws in the order they launch.
 set -eu
 PATH="$HARNESS_STUB_PATH"
 name="${0##*/}"
@@ -23,6 +28,18 @@ for arg in "$@"; do
   esac
   previous="$arg"
 done
+
+if [ ! -e "$HARNESS_STUB/$id" ]; then
+  k=1
+  while [ -e "$HARNESS_STUB/queue/$k" ]; do
+    if [ -e "$HARNESS_STUB/queue/$k/answers" ]; then
+      mkdir "$HARNESS_STUB/$id"
+      mv "$HARNESS_STUB/queue/$k/answers" "$HARNESS_STUB/$id/answers"
+      break
+    fi
+    k=$((k + 1))
+  done
+fi
 
 calls="$HARNESS_STUB/$id/calls"
 mkdir -p "$calls"

@@ -1,0 +1,200 @@
+import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { createDeck } from "../src/deck.ts";
+import { git, gitOrThrow } from "../src/git.ts";
+import { fileCard } from "../src/operations.ts";
+import { type PlanRecord, startPlan, writeRecord } from "../src/plan.ts";
+import { clearCardRoot, queue, type Reply, removeTempDirs, stand, tempRepo } from "./helpers.ts";
+
+const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
+const OUTER_PATH = process.env.PATH;
+// Each test waits on a run in another process, through several role sessions.
+const SLOW = 30_000;
+
+beforeEach(clearCardRoot);
+afterEach(() => {
+  process.env.PATH = OUTER_PATH;
+});
+afterAll(removeTempDirs);
+
+/** Runs `card` under this bun, so the test's PATH need hold nothing but the stand-ins and git. */
+async function card(args: string[], cwd: string) {
+  const env = { ...process.env };
+  delete env.CARD_ROOT;
+  const proc = Bun.spawn([process.execPath, CARD, ...args], { cwd, env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  return { code: await proc.exited, stdout, stderr };
+}
+
+/** A repository with a `proj` deck and a plan in Check holding two cards, the second its final card. */
+async function inCheck(startPoint = "main") {
+  const repo = await tempRepo();
+  const deck = await createDeck(repo, "proj");
+  const finding = (headline: string) => ({ labels: [], blockedBy: [], headline, body: "Body.\n" });
+  const first = await fileCard(deck, finding("Add the greeting"));
+  const final = await fileCard(deck, finding("Check the plan"));
+  const plan = await writeRecord(await startPlan(deck, "greeting"), {
+    state: "Check",
+    placeholder: false,
+    cards: [first, final],
+    final,
+  });
+  await Bun.write(plan.document, `---\nbranch: plan/greeting\nstart-point: ${startPoint}\n---\n\n# Greet\n`);
+  const base = (await gitOrThrow(["rev-parse", "main"], repo)).trim();
+  return { repo, deck, plan, first, final, base };
+}
+
+const done = (run?: string): Reply => ({ stdout: JSON.stringify({ outcome: "done", account: "Did the work." }), run });
+const approved = (subject: string): Reply => ({
+  stdout: JSON.stringify({ outcome: "approved", subject, close_note: "Landed it." }),
+});
+
+/** Shell that marks the role `name` started, then holds it until the test releases it, for ten seconds at most. */
+function hold(control: string, name: string): string {
+  const released = path.join(control, `${name}.released`);
+  return `touch '${path.join(control, `${name}.started`)}'; i=0; while [ ! -e '${released}' ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i + 1)); done`;
+}
+
+function release(control: string, name: string): void {
+  writeFileSync(path.join(control, `${name}.released`), "");
+}
+
+function record(dir: string): PlanRecord {
+  return JSON.parse(readFileSync(path.join(dir, "state.json"), "utf8"));
+}
+
+async function until(what: string, check: () => boolean): Promise<void> {
+  for (const deadline = Date.now() + SLOW - 5_000; !check(); await Bun.sleep(50)) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+  }
+}
+
+/** The subjects of the commits the plan's branch holds beyond `base`, oldest first. */
+async function subjects(repo: string, base: string): Promise<string[]> {
+  return (await gitOrThrow(["log", "--reverse", "--format=%s", `${base}..plan/greeting`], repo)).split("\n").filter(Boolean);
+}
+
+test(
+  "card approve returns while the first role still runs, and the run lands one commit per card, in order, and ends",
+  async () => {
+    const { repo, deck, plan, first, final, base } = await inCheck();
+    const control = stand(["pi"]);
+    queue(control, [done(`${hold(control, "first")}; printf 'hello\\n' > hello.txt`)], [approved("Add the greeting")], [done()], [
+      approved("Check the plan"),
+    ]);
+
+    const approving = await card(["approve"], repo);
+    expect(approving.stderr).toBe("");
+    expect(approving.code).toBe(0);
+
+    await until("the first role to start", () => existsSync(path.join(control, "first.started")));
+    expect(record(plan.dir).state).toBe("Running");
+    expect(record(plan.dir).harness).toBe("pi");
+    expect(await subjects(repo, base)).toEqual([]);
+    expect(await card([], repo)).toEqual({ code: 0, stdout: "Running\n", stderr: "" });
+
+    release(control, "first");
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan"]);
+    expect(await gitOrThrow(["show", "plan/greeting~1:hello.txt"], repo)).toBe("hello\n");
+    for (const id of [first, final]) expect(readFileSync(path.join(deck.closedDir, `${id}.md`), "utf8")).toContain("closed: done");
+    expect(readFileSync(path.join(plan.dir, "run.log"), "utf8")).toContain("ended");
+    expect(await card([], repo)).toEqual({ code: 0, stdout: "Ended\n", stderr: "" });
+  },
+  SLOW,
+);
+
+test(
+  "the state records the first card closed before the second card's first role launches, and the run's pid and boot id",
+  async () => {
+    const { repo, plan, first, final, base } = await inCheck();
+    const control = stand(["pi"]);
+    const snapshot = path.join(control, "at-second-launch.json");
+    queue(control, [done()], [approved("Add the greeting")], [done(`cp '${path.join(plan.dir, "state.json")}' '${snapshot}'`)], [
+      approved("Check the plan"),
+    ]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const [landed] = (await gitOrThrow(["rev-list", `${base}..plan/greeting~1`], repo)).split("\n");
+    const at: PlanRecord = JSON.parse(readFileSync(snapshot, "utf8"));
+    expect(at.landed).toEqual([{ card: first, commit: landed! }]);
+    expect(at.cycle?.card).toBe(final);
+    expect(at.cycle?.step).toBe("implement");
+    expect(at.run?.pid).toBeNumber();
+    expect(at.run?.boot).toBe(readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim());
+    expect(record(plan.dir).run).toEqual(at.run);
+  },
+  SLOW,
+);
+
+test(
+  "a role, and a child process the role starts, run in the run's process group",
+  async () => {
+    const { repo, plan } = await inCheck();
+    const control = stand(["pi"]);
+    // The stand-in is the role, and the shell running this is its child.
+    const groups = `ps -o pgid= -p $PPID > '${path.join(control, "role")}'; ps -o pgid= -p $$ > '${path.join(control, "child")}'`;
+    queue(control, [done(groups)], [approved("Add the greeting")], [done()], [approved("Check the plan")]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const pid = record(plan.dir).run!.pid;
+    expect(Number(readFileSync(path.join(control, "role"), "utf8"))).toBe(pid);
+    expect(Number(readFileSync(path.join(control, "child"), "utf8"))).toBe(pid);
+  },
+  SLOW,
+);
+
+test(
+  "a role that fails bounces the plan with the cause and the session, and lands nothing",
+  async () => {
+    const { repo, deck, plan, first, base } = await inCheck();
+    const control = stand(["pi"]);
+    queue(control, [{ stderr: "usage limit reached\n", exit: 1 }]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+
+    const { bounce, cycle } = record(plan.dir);
+    expect(bounce?.role).toBe("implementer");
+    expect(bounce?.session).toEqual({ harness: "pi", id: cycle!.sessions.implementer!, dir: path.join(repo, ".worktrees", "greeting") });
+    expect(bounce?.cause).toContain("usage limit reached");
+    expect(await subjects(repo, base)).toEqual([]);
+    expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
+    expect(await card([], repo)).toEqual({ code: 0, stdout: "Bounced\n", stderr: "" });
+  },
+  SLOW,
+);
+
+/** Asserts that nothing of a run started: the plan in Check, no branch, no worktree, no log, and no role called. */
+async function nothingLaunched(repo: string, dir: string, control: string): Promise<void> {
+  expect(record(dir).state).toBe("Check");
+  expect((await git(["rev-parse", "--verify", "--quiet", "refs/heads/plan/greeting"], repo)).ok).toBe(false);
+  expect(existsSync(path.join(repo, ".worktrees"))).toBe(false);
+  expect(existsSync(path.join(dir, "run.log"))).toBe(false);
+  expect(readdirSync(control)).toEqual([]);
+}
+
+test("card approve --harness naming a harness absent from PATH refuses before anything launches", async () => {
+  const { repo, plan } = await inCheck();
+  const control = stand(["pi"]);
+
+  const result = await card(["approve", "--harness", "claude"], repo);
+  expect(result.code).not.toBe(0);
+  expect(result.stderr).toBe("card: --harness names claude, but claude is not on PATH\n");
+  await nothingLaunched(repo, plan.dir, control);
+});
+
+test("card approve with a start point git cannot resolve refuses before anything launches", async () => {
+  const { repo, plan } = await inCheck("nosuch");
+  const control = stand(["pi"]);
+
+  const result = await card(["approve"], repo);
+  expect(result.code).not.toBe(0);
+  expect(result.stderr).toContain("`nosuch`");
+  await nothingLaunched(repo, plan.dir, control);
+});

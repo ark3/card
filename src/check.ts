@@ -1,7 +1,15 @@
+import { openSync } from "node:fs";
+import path from "node:path";
 import prompt from "../payload/check.md" with { type: "text" };
 import * as cards from "./cards.ts";
+import { readDocument } from "./document.ts";
+import { resolveCommit } from "./git.ts";
+import { chooseHarness, type Harness } from "./harness.ts";
+import { ensureBranch, holdWorktree } from "./landing.ts";
 import { fill, wrapPayload } from "./payload.ts";
-import { type Context, writeRecord } from "./plan.ts";
+import { bootId, type Context, writeRecord } from "./plan.ts";
+
+const RUN = path.join(import.meta.dir, "run.ts");
 
 /** The Check stage's prompt, which bare `card` prints for as long as the stage lasts. */
 export async function printPrompt({ deck, plan, command }: Context): Promise<void> {
@@ -23,4 +31,48 @@ export async function amend(context: Context): Promise<void> {
   const { plan, command, args } = context;
   if (args.length > 0) throw new Error(`usage: ${command} amend`);
   await cards.printPrompt({ ...context, plan: await writeRecord(plan, { state: "Cards" }) });
+}
+
+/**
+ * `card approve` in the Check stage: the owner's approval, which starts the
+ * run. Everything that can refuse is checked before the run starts. The run
+ * is detached, the leader of its own process group, which every role and
+ * everything a role starts joins, and this returns at once while it goes on.
+ */
+export async function approve({ plan, command, args }: Context): Promise<void> {
+  const usage = `usage: ${command} approve [--harness claude|pi]`;
+  if (args.length !== 0 && !(args.length === 2 && args[0] === "--harness" && ["claude", "pi"].includes(args[1]!))) {
+    throw new Error(usage);
+  }
+  const { harness, why } = chooseHarness(args.length === 2 ? (args[1] as Harness) : null);
+
+  // `card done` in the Document stage refused a document without either.
+  const { fields } = readDocument(await Bun.file(plan.document).text());
+  const branch = fields.get("branch")!;
+  const startPoint = fields.get("start-point")!;
+  const cwd = process.cwd();
+  const start = await resolveCommit(startPoint, cwd);
+  if (start === null) {
+    throw new Error(`the plan document's start point \`${startPoint}\` is not a commit git can resolve; correct \`start-point:\` in ${plan.document}`);
+  }
+  await ensureBranch(branch, start, cwd);
+  const tree = await holdWorktree(plan.slug, branch, cwd);
+
+  const log = path.join(plan.dir, "run.log");
+  const output = openSync(log, "a");
+  // From this directory, so the run resolves the deck as this process did.
+  const run = Bun.spawn([process.execPath, RUN, plan.slug, tree], {
+    cwd,
+    env: process.env,
+    detached: true,
+    stdin: "pipe",
+    stdout: output,
+    stderr: output,
+  });
+  // The run waits for its stdin to close before it reads the plan, so this is
+  // the record it reads, and it starts nothing unless the record names it.
+  await writeRecord(plan, { state: "Running", harness, run: { pid: run.pid, boot: await bootId() }, bounce: null });
+  run.stdin.end();
+  run.unref();
+  console.log(`The plan \`${plan.slug}\` is running on ${harness}, since ${why}, in ${tree}; its log is ${log}.`);
 }

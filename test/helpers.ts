@@ -58,12 +58,15 @@ export type Call = { argv: string[]; stdin: string; cwd: string };
 export type Reply = { stdout?: string; stderr?: string; exit?: number; run?: string };
 
 /**
- * The stand-in linked onto a PATH holding nothing else as both `claude` and
- * `pi`, and a control directory it records into and answers from.
+ * The stand-in linked onto a PATH as each of `names`, and a control directory
+ * it records into and answers from. The PATH holds git beside the stand-ins
+ * and nothing else, since a run the test starts in another process finds git
+ * on it.
  */
-export function stand(): string {
+export function stand(names = ["claude", "pi"]): string {
   const bin = tempDir();
-  for (const name of ["claude", "pi"]) symlinkSync(STUB, path.join(bin, name));
+  for (const name of names) symlinkSync(STUB, path.join(bin, name));
+  symlinkSync(Bun.which("git")!, path.join(bin, "git"));
   const control = tempDir();
   process.env.PATH = bin;
   process.env.HARNESS_STUB = control;
@@ -73,8 +76,22 @@ export function stand(): string {
 
 /** What the stand-in does on each call to session `id`, in order. */
 export function script(control: string, id: string, ...replies: Reply[]): void {
+  answers(path.join(control, id, "answers"), replies);
+}
+
+/**
+ * What the stand-in does for each session launched under an id nothing is
+ * scripted for, in launch order, one list of replies per session. For
+ * sessions whose ids are drawn in another process, such as a run's, which no
+ * spy on `crypto.randomUUID` in the test reaches.
+ */
+export function queue(control: string, ...sessions: Reply[][]): void {
+  sessions.forEach((replies, index) => answers(path.join(control, "queue", String(index + 1), "answers"), replies));
+}
+
+function answers(root: string, replies: Reply[]): void {
   replies.forEach((reply, index) => {
-    const dir = path.join(control, id, "answers", String(index + 1));
+    const dir = path.join(root, String(index + 1));
     mkdirSync(dir, { recursive: true });
     if (reply.stdout !== undefined) writeFileSync(path.join(dir, "stdout"), reply.stdout);
     if (reply.stderr !== undefined) writeFileSync(path.join(dir, "stderr"), reply.stderr);

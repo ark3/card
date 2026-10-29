@@ -113,7 +113,7 @@ test("the card closes done with its account and close note beneath its contract"
   );
 });
 
-test("each role is launched fresh under its own id, which the plan's record holds", async () => {
+test("each role is launched fresh under its own id, which the plan's record holds beside the card's commit", async () => {
   const { deck, plan, id, tree } = await running();
   const { control, ended } = await cycle(deck, plan, id, tree, [done()], [approved()]);
 
@@ -126,7 +126,8 @@ test("each role is launched fresh under its own id, which the plan's record hold
     expect(only!.cwd).toBe(tree);
   }
   const record = (await listPlans(deck))[0]!.cycle;
-  expect(record).toEqual({ card: id, base: record!.base, role: "reviewer", step: "land", sessions: { implementer, reviewer } });
+  const commit = ended.outcome === "landed" ? ended.sha : "";
+  expect(record).toEqual({ card: id, base: record!.base, role: "reviewer", step: "land", sessions: { implementer, reviewer }, commit });
   expect(ended.plan.cycle).toEqual(record);
 });
 
