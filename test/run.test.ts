@@ -474,6 +474,23 @@ test("a Running plan reads as Dead when its run's pid is gone, or its boot id is
   expect(record(plan.dir).state).toBe("Running");
 });
 
+for (const state of ["Running", "Dead"] as const) {
+  test(`card approve refuses while another plan's run is ${state}, naming that plan, before anything launches`, async () => {
+    const { repo, deck, plan } = await inCheck();
+    const other = await startPlan(deck, "other");
+    await writeRecord(other, { state: "Running", harness: "pi", run: { pid: state === "Running" ? process.pid : await deadPid(), boot: BOOT } });
+    const control = stand(["pi"]);
+
+    const result = await card(["--plan", "greeting", "approve"], repo);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toBe(
+      `card: \`card --plan greeting approve\` is refused while another plan's run is Running or Dead, and the plan \`other\`'s run is ${state}\n`,
+    );
+    await nothingLaunched(repo, plan.dir, control);
+    expect((await listPlans(deck)).map(({ slug, state }) => `${slug} ${state}`)).toEqual(["greeting Check", `other ${state}`]);
+  });
+}
+
 // Long enough that the commit's body refills it, so a close note taken from the
 // commit rather than the record would differ.
 const NOTE = "Adds hello.txt holding hello, and this line runs long enough that the commit message refills it at seventy-two columns.\n\nVerified by reading it back.";

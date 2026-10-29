@@ -8,7 +8,7 @@ import { chooseHarness, type Harness } from "./harness.ts";
 import { ensureBranch, holdWorktree } from "./landing.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
-import { bootId, type Context, type Plan, writeRecord } from "./plan.ts";
+import { bootId, type Context, listPlans, type Plan, writeRecord } from "./plan.ts";
 
 const RUN = path.join(import.meta.dir, "run.ts");
 
@@ -40,10 +40,15 @@ export async function amend(context: Context): Promise<void> {
  * is detached, the leader of its own process group, which every role and
  * everything a role starts joins, and this returns at once while it goes on.
  */
-export async function approve({ plan, command, args }: Context): Promise<void> {
+export async function approve({ deck, plan, command, args }: Context): Promise<void> {
   const usage = `usage: ${command} approve [--harness claude|pi]`;
   if (args.length !== 0 && !(args.length === 2 && args[0] === "--harness" && ["claude", "pi"].includes(args[1]!))) {
     throw new Error(usage);
+  }
+  // This plan is in Check, so a plan Running or Dead is another's.
+  const live = (await listPlans(deck)).find(({ state }) => state === "Running" || state === "Dead");
+  if (live !== undefined) {
+    throw new Error(`\`${command} approve\` is refused while another plan's run is Running or Dead, and the plan \`${live.slug}\`'s run is ${live.state}`);
   }
   // A run carried on after `card amend` keeps the harness it recorded, unless `--harness` names one.
   const { harness, why } =
