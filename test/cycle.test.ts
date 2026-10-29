@@ -5,7 +5,7 @@ import { EXCHANGES, ID_RETURNS, RECONCILER, REVISION_ROUNDS, runCard } from "../
 import { createDeck, type Deck } from "../src/deck.ts";
 import { gitOrThrow, headSha } from "../src/git.ts";
 import { ensureBranch, holdWorktree } from "../src/landing.ts";
-import { fileCard } from "../src/operations.ts";
+import { appendRecord, fileCard } from "../src/operations.ts";
 import { bootId, listPlans, type Plan, startPlan, waitingCards, writeRecord } from "../src/plan.ts";
 import { answerInstruction } from "../src/answer.ts";
 import { calls, type Reply, removeTempDirs, script, stand, tempDir, tempRepo } from "./helpers.ts";
@@ -374,6 +374,65 @@ test("a reconciler that fails stops the cycle at reconcile, with its cause and s
   expect(ended.cause).toContain("usage limit reached");
   expect(ended.question).toBeUndefined();
   expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "reconcile", sessions: { reconciler: ids[0] }, rounds: 0, exchanges: 0 });
+});
+
+const RECORDED_GAP = "The plan's last check found no greeting.";
+
+/** Gives the card `id` frontmatter and a record before its cycle starts, and returns the card's path. */
+async function withFrontmatterAndRecord(deck: Deck, id: string): Promise<string> {
+  const file = path.join(deck.openDir, `${id}.md`);
+  writeFileSync(file, `---\nlabels: greeting\n---\n\n${readFileSync(file, "utf8")}`);
+  await appendRecord(deck, id, "Gap", RECORDED_GAP);
+  return file;
+}
+
+test("a reconciler that proceeds having changed the worktree stops the cycle as failed, naming each path and leaving it, with no implementer launched", async () => {
+  const { deck, plan, id, tree, base } = await running();
+  const overstep = "printf 'stray\\n' > stray.txt; printf 'more\\n' >> README.md";
+  const { control, ended } = await cycle(deck, plan, id, tree, [done()], [approved()], [proceed(overstep)]);
+
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reconciler");
+  expect(ended.session).toEqual({ harness: "pi", id: ids[0]!, dir: tree });
+  expect(ended.cause).toContain("README.md");
+  expect(ended.cause).toContain("stray.txt");
+  expect(ended.cause).toContain("left in place");
+  expect(ended.question).toBeUndefined();
+  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "reconcile", sessions: { reconciler: ids[0] }, rounds: 0, exchanges: 0 });
+  expect(readFileSync(path.join(tree, "stray.txt"), "utf8")).toBe("stray\n");
+  expect(readFileSync(path.join(tree, "README.md"), "utf8")).toEndWith("more\n");
+  for (const session of [ids[1]!, ids[2]!]) expect(existsSync(path.join(control, session, "calls"))).toBe(false);
+});
+
+test("a reconciler that proceeds having changed the card's frontmatter or record stops the cycle as failed, naming each and leaving the edit, with no implementer launched", async () => {
+  const { deck, plan, id, tree } = await running();
+  const file = await withFrontmatterAndRecord(deck, id);
+  const overstep = `sed -i -e 's/labels: greeting/labels: greeting, urgent/' -e 's/found no greeting/found a greeting/' '${file}'`;
+  const { control, ended } = await cycle(deck, plan, id, tree, [done()], [approved()], [proceed(overstep)]);
+
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reconciler");
+  expect(ended.session).toEqual({ harness: "pi", id: ids[0]!, dir: tree });
+  expect(ended.cause).toContain("frontmatter");
+  expect(ended.cause).toContain("## Gap");
+  expect(ended.cause).toContain("left in place");
+  const text = readFileSync(file, "utf8");
+  expect(text).toStartWith("---\nlabels: greeting, urgent\n---\n");
+  expect(text).toContain("## Gap\n\nThe plan's last check found a greeting.\n");
+  for (const session of [ids[1]!, ids[2]!]) expect(existsSync(path.join(control, session, "calls"))).toBe(false);
+});
+
+test("a reconciler that proceeds having changed only the card's contract and the plan document goes on to the implementer", async () => {
+  const { deck, plan, id, tree } = await running();
+  const file = await withFrontmatterAndRecord(deck, id);
+  const amend = `sed -i 's/hello\\.txt/greeting.txt/g' '${file}'; printf 'A line the reconciler kept true.\\n' >> '${plan.document}'`;
+  const { control, ended } = await cycle(deck, plan, id, tree, [done("printf 'hello\\n' > greeting.txt")], [approved()], [proceed(amend)]);
+
+  expect(ended.outcome).toBe("landed");
+  expect(calls(control, ids[1]!)[0]!.stdin).toContain(CONTRACT.replaceAll("hello.txt", "greeting.txt"));
+  expect(readFileSync(plan.document, "utf8")).toEndWith("A line the reconciler kept true.\n");
 });
 
 /** The card's file, open or closed. */

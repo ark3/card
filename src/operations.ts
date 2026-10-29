@@ -166,6 +166,32 @@ const RECORD_HEADINGS = ["Account", "Review feedback", "Gap", "Close note", "Pro
 export type RecordHeading = (typeof RECORD_HEADINGS)[number];
 const RECORD_SECTION = new RegExp(`^## (${RECORD_HEADINGS.join("|")})$`, "gm");
 
+/** The card text's frontmatter block, empty where it has none, and its record sections in order, each from its heading. */
+function toolWritten(text: string): { frontmatter: string; record: string[] } {
+  const end = text.startsWith("---\n") ? text.indexOf("\n---\n", 3) + 5 : 0;
+  const sections = [...text.matchAll(RECORD_SECTION)];
+  return {
+    frontmatter: text.slice(0, end),
+    record: sections.map((section, index) => text.slice(section.index, sections[index + 1]?.index ?? text.length)),
+  };
+}
+
+/**
+ * The parts of a card the tool alone writes, its frontmatter and its record
+ * sections, that differ byte for byte between its text `before` and `after`,
+ * each record section named by its place and its heading.
+ */
+export function toolWrittenChanges(before: string, after: string): string[] {
+  const was = toolWritten(before);
+  const is = toolWritten(after);
+  const changes = was.frontmatter === is.frontmatter ? [] : ["frontmatter"];
+  for (let index = 0; index < Math.max(was.record.length, is.record.length); index++) {
+    const section = is.record[index] ?? was.record[index]!;
+    if (was.record[index] !== is.record[index]) changes.push(`record section ${index + 1} (${section.split("\n", 1)[0]})`);
+  }
+  return changes;
+}
+
 /**
  * `text` with a record section appended: `heading`, then `body`. The heading
  * is what says where the card's contract ends and the record begins; nothing

@@ -16,8 +16,8 @@ import { readDocument } from "./document.ts";
 import { headSha } from "./git.ts";
 import { type Check, correct, type Harness, launch, resume, RoleFailure, type Session } from "./harness.ts";
 import { citedIds } from "./id.ts";
-import { addedLines, CommitRefused, discard, land, uncommittedDiff, undoMovedHead } from "./landing.ts";
-import { appendRecord, closeCard, dropUnlanded, fileCard } from "./operations.ts";
+import { addedLines, changedPaths, CommitRefused, discard, land, uncommittedDiff, undoMovedHead } from "./landing.ts";
+import { appendRecord, closeCard, dropUnlanded, fileCard, toolWrittenChanges } from "./operations.ts";
 import { fill } from "./payload.ts";
 import { type Plan, writeRecord } from "./plan.ts";
 
@@ -436,9 +436,11 @@ export function reconcilerPrompt(card: { path: string; text: string }, document:
  * replaced by the reviewer's next, which restates the whole report, so the
  * findings filed are those of the answer that lands, filed once its commit is
  * made and before the commit is recorded, and a reviewer that fails at its
- * last return files none. A reconciler that stops, a reviewer asking for a
- * revision past the cap, or a role that fails, ends the cycle stopped, with
- * its cause and session.
+ * last return files none. A reconciler that proceeds having changed the
+ * worktree, or the card's frontmatter or record, has failed, and the change is
+ * left in place. A reconciler that stops, a reviewer asking for a revision
+ * past the cap, or a role that fails, ends the cycle stopped, with its cause
+ * and session.
  */
 export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, harness: Harness): Promise<CycleEnd> {
   const base = await headSha(tree);
@@ -532,6 +534,8 @@ async function cycleFrom(
       ? fill(finalImplement, { CARD_TEXT: await cardText(deck, id), DOCUMENT_TEXT: await documentText() })
       : fill(implement, { CARD_TEXT: await cardText(deck, id) });
   let { rounds, exchanges } = cycle;
+  // The card as the reconciler is handed it, whose frontmatter and record it may not change.
+  const reconciledFrom = cycle.step === "reconcile" ? await Bun.file(await cardPath(deck, id)).text() : "";
   /** Records the cycle at `role`'s `step`, with the counts, under a fresh session where `fresh`, before the role is called. */
   const enter = async (role: Role, step: Step, fresh = false) => {
     const sessions = fresh ? { ...cycle.sessions, [role]: crypto.randomUUID() } : cycle.sessions;
@@ -585,6 +589,17 @@ async function cycleFrom(
     }
 
     if (step === "reconcile") {
+      const paths = await changedPaths(tree, base);
+      const parts = toolWrittenChanges(reconciledFrom, await Bun.file(await cardPath(deck, id)).text());
+      if (paths.length > 0 || parts.length > 0) {
+        const changed = [
+          ...(paths.length > 0 ? [`${paths.join(", ")} in the worktree`] : []),
+          ...(parts.length > 0 ? [`the card's ${parts.join(", ")}`] : []),
+        ];
+        // Left in place, since a reconciler that changes these is a bug in it or its prompt for the owner to find.
+        const cause = `the reconciler proceeded having changed ${changed.join(" and ")}, which a reconciler may not change; the change is left in place for the owner to look at`;
+        return { plan, outcome: "stopped", role, session: session(role), cause };
+      }
       // The run's log, where the owner reads what the reconciler changed.
       console.log(`${id}: the reconciler proceeded: ${answer.amended}`);
       await enter("implementer", "implement", true);

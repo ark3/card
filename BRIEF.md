@@ -160,6 +160,8 @@ For each card, in the order authoring set, the roles run in the order below.
 A fresh session before every implementation checks the card against the code at the tip of the plan's branch and amends it within its intent.
 It runs once per card, before the card's first implementer; a blocking finding brings it back to converse and amend, and the fresh implementer that follows needs no second reconciling, since the amendment is the reconciler's own; revision rounds do not bring it back.
 It also keeps the plan document true, within the plan's intent.
+It edits the card's contract and the plan document and nothing else, and the tool holds it to that when it proceeds: a reconciler that has changed the worktree, or the card's frontmatter or record, has failed ("When a role fails" below), with each changed path or record section named.
+The tool stops rather than repairs, leaving the change in place for the owner: a reconciler that oversteps is a bug in the reconciler or its prompt, to be found and fixed, and undoing the change quietly would hide it.
 A done-condition only the owner can judge, it rewrites to name evidence an agent can check, and the card's close note then passes the owner's trial on in its "how to see it working".
 It stops the run for the owner when the intent itself is wrong, when the card depends on work no earlier card has landed — a problem of order for authoring to fix — or when it cannot reach agreement with the implementer within a cap.
 Its check against the current tip absorbs an earlier card changing the ground under a later one.

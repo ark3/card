@@ -73,6 +73,16 @@ export async function uncommittedDiff(tree: string): Promise<string> {
   return diffs.join("");
 }
 
+/**
+ * The paths at which the worktree differs from `commit`, committed or not, new
+ * untracked files included; a rename names both of its paths.
+ */
+export async function changedPaths(tree: string, commit: string): Promise<string[]> {
+  const tracked = await gitOrThrow(["diff", "--name-only", "--no-renames", "-z", commit], tree);
+  const untracked = await gitOrThrow(["ls-files", "-z", "--others", "--exclude-standard"], tree);
+  return `${tracked}${untracked}`.split("\0").filter(Boolean);
+}
+
 /** The lines the worktree's uncommitted diff adds, new untracked files whole. */
 export async function addedLines(tree: string): Promise<string[]> {
   return added(await uncommittedDiff(tree));
