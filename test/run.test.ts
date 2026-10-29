@@ -77,9 +77,10 @@ async function until(what: string, check: () => boolean): Promise<void> {
 }
 
 /** What bare `card` reports for the owner in Bounced, with the card `inCheck` filed first. */
-function bouncedReport(id: string, role: string, cause: string, resume: string, question?: string): string {
+function bouncedReport(id: string, role: string, cause: string, resume: string, question?: string, feedback?: string): string {
   const asks = question === undefined ? "" : `The question it asks:\n\n${question}\n\n`;
-  return `The plan \`greeting\`'s run bounced at this card, where the ${role} stopped it:\n\n${id}  Add the greeting\n\nThe cause recorded for it:\n\n${cause}\n\n${asks}To resume the ${role}'s session at a terminal, run this from the plan's worktree:\n\n  ${resume}\n`;
+  const revision = feedback === undefined ? "" : `The revision it last asked for:\n\n${feedback}\n\n`;
+  return `The plan \`greeting\`'s run bounced at this card, where the ${role} stopped it:\n\n${id}  Add the greeting\n\nThe cause recorded for it:\n\n${cause}\n\n${asks}${revision}To resume the ${role}'s session at a terminal, run this from the plan's worktree:\n\n  ${resume}\n`;
 }
 
 /** What bare `card` reports for the owner in Ended, with `inCheck`'s final card closed under `note`. */
@@ -229,6 +230,31 @@ test(
     const report = bouncedReport(first, "reconciler", cause, `cd ${bounce!.session.dir} && pi --session-id ${bounce!.session.id}`, question);
     expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
     expect(readFileSync(path.join(plan.dir, "run.log"), "utf8")).toContain(`It asks the owner: ${question}`);
+  },
+  SLOW,
+);
+
+test(
+  "a reviewer asking for a revision past the cap bounces the plan with its last feedback in the report and the reviewer as the session to resume",
+  async () => {
+    const { repo, deck, plan, first, base } = await inCheck();
+    const control = stand(["pi"]);
+    const revision = (round: number): Reply => ({ stdout: JSON.stringify({ outcome: "revision", feedback: `Round ${round}: not yet.` }) });
+    queue(control, [proceed()], [done(), done(), done(), done()], [revision(1)], [revision(2)], [revision(3)], [revision(4)]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+
+    const { bounce, cycle } = record(plan.dir);
+    const cause = "the reviewer still asked for a revision after 3 revision rounds, the most a card gets";
+    expect(bounce).toEqual({ role: "reviewer", session: bounce!.session, cause, feedback: "Round 4: not yet." });
+    expect(bounce!.session.id).toBe(cycle!.sessions.reviewer!);
+    expect(calls(control, cycle!.sessions.implementer!)).toHaveLength(4);
+    expect(await subjects(repo, base)).toEqual([]);
+    expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
+    const resume = `cd ${bounce!.session.dir} && pi --session-id ${bounce!.session.id}`;
+    const report = bouncedReport(first, "reviewer", cause, resume, undefined, "Round 4: not yet.");
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
   },
   SLOW,
 );

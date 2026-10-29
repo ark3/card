@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { RECONCILER, runCard } from "../src/cycle.ts";
+import { RECONCILER, REVISION_ROUNDS, runCard } from "../src/cycle.ts";
 import { createDeck, type Deck } from "../src/deck.ts";
 import { gitOrThrow, headSha } from "../src/git.ts";
 import { ensureBranch, holdWorktree } from "../src/landing.ts";
@@ -14,12 +14,13 @@ const OUTER_PATH = process.env.PATH;
 
 // The ids the cycle draws for its sessions, handed out in order, so the
 // stand-in can be scripted for each before the cycle runs: the reconciler's,
-// the implementer's and the reviewer's.
+// the implementer's and the reviewer's, then a fresh reviewer's for each
+// revision round, up to the cap.
 let ids: string[] = [];
 // What the cycle writes to the run's log.
 let logged: string[] = [];
 beforeEach(() => {
-  ids = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+  ids = Array.from({ length: 6 }, () => crypto.randomUUID());
   const queue = [...ids];
   spyOn(crypto, "randomUUID").mockImplementation(() => queue.shift() as ReturnType<typeof crypto.randomUUID>);
   logged = [];
@@ -80,8 +81,16 @@ const QUESTION = "The card calls `greet()`, which nothing in the worktree define
 const stop = (run?: string) => answer({ outcome: "stop", cause: "order", question: QUESTION }, run);
 const done = (run?: string) => answer({ outcome: "done", account: ACCOUNT }, run);
 const approved = (run?: string) => answer({ outcome: "approved", subject: SUBJECT, close_note: NOTE }, run);
+const FEEDBACK = "The card asks for hello.txt holding `hello`, and it holds `helo`.\n\nSpell the greeting as the card does.";
+const revision = (feedback = FEEDBACK, run?: string) => answer({ outcome: "revision", feedback }, run);
+const REVISED = "Respelt the greeting as the feedback asked.";
+const revised = (run?: string) => answer({ outcome: "done", account: REVISED }, run);
 
-/** Scripts each role's calls, the reconciler proceeding unless told otherwise, and runs the cycle on Pi's stand-in. */
+/**
+ * Scripts each role's calls, the reconciler proceeding unless told otherwise
+ * and each revision round's reviewer in `later`, and runs the cycle on Pi's
+ * stand-in.
+ */
 async function cycle(
   deck: Deck,
   plan: Plan,
@@ -90,11 +99,13 @@ async function cycle(
   implementer: Reply[],
   reviewer: Reply[],
   reconciler: Reply[] = [proceed()],
+  later: Reply[][] = [],
 ) {
   const control = stand();
   script(control, ids[0]!, ...reconciler);
   script(control, ids[1]!, ...implementer);
   script(control, ids[2]!, ...reviewer);
+  later.forEach((replies, round) => script(control, ids[3 + round]!, ...replies));
   const ended = await runCard(deck, plan, id, tree, "pi");
   return { control, ended };
 }
@@ -138,8 +149,8 @@ test("each role is launched fresh under its own id, which the plan's record hold
   const { control, ended } = await cycle(deck, plan, id, tree, [done()], [approved()]);
 
   const [reconciler, implementer, reviewer] = ids;
-  expect(new Set(ids).size).toBe(3);
-  for (const session of ids) {
+  expect(new Set(ids).size).toBe(ids.length);
+  for (const session of ids.slice(0, 3)) {
     const [only, ...more] = calls(control, session!);
     expect(more).toEqual([]);
     expect(only!.argv).toEqual(["pi", "-p", "--session-id", session!]);
@@ -355,4 +366,121 @@ test("a reconciler that fails stops the cycle at reconcile, with its cause and s
   expect(ended.cause).toContain("usage limit reached");
   expect(ended.question).toBeUndefined();
   expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "reconcile", sessions: { reconciler: ids[0] } });
+});
+
+/** The card's file, open or closed. */
+function cardFile(deck: Deck, id: string): string {
+  const open = path.join(deck.openDir, `${id}.md`);
+  return readFileSync(existsSync(open) ? open : path.join(deck.closedDir, `${id}.md`), "utf8");
+}
+
+const MISSPELT = "printf 'helo\\n' > hello.txt";
+// Run by the resumed implementer, so it respells only the work it left.
+const RESPELT = "[ \"$(cat hello.txt)\" = helo ] && printf 'hello\\n' > hello.txt";
+
+test("a revision answer leaves its feedback under `## Review feedback`, between the account it reviewed and the revision's", async () => {
+  const { deck, plan, id, tree } = await running();
+  await cycle(deck, plan, id, tree, [done(MISSPELT), revised(RESPELT)], [revision()], [proceed()], [[approved()]]);
+
+  expect(cardFile(deck, id)).toBe(
+    `---\nclosed: done\n---\n\n# Add the greeting\n\n${CONTRACT}\n## Account\n\n${ACCOUNT}\n\n## Review feedback\n\n${FEEDBACK}\n\n## Account\n\n${REVISED}\n\n## Close note\n\n${NOTE}\n`,
+  );
+});
+
+test("a revision resumes the implementer under its recorded id, carrying the feedback, on the work as it left it", async () => {
+  const { deck, plan, id, tree } = await running();
+  const { control } = await cycle(deck, plan, id, tree, [done(MISSPELT), revised(RESPELT)], [revision()], [proceed()], [[approved()]]);
+
+  const [, resumed, ...more] = calls(control, ids[1]!);
+  expect(more).toEqual([]);
+  expect(resumed!.argv).toEqual(["pi", "-p", "--session-id", ids[1]!]);
+  expect(resumed!.cwd).toBe(tree);
+  expect(resumed!.stdin).toStartWith("# Revising one card\n");
+  expect(resumed!.stdin).toContain(`<feedback>\n${FEEDBACK}\n</feedback>\n`);
+  expect(resumed!.stdin).not.toContain("{{");
+  expect(await gitOrThrow(["show", "HEAD:hello.txt"], tree)).toBe("hello\n");
+});
+
+test("each round's review runs under a fresh reviewer, which reads the earlier feedback and the revision's account, and sees the whole work's diff", async () => {
+  const { deck, plan, id, tree } = await running();
+  const { control, ended } = await cycle(deck, plan, id, tree, [done(MISSPELT), revised(RESPELT)], [revision()], [proceed()], [[approved()]]);
+
+  for (const session of [ids[2]!, ids[3]!]) {
+    const [only, ...more] = calls(control, session);
+    expect(more).toEqual([]);
+    expect(only!.argv).toEqual(["pi", "-p", "--session-id", session]);
+  }
+  const second = calls(control, ids[3]!)[0]!.stdin;
+  expect(second).toContain(`## Account\n\n${ACCOUNT}\n\n## Review feedback\n\n${FEEDBACK}\n\n## Account\n\n${REVISED}\n</card>`);
+  expect(second).toContain("+++ b/hello.txt\n@@ -0,0 +1 @@\n+hello\n");
+  const record = (await listPlans(deck))[0]!.cycle;
+  expect(record?.sessions).toEqual({ reconciler: ids[0], implementer: ids[1], reviewer: ids[3] });
+  expect(ended.plan.cycle).toEqual(record);
+});
+
+test("after a revision round, one commit lands on approval, holding the revised work", async () => {
+  const { deck, plan, id, tree, base } = await running();
+  const { ended } = await cycle(deck, plan, id, tree, [done(MISSPELT), revised(RESPELT)], [revision()], [proceed()], [[approved()]]);
+
+  expect(ended.outcome).toBe("landed");
+  expect(await headSha(tree)).toBe(ended.outcome === "landed" ? ended.sha : "");
+  expect((await gitOrThrow(["rev-parse", "HEAD~1"], tree)).trim()).toBe(base);
+  expect(await changed(tree)).toEqual(["hello.txt"]);
+  expect(await gitOrThrow(["show", "HEAD:hello.txt"], tree)).toBe("hello\n");
+  expect(await message(tree)).toBe(`${SUBJECT}\n\n${NOTE}\n`);
+  expect(await gitOrThrow(["status", "--porcelain"], tree)).toBe("");
+});
+
+test("a revision round launches no reconciler, nor any session but the implementer resumed and a fresh reviewer", async () => {
+  const { deck, plan, id, tree } = await running();
+  const { control } = await cycle(deck, plan, id, tree, [done(MISSPELT), revised(RESPELT)], [revision()], [proceed()], [[approved()]]);
+
+  expect(calls(control, ids[0]!)).toHaveLength(1);
+  expect(calls(control, ids[1]!)).toHaveLength(2);
+  expect(calls(control, ids[3]!)).toHaveLength(1);
+  expect(readdirSync(control).sort()).toEqual(ids.slice(0, 4).sort());
+  expect(logged).toEqual([`${id}: the reconciler proceeded: ${AMENDED}`]);
+});
+
+test(`past ${REVISION_ROUNDS} revision rounds, a reviewer asking for another stops the cycle at review, with its feedback and its session, and lands nothing`, async () => {
+  const { deck, plan, id, tree, base } = await running();
+  const feedback = (round: number) => `Round ${round}: hello.txt still holds \`helo\`.`;
+  const implementer = [done(MISSPELT), revised(), revised(), revised()];
+  const later = [2, 3, 4].map((round) => [revision(feedback(round))]);
+  const { control, ended } = await cycle(deck, plan, id, tree, implementer, [revision(feedback(1))], [proceed()], later);
+
+  expect(REVISION_ROUNDS).toBe(3);
+  expect(calls(control, ids[1]!)).toHaveLength(1 + REVISION_ROUNDS);
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reviewer");
+  expect(ended.session).toEqual({ harness: "pi", id: ids[5]!, dir: tree });
+  expect(ended.cause).toBe(`the reviewer still asked for a revision after ${REVISION_ROUNDS} revision rounds, the most a card gets`);
+  expect(ended.feedback).toBe(feedback(4));
+  expect(ended.question).toBeUndefined();
+  expect(ended.plan.cycle).toEqual({
+    card: id,
+    base,
+    role: "reviewer",
+    step: "review",
+    sessions: { reconciler: ids[0], implementer: ids[1], reviewer: ids[5] },
+  });
+  expect(await headSha(tree)).toBe(base);
+  expect(await gitOrThrow(["status", "--porcelain"], tree)).toBe("?? hello.txt\n");
+  expect(cardFile(deck, id).match(/^## Review feedback$/gm)).toHaveLength(4);
+  expect(cardFile(deck, id)).toEndWith(`## Review feedback\n\n${feedback(4)}\n`);
+  expect(existsSync(path.join(deck.openDir, `${id}.md`))).toBe(true);
+});
+
+test("feedback with a line starting `# ` draws the repair prompt, and a revision lacking feedback does too", async () => {
+  const { deck, plan, id, tree } = await running();
+  const headed = revision(`# Findings\n\n${FEEDBACK}`);
+  const bare = answer({ outcome: "revision" });
+  const reviewer = [headed, bare, revision()];
+  const { control } = await cycle(deck, plan, id, tree, [done(MISSPELT), revised(RESPELT)], reviewer, [proceed()], [[approved()]]);
+
+  const [, first, second] = calls(control, ids[2]!);
+  expect(first!.stdin).toContain("The previous report was invalid:\nanswer.feedback has a line starting `# `");
+  expect(second!.stdin).toContain('The previous report was invalid:\nanswer lacks the field "feedback", which outcome "revision" carries');
+  expect(cardFile(deck, id)).toContain(`## Review feedback\n\n${FEEDBACK}\n\n## Account\n`);
 });
