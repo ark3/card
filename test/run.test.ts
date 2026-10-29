@@ -1563,6 +1563,29 @@ test("card join at Ended reopens the final card in place, keeping its record, an
   expect(prompt.stdout).toContain(`${final}  Check the plan  (final card)\n`);
 });
 
+test("card join at Ended refuses a finding awaiting its key, naming the --key form, and leaves the final card closed and the plan in Ended", async () => {
+  const { repo, deck, plan, first, final } = await inCheck();
+  await ensureBranch("plan/greeting", "main", repo);
+  await holdWorktree(plan.slug, "plan/greeting", repo);
+  await closeCard(deck, first, "done", "Landed.");
+  await closeCard(deck, final, "done", "Guide.");
+  const finding = await fileCard(deck, { labels: [], blockedBy: [], headline: "Nothing says goodbye", body: "Found.\n" });
+  await writeRecord(plan, { state: "Ended", harness: "pi", findings: [{ id: finding, role: "reviewer", card: first }] });
+  expect((await card(["promote", finding], repo, DRAFT)).code).toBe(0);
+  const before = readFileSync(path.join(plan.dir, "state.json"), "utf8");
+
+  const joining = await card(["join", finding], repo);
+  expect(joining).toEqual({
+    code: 1,
+    stdout: "",
+    stderr: `card: ${finding} is drafted for promotion, awaiting its key, which \`card promote ${finding} --key <KEY>\` records\n`,
+  });
+  expect(existsSync(path.join(deck.closedDir, `${final}.md`))).toBe(true);
+  expect(existsSync(path.join(deck.openDir, `${final}.md`))).toBe(false);
+  expect(readFileSync(path.join(plan.dir, "state.json"), "utf8")).toBe(before);
+  expect(record(plan.dir).state).toBe("Ended");
+});
+
 test(
   "after a join at Ended, card done and card approve run the joined card from its reconciler, then the final card again, whose reconciler reads its earlier close note; the plan ends with the final card closed done once, holding both close notes, and one commit per card run",
   async () => {

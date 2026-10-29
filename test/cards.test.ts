@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createDeck, type Deck } from "../src/deck.ts";
 import { closeCard, fileCard } from "../src/operations.ts";
@@ -251,4 +251,34 @@ test("card promote refuses a card a plan has joined, in either form, and marks n
   expect(await card(["promote", id], repo, "A clean draft.\n")).toEqual(refusal);
   expect(await card(["promote", id, "--key", "GREET-42"], repo)).toEqual(refusal);
   expect(await Bun.file(path.join(deck.openDir, `${id}.md`)).text()).toBe(before);
+});
+
+test("bare card in Cards lists a waiting card awaiting its key with the --key form alone", async () => {
+  const { repo, deck } = await inCards();
+  const id = await fileCard(deck, finding("A finding drafted for promotion"));
+  expect((await card(["promote", id], repo, "A clean draft.\n")).code).toBe(0);
+
+  const result = await card([], repo);
+  expect(result.code).toBe(0);
+  const owner = result.stdout.slice(result.stdout.indexOf("<for_owner>\n"), result.stdout.indexOf("</for_owner>\n"));
+  expect(owner).toContain(`${id}  A finding drafted for promotion\n  card promote ${id} --key <KEY>\n`);
+  expect(owner).not.toContain(`card join ${id}`);
+  expect(owner).not.toContain(`card later ${id}`);
+});
+
+test("card join and card later in Cards refuse a waiting card awaiting its key, naming the --key form, and leave the plan's record as it was", async () => {
+  const { repo, deck, plan } = await inCards();
+  const id = await fileCard(deck, finding("A finding drafted for promotion"));
+  expect((await card(["promote", id], repo, "A clean draft.\n")).code).toBe(0);
+
+  const before = readFileSync(path.join(plan.dir, "state.json"), "utf8");
+  for (const verb of ["join", "later"]) {
+    const refused = await card([verb, id], repo);
+    expect(refused).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: `card: ${id} is drafted for promotion, awaiting its key, which \`card promote ${id} --key <KEY>\` records\n`,
+    });
+  }
+  expect(readFileSync(path.join(plan.dir, "state.json"), "utf8")).toBe(before);
 });

@@ -7,7 +7,7 @@ import { citedIds } from "./id.ts";
 import { appendRecord, closeCard, fileCard } from "./operations.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
-import { type Context, listPlans, listWaiting, type Plan, waitingCards, writeRecord } from "./plan.ts";
+import { awaitingKey, type Context, listPlans, listWaiting, type Plan, waitingCards, writeRecord } from "./plan.ts";
 
 type Member = { id: string; path: string; landed: boolean; card: Card };
 
@@ -38,7 +38,9 @@ export async function planCards(deck: Deck, plan: Plan): Promise<string[]> {
 /** The Cards stage's prompt, which bare `card` prints for as long as the stage lasts. */
 export async function printPrompt({ deck, plan, command }: Context): Promise<void> {
   // A card the owner put off for later is still waiting, for every other
-  // plan, but this plan's sessions have the owner's answer already.
+  // plan, but this plan's sessions have the owner's answer already. One the
+  // owner drafted for promotion is settled too, and lists only the command
+  // that records its key.
   const waiting = await waitingCards(deck, plan.later);
   const joined = await Promise.all(
     plan.joins.map(async (id) => {
@@ -55,7 +57,7 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
     DECK: deck.deckDir,
     WAITING_CARDS: forOwner(
       waiting.length > 0
-        ? listWaiting(waiting, command, (id) => [`join ${id}`, `later ${id}`])
+        ? listWaiting(waiting, command, (id, card) => (awaitingKey(card) ? [`promote ${id} --key <KEY>`] : [`join ${id}`, `later ${id}`]))
         : "No waiting card is left for this plan to settle.\n",
     ).trimEnd(),
     JOINED_FINDINGS: joined.length > 0 ? joined.join("").trimEnd() : "No finding has joined this plan.",
@@ -136,7 +138,12 @@ export async function done({ deck, plan, command, args }: Context): Promise<void
   );
 }
 
-/** The waiting card `join` or `later` names: an open card no other plan holds, and none of this plan's cards. */
+/**
+ * The waiting card `join` or `later` names: an open card no other plan holds,
+ * none of this plan's cards, and none awaiting its promotion's key, which the
+ * owner has settled already and `promote --key` alone takes, so a join would
+ * keep the key from being recorded.
+ */
 export async function settling({ deck, plan, command, args }: Context, verb: string): Promise<{ id: string; card: Card }> {
   if (args.length !== 1) throw new Error(`usage: ${command} ${verb} <id>`);
   const id = args[0]!;
@@ -150,7 +157,9 @@ export async function settling({ deck, plan, command, args }: Context, verb: str
       throw new Error(`${id} belongs to the plan \`${other.slug}\`, so it is not waiting`);
     }
   }
-  return { id, card: await readCard(found.path) };
+  const card = await readCard(found.path);
+  if (awaitingKey(card)) throw new Error(`${id} is drafted for promotion, awaiting its key, which \`${command} promote ${id} --key <KEY>\` records`);
+  return { id, card };
 }
 
 /**

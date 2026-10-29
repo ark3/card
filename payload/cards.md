@@ -20,7 +20,8 @@ Put into a card whatever its implementer needs from a closed card, since an impl
 
 A card is waiting when it sits in the deck's `open/` and no plan's order lists it, such as a finding a role filed during an earlier run or a thought the owner put down; nothing runs a waiting card until the owner settles it.
 Whether a waiting card joins this plan is the owner's decision, made on whether it falls within the plan's intent.
-When the owner decides, run the command the owner chose from the two printed beside the card: `join` puts the card into this plan, and `later` leaves it waiting for a later plan's Cards stage.
+When the owner decides on a card printed with `join` and `later` beside it, run the one of the two the owner chose: `join` puts the card into this plan, and `later` leaves it waiting for a later plan's Cards stage.
+A card printed with `{{CARD}} promote <id> --key <KEY>` alone is one the owner already drafted for promotion to the owner's own tracker, and it awaits the key of the ticket the owner posts there: when the owner gives back that key, run the command printed beside the card, with the key in place of `<KEY>`; the tool refuses `join` and `later` for that card.
 
 {{WAITING_CARDS}}
 
