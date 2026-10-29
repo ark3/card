@@ -37,6 +37,9 @@ const VERBS = [
 ] as const;
 type VerbName = (typeof VERBS)[number];
 
+/** `card drop`, which every row of the table opens. */
+const DROP: Verb = { run: ended.drop };
+
 /**
  * The table under "The plan's states and the verb surface": what bare `card`
  * does in each state, and the verbs open there with the code each runs. Both
@@ -44,25 +47,26 @@ type VerbName = (typeof VERBS)[number];
  * never shown a command that would be refused, nor refused one it was shown.
  * `decline` and `promote` are in no row: they are open in every state and
  * with no plan at all, so `main` runs them ahead of the table, and they are
- * printed only beside the waiting cards they settle.
+ * printed only beside the waiting cards they settle. `drop` is in every row,
+ * since it is open in every state but needs a plan.
  */
 const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Verb>> }> = {
-  Document: { bare: document.printPrompt, open: { done: { run: document.done } } },
+  Document: { bare: document.printPrompt, open: { done: { run: document.done }, drop: DROP } },
   Cards: {
     bare: cards.printPrompt,
-    open: { done: { run: cards.done }, join: { run: cards.join, args: "<id>" }, later: { run: cards.later, args: "<id>" } },
+    open: { done: { run: cards.done }, join: { run: cards.join, args: "<id>" }, later: { run: cards.later, args: "<id>" }, drop: DROP },
   },
-  Check: { bare: check.printPrompt, open: { approve: { run: check.approve }, amend: { run: check.amend } } },
-  Running: { bare: reports.running, open: { stop: { run: stopped.stop } } },
+  Check: { bare: check.printPrompt, open: { approve: { run: check.approve }, amend: { run: check.amend }, drop: DROP } },
+  Running: { bare: reports.running, open: { stop: { run: stopped.stop }, drop: DROP } },
   Bounced: {
     bare: reports.bounced,
-    open: { ask: { run: bounced.ask }, resume: { run: bounced.resume }, amend: { run: stopped.amend } },
+    open: { ask: { run: bounced.ask }, resume: { run: bounced.resume }, amend: { run: stopped.amend }, drop: DROP },
   },
-  Stopped: { bare: reports.stopped, open: { resume: { run: stopped.resume }, amend: { run: stopped.amend } } },
-  Dead: { bare: dead.carryOn, open: { stop: { run: stopped.stop } } },
+  Stopped: { bare: reports.stopped, open: { resume: { run: stopped.resume }, amend: { run: stopped.amend }, drop: DROP } },
+  Dead: { bare: dead.carryOn, open: { stop: { run: stopped.stop }, drop: DROP } },
   Ended: {
     bare: ended.printPrompt,
-    open: { join: { run: ended.join, args: "<id>" }, later: { run: cards.later, args: "<id>" }, finish: { run: ended.finish } },
+    open: { join: { run: ended.join, args: "<id>" }, later: { run: cards.later, args: "<id>" }, finish: { run: ended.finish }, drop: DROP },
   },
 };
 

@@ -75,13 +75,13 @@ test("card amend in Check moves the plan to Cards, keeping its cards, and prints
   expect(result.stdout).toBe((await card([], repo)).stdout);
 });
 
-test("card done in Check refuses as not open, naming Check, and lists card approve and card amend as open", async () => {
+test("card done in Check refuses as not open, naming Check, and lists card approve, card amend and card drop as open", async () => {
   const { repo, deck } = await inCheck();
 
   const result = await card(["done"], repo);
   expect(result.code).not.toBe(0);
   expect(result.stderr).toBe(
-    "card: `card done` is not open while the plan `the-plan` is in Check, where these commands are open:\n  card\n  card approve\n  card amend\n",
+    "card: `card done` is not open while the plan `the-plan` is in Check, where these commands are open:\n  card\n  card approve\n  card amend\n  card drop\n",
   );
   expect((await listPlans(deck))[0]!.state).toBe("Check");
 });

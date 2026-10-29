@@ -1,6 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { forOwner } from "../src/owner.ts";
 import { removeTempDirs, tempDir, tempRepo } from "./helpers.ts";
 
 const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
@@ -137,6 +138,23 @@ test("card approve in Document refuses, naming the state and the commands open i
   expect(result.stderr).toContain("Document");
   expect(result.stderr).toContain("card done");
   expect(result.stderr).not.toContain("no such verb");
+});
+
+test("card drop in Document ends the plan, and the next bare card starts afresh", async () => {
+  const repo = await tempRepo();
+  expect((await card(["--plan", "mistaken"], repo)).code).toBe(0);
+
+  const dropping = await card(["drop"], repo);
+  expect(dropping).toEqual({ code: 0, stdout: forOwner("The plan `mistaken` is dropped.\n\nNo card of the plan was left open to close.\n"), stderr: "" });
+  expect(plans(repo)).toEqual([]);
+
+  const next = await card([], repo);
+  expect(next.code).toBe(0);
+  expect(next.stdout).toContain("# The Document stage");
+  const started = plans(repo);
+  expect(started).toHaveLength(1);
+  expect(started).not.toEqual(["mistaken"]);
+  expect(await planState(repo, started[0]!)).toBe("Document");
 });
 
 test("card refuses frobnicate and status as unknown, with a plan in progress", async () => {

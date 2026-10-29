@@ -3,10 +3,11 @@ import prompt from "../payload/settle.md" with { type: "text" };
 import { readCard } from "./cardfile.ts";
 import { settling } from "./cards.ts";
 import type { Role } from "./cycle.ts";
+import { endRun, settle } from "./dead.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { holdWorktree, removeWorktree } from "./landing.ts";
-import { reopenCard } from "./operations.ts";
+import { closeCard, reopenCard } from "./operations.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
 import { awaitingKey, type Context, type Plan, writeRecord } from "./plan.ts";
@@ -117,4 +118,47 @@ export async function finish({ deck, plan, command, args }: Context): Promise<vo
   process.stdout.write(
     forOwner(`The plan \`${plan.slug}\` is finished: its worktree ${tree} is removed, and its branch \`${branch}\` is kept, for the owner to land.\n`),
   );
+}
+
+/**
+ * `card drop`, in any state: the owner gives the plan up. A live run ends,
+ * its role and every process the role started with it, as `card stop` ends
+ * one, and a card the run left in flight is settled, its work discarded.
+ * Then the worktree goes and the branch stays, with the plan's landed
+ * commits; every card of the plan not closed, a joined card not yet taken
+ * in among them, closes declined under one note; and the plan's directory
+ * goes, as `card finish` removes it. Waiting cards, the run's findings
+ * among them, stay waiting.
+ */
+export async function drop({ deck, plan, command, args }: Context): Promise<void> {
+  if (args.length > 0) throw new Error(`usage: ${command} drop`);
+  const live = plan.state === "Running" || plan.state === "Dead";
+  // Dead is read, never written, so a record the settling writes says Stopped, as the run now is.
+  let dropped: Plan = live ? { ...(await endRun(deck, plan)), state: "Stopped" } : plan;
+  let gone = "";
+  // The first `card approve` made the branch and the worktree, and nothing before it does.
+  if (dropped.run !== null) {
+    if (live || plan.state === "Bounced") dropped = (await settle(deck, dropped)).plan;
+    const branch = await branchOf(dropped);
+    const tree = await holdWorktree(dropped.slug, branch, process.cwd());
+    // Not forced, as `card finish` does not force it: the run's work is
+    // discarded above, so what git would lose is work the owner left in the
+    // tree, which is theirs to settle.
+    try {
+      await removeWorktree(tree);
+    } catch (error) {
+      throw new Error(`the plan is not dropped, since git would not remove its worktree: ${(error as Error).message}`);
+    }
+    gone = `: its worktree ${tree} is removed, and its branch \`${branch}\` is kept`;
+  }
+  const note = `Dropped with the plan \`${plan.slug}\`, which the owner gave up.`;
+  const closed: string[] = [];
+  for (const id of [...dropped.cards, ...dropped.joins]) {
+    if ((await locate(deck, id))!.closed) continue;
+    await closeCard(deck, id, "declined", note);
+    closed.push(`${await named(deck, id)}\n`);
+  }
+  await rm(plan.dir, { recursive: true });
+  const cards = closed.length > 0 ? `These cards of the plan are closed declined:\n\n${closed.join("")}` : "No card of the plan was left open to close.\n";
+  process.stdout.write(forOwner(`The plan \`${plan.slug}\` is dropped${gone}.\n\n${cards}`));
 }

@@ -1173,6 +1173,53 @@ test(
   SLOW,
 );
 
+test(
+  "card drop in Running ends the run, its role and the role's child, removes the worktree, keeps the branch at its tip, closes every card of the plan not done declined under one note, leaves the done card and the run's finding as they were, and ends the plan",
+  async () => {
+    const { repo, deck, plan, first, final } = await inCheck();
+    const middle = await fileCard(deck, { labels: [], blockedBy: [], headline: "Hold the greeting", body: "Body.\n" });
+    await writeRecord(plan, { cards: [first, middle, final] });
+    const control = stand(["pi"]);
+    const pids = path.join(control, "pids");
+    const findings = [{ headline: "Nothing says goodbye", body: "The greeting has no farewell." }];
+    const approvedWith = { stdout: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Landed it.", findings }) };
+    queue(control, [proceed()], [done("printf 'hello\\n' > hello.txt")], [approvedWith], [proceed()], [done(sleeping(control, pids))]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the middle card's implementer to start", () => existsSync(path.join(control, "first.started")) && existsSync(pids));
+    const { run, landed, findings: filed } = record(plan.dir);
+    const processes = [run!.pid, ...readFileSync(pids, "utf8").trim().split(" ").map(Number)];
+    expect(processes.map(running)).toEqual([true, true, true]);
+    const landedCard = readFileSync(path.join(deck.closedDir, `${first}.md`), "utf8");
+
+    const tree = path.join(repo, ".worktrees", "greeting");
+    const dropping = await card(["drop"], repo);
+    expect(dropping).toEqual({
+      code: 0,
+      stdout: forOwner(
+        `The plan \`greeting\` is dropped: its worktree ${tree} is removed, and its branch \`plan/greeting\` is kept.\n\n` +
+          `These cards of the plan are closed declined:\n\n${middle}  Hold the greeting\n${final}  Check the plan\n`,
+      ),
+      stderr: "",
+    });
+    expect(processes.map(running)).toEqual([false, false, false]);
+    expect(existsSync(tree)).toBe(false);
+    expect((await listWorktrees(repo)).map(({ root }) => root)).toEqual([repo]);
+    // At the first card's commit: the in-flight card's commit of half its work goes with the rest of that work.
+    expect((await gitOrThrow(["rev-parse", "plan/greeting"], repo)).trim()).toBe(landed[0]!.commit);
+    const note = "## Close note\n\nDropped with the plan `greeting`, which the owner gave up.\n";
+    for (const id of [middle, final]) {
+      const closed = readFileSync(path.join(deck.closedDir, `${id}.md`), "utf8");
+      expect(closed).toContain("closed: declined\n");
+      expect(closed).toEndWith(note);
+    }
+    expect(readFileSync(path.join(deck.closedDir, `${first}.md`), "utf8")).toBe(landedCard);
+    expect((await waitingCards(deck)).map(({ id }) => id)).toEqual(filed.map(({ id }) => id));
+    expect(await listPlans(deck)).toEqual([]);
+    expect(existsSync(plan.dir)).toBe(false);
+  },
+  SLOW,
+);
+
 /** The calls of every session whose launch was a reconciler on the card headed `headline`, one list per session. */
 function reconcilersOf(control: string, headline: string): ReturnType<typeof calls>[] {
   return readdirSync(control)
