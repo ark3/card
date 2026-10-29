@@ -167,7 +167,7 @@ test("refuses from a linked worktree, naming the main checkout, and files from t
   onStdin("A body that must not land.\n");
 
   await expect(neu(["Filed from a dispatched tree"], tree)).rejects.toThrow(
-    new RegExp(`dispatching session.*main checkout at ${repo}$`),
+    new RegExp(`role session.*main checkout at ${repo}$`),
   );
   expect(await Array.fromAsync(new Bun.Glob("*.md").scan(deck.openDir))).toEqual([]);
 
@@ -188,7 +188,7 @@ test("refuses from a linked worktree of a detached main checkout without mention
   onStdin("A body that must not land.\n");
 
   await expect(neu(["Filed from a dispatched tree"], tree)).rejects.toThrow(
-    new RegExp(`dispatching session.*main checkout at ${repo}$`),
+    new RegExp(`role session.*main checkout at ${repo}$`),
   );
   expect(await Array.fromAsync(new Bun.Glob("*.md").scan(deck.openDir))).toEqual([]);
 });
@@ -204,7 +204,7 @@ test("refuses from a linked worktree of a bare repository, which has no checkout
     (thrown: Error) => thrown,
   );
 
-  expect(error?.message).toContain("dispatching session");
+  expect(error?.message).toContain("files findings only through its answer");
   expect(error?.message).toContain(`${bare}, the bare repository the deck is reached from`);
   expect(error?.message).not.toMatch(/branch|no main checkout/);
   expect(await Array.fromAsync(new Bun.Glob("*.md").scan(deck.openDir))).toEqual([]);

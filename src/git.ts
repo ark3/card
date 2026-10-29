@@ -72,10 +72,9 @@ export async function firstListed(cwd: string): Promise<Worktree> {
 
 /**
  * Refuses a deck-writing verb run from a linked worktree, which is where a
- * dispatched session works: filing is the dispatching session's work, and
- * where the deck is committed in the tree the write lands in the main
- * checkout's tree, uncommitted, where the dispatched session's branch never
- * sees it.
+ * role session works: a role session files findings only through its answer,
+ * and where the deck is committed in the tree the write lands in the main
+ * checkout's tree, uncommitted, where the role session's branch never sees it.
  */
 export async function refuseFromLinkedWorktree(verb: string, cwd: string): Promise<void> {
   if (!(await inLinkedWorktree(cwd))) return;
@@ -84,6 +83,6 @@ export async function refuseFromLinkedWorktree(verb: string, cwd: string): Promi
   const { root, bare } = await firstListed(cwd);
   const where = bare ? `${root}, the bare repository the deck is reached from` : `the main checkout at ${root}`;
   throw new Error(
-    `card ${verb} writes the deck, which is the dispatching session's work, not a dispatched one's; run it from ${where}`,
+    `deck ${verb} does not run from a linked worktree, since a role session works in the plan's worktree and files findings only through its answer; run it from ${where}`,
   );
 }

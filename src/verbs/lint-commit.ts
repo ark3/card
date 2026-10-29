@@ -15,7 +15,7 @@ export async function run(_args: string[], cwd: string): Promise<void> {
   if (cited.length === 0) return;
 
   for (const id of cited) console.error(id);
-  // Not a throw: `card` prefixes a throw with `card: `, and this output is a
+  // Not a throw: `deck` prefixes a throw with `deck: `, and this output is a
   // plain list for a caller to read back.
   process.exit(1);
 }

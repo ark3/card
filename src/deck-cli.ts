@@ -1,0 +1,38 @@
+#!/usr/bin/env bun
+import * as close from "./verbs/close.ts";
+import * as init from "./verbs/init.ts";
+import * as lintCommit from "./verbs/lint-commit.ts";
+import * as list from "./verbs/list.ts";
+import * as neu from "./verbs/new.ts";
+import * as show from "./verbs/show.ts";
+
+type Verb = (args: string[], cwd: string) => Promise<void>;
+
+const VERBS: Record<string, Verb> = {
+  init: init.run,
+  new: neu.run,
+  show: show.run,
+  list: list.run,
+  close: close.run,
+  lint: lintCommit.run,
+};
+
+const USAGE = `usage: deck <verb> [...]
+
+  ${Object.keys(VERBS).join("  ")}`;
+
+const [name, ...args] = process.argv.slice(2);
+const verb = name === undefined ? undefined : VERBS[name];
+
+if (verb === undefined) {
+  if (name !== undefined) console.error(`deck: no such verb as \`${name}\``);
+  console.error(USAGE);
+  process.exit(1);
+}
+
+try {
+  await verb(args, process.cwd());
+} catch (error) {
+  console.error(`deck: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}

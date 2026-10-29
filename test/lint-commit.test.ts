@@ -4,7 +4,7 @@ import { drawId } from "../src/id.ts";
 import { run as init } from "../src/verbs/init.ts";
 import { clearCardRoot, removeTempDirs, tempRepo } from "./helpers.ts";
 
-const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
+const DECK = path.join(import.meta.dir, "..", "src", "deck-cli.ts");
 
 beforeEach(clearCardRoot);
 afterAll(removeTempDirs);
@@ -12,10 +12,10 @@ afterAll(removeTempDirs);
 type Run = { code: number; stdout: string; stderr: string };
 
 /** Runs the entry point as the shell would, so the exit status is the real one. */
-async function card(args: string[], cwd: string, stdin?: string): Promise<Run> {
+async function deck(args: string[], cwd: string, stdin?: string): Promise<Run> {
   const env = { ...process.env };
   delete env.CARD_ROOT;
-  const proc = Bun.spawn([CARD, ...args], {
+  const proc = Bun.spawn([DECK, ...args], {
     cwd,
     env,
     stdin: stdin === undefined ? "ignore" : new Response(stdin),
@@ -38,14 +38,14 @@ async function fixture(): Promise<string> {
 test("a message citing a card id fails and names it", async () => {
   const repo = await fixture();
   const id = drawId("proj");
-  const result = await card(["lint-commit"], repo, `Teach the reader to stop\n\nFixes ${id}\n`);
+  const result = await deck(["lint"], repo, `Teach the reader to stop\n\nFixes ${id}\n`);
   expect(result.code).not.toBe(0);
   expect(result.stderr).toContain(id);
 });
 
 test("a message citing no card id passes silently", async () => {
   const repo = await fixture();
-  const result = await card(["lint-commit"], repo, "Teach the reader to stop\n\nNo id here.\n");
+  const result = await deck(["lint"], repo, "Teach the reader to stop\n\nNo id here.\n");
   expect(result.code).toBe(0);
   expect(result.stdout).toBe("");
   expect(result.stderr).toBe("");
@@ -53,7 +53,7 @@ test("a message citing no card id passes silently", async () => {
 
 test("an id under another deck's prefix is not this deck's citation", async () => {
   const repo = await fixture();
-  const result = await card(["lint-commit"], repo, `Teach the reader to stop\n\nSee ${drawId("other")}\n`);
+  const result = await deck(["lint"], repo, `Teach the reader to stop\n\nSee ${drawId("other")}\n`);
   expect(result.code).toBe(0);
   expect(result.stderr).toBe("");
 });
@@ -63,14 +63,14 @@ test("every distinct id is named once, one per line", async () => {
   const first = "proj-behilo";
   const second = "proj-vazuku";
   const message = `Land it\n\nFixes ${first}, and ${second}; also ${first} again.\n`;
-  const result = await card(["lint-commit"], repo, message);
+  const result = await deck(["lint"], repo, message);
   expect(result.code).not.toBe(0);
   expect(result.stderr).toBe(`${first}\n${second}\n`);
 });
 
 test("a longer word merely containing an id shape is not a citation", async () => {
   const repo = await fixture();
-  const result = await card(["lint-commit"], repo, "Rename proj-behilonger to something else\n");
+  const result = await deck(["lint"], repo, "Rename proj-behilonger to something else\n");
   expect(result.code).toBe(0);
   expect(result.stderr).toBe("");
 });

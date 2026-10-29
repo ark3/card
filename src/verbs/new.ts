@@ -4,7 +4,7 @@ import { requireDeck } from "../deck.ts";
 import { refuseFromLinkedWorktree } from "../git.ts";
 import { drawId } from "../id.ts";
 
-const USAGE = "usage: card new '<headline>' [--label L]... [--blocked-by <id>]..., body on stdin";
+const USAGE = "usage: deck new '<headline>' [--label L]... [--blocked-by <id>]..., body on stdin";
 // Ninety ids per syllable cubed. Ten collisions in a row is not a deck that
 // happens to be full; it is something wrong worth stopping on.
 const DRAWS = 10;

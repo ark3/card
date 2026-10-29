@@ -7,7 +7,7 @@ const PREFIX = /^[A-Za-z][A-Za-z0-9_-]*$/;
 export async function run(args: string[], cwd: string): Promise<void> {
   const prefix = args[0];
   if (prefix === undefined || args.length > 1) {
-    throw new Error("usage: card init <prefix>");
+    throw new Error("usage: deck init <prefix>");
   }
   if (!PREFIX.test(prefix)) {
     throw new Error(`\`${prefix}\` is not a usable prefix: a letter, then letters, digits, - or _`);

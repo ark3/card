@@ -3,14 +3,15 @@ import path from "node:path";
 import { removeTempDirs, tempRepo } from "./helpers.ts";
 
 const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
+const DECK = path.join(import.meta.dir, "..", "src", "deck-cli.ts");
 
 afterAll(removeTempDirs);
 
-/** Runs the entry point as the shell would: shebang, executable bit and all. */
-async function card(args: string[], cwd: string, options: { stdin?: string } = {}) {
+/** Runs an entry point as the shell would: shebang, executable bit and all. */
+async function spawn(entry: string, args: string[], cwd: string, options: { stdin?: string } = {}) {
   const env = { ...process.env };
   delete env.CARD_ROOT;
-  const proc = Bun.spawn([CARD, ...args], {
+  const proc = Bun.spawn([entry, ...args], {
     cwd,
     env,
     stdin: options.stdin === undefined ? "ignore" : new TextEncoder().encode(options.stdin),
@@ -24,25 +25,44 @@ async function card(args: string[], cwd: string, options: { stdin?: string } = {
   return { code: await proc.exited, stdout, stderr };
 }
 
-test("no verb prints usage and fails", async () => {
-  const repo = await tempRepo();
-  const result = await card([], repo);
-  expect(result.code).not.toBe(0);
-  expect(result.stderr).toContain("usage: card <verb>");
-});
+const card = (args: string[], cwd: string) => spawn(CARD, args, cwd);
+const deck = (args: string[], cwd: string, options: { stdin?: string } = {}) => spawn(DECK, args, cwd, options);
 
-test("an unknown verb prints usage and fails", async () => {
-  const repo = await tempRepo();
-  const result = await card(["frobnicate"], repo);
-  expect(result.code).not.toBe(0);
-  expect(result.stderr).toContain("frobnicate");
-  expect(result.stderr).toContain("usage: card <verb>");
-});
+for (const [program, run] of [
+  ["card", card],
+  ["deck", deck],
+] as const) {
+  test(`${program} with no verb prints usage and fails`, async () => {
+    const repo = await tempRepo();
+    const result = await run([], repo);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain(`usage: ${program} <verb>`);
+  });
 
-test("the retired workflow verbs are each refused as unknown", async () => {
+  test(`${program} with an unknown verb prints usage and fails`, async () => {
+    const repo = await tempRepo();
+    const result = await run(["frobnicate"], repo);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain(`${program}: no such verb as \`frobnicate\``);
+    expect(result.stderr).toContain(`usage: ${program} <verb>`);
+  });
+}
+
+test("card refuses the deck's verbs and the retired workflow verbs as unknown", async () => {
   const repo = await tempRepo();
-  for (const name of ["status", "cmd", "worktree", "author", "execute", "run", "workflow"]) {
+  const deckVerbs = ["init", "new", "show", "list", "close", "lint-commit"];
+  const retired = ["status", "cmd", "worktree", "author", "execute", "run", "workflow"];
+  for (const name of [...deckVerbs, ...retired]) {
     const result = await card([name], repo);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain(`no such verb as \`${name}\``);
+  }
+});
+
+test("deck refuses lint-commit, now lint, and the workflow's status as unknown", async () => {
+  const repo = await tempRepo();
+  for (const name of ["lint-commit", "status"]) {
+    const result = await deck([name], repo);
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain(`no such verb as \`${name}\``);
   }
@@ -50,7 +70,7 @@ test("the retired workflow verbs are each refused as unknown", async () => {
 
 test("one card walks the whole loop, through the real executable", async () => {
   const repo = await tempRepo();
-  const run = (args: string[], stdin?: string) => card(args, repo, { stdin });
+  const run = (args: string[], stdin?: string) => deck(args, repo, { stdin });
 
   expect((await run(["init", "proj"])).code).toBe(0);
 
@@ -85,14 +105,15 @@ test("one card walks the whole loop, through the real executable", async () => {
 test("init, then a second init that refuses", async () => {
   const repo = await tempRepo();
 
-  const first = await card(["init", "proj"], repo);
+  const first = await deck(["init", "proj"], repo);
   expect(first.code).toBe(0);
   expect(first.stdout).toContain("proj");
   expect(await Bun.file(path.join(repo, ".git", "card", "card-config.toml")).text()).toBe(
     'prefix = "proj"\ndeck = "deck"\n',
   );
 
-  const second = await card(["init", "proj"], repo);
+  const second = await deck(["init", "proj"], repo);
   expect(second.code).not.toBe(0);
+  expect(second.stderr).toStartWith("deck: ");
   expect(second.stderr).toContain("already configured");
 });

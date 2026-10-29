@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "bin": {
-    "card": "src/card.ts"
+    "card": "src/card.ts",
+    "deck": "src/deck-cli.ts"
   },
   "scripts": {
     "check": "bun test && tsc --noEmit"

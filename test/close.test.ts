@@ -238,7 +238,7 @@ test("--done keeps a dependent another open card still blocks off the freed list
   expect(printed.indexOf("proj-hitowa  Blocker never existed")).toBeGreaterThan(stillShut);
   expect(printed.indexOf("proj-dumoka  Still shut")).toBeGreaterThan(stillShut);
   expect(errored).toContain(
-    "card: proj-hitowa is blocked by proj-nosuch, which is in neither open/ nor closed/",
+    "deck: proj-hitowa is blocked by proj-nosuch, which is in neither open/ nor closed/",
   );
 });
 

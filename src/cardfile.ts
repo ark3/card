@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 /**
  * A card, as `reference/brief-2026-08-20.md` "What this project changes about
  * the format" defines it: two optional list-valued frontmatter fields, one
- * `# ` headline, and prose — and `closed`, the one field `card close` writes
+ * `# ` headline, and prose — and `closed`, the one field `deck close` writes
  * rather than the owner.
  */
 export type Card = {
@@ -17,7 +17,7 @@ export type Card = {
 };
 
 const FLOW_SEQUENCE = /^\[(.*)\]$/;
-/** The outcomes `card close` takes, and the only values `closed` can hold. */
+/** The outcomes `deck close` takes, and the only values `closed` can hold. */
 const OUTCOMES = ["done", "promoted", "declined", "moot"];
 // A value that would need quoting to survive the flow-sequence grammar, or a
 // line break that would break `^labels:` as a grep.

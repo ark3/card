@@ -1,7 +1,7 @@
 import path from "node:path";
 import { type Deck, requireDeck } from "../deck.ts";
 
-const USAGE = "usage: card show <id> [--path]";
+const USAGE = "usage: deck show <id> [--path]";
 // Prefixes are letters, digits, `-` and `_`; syllables are letters. Anything
 // else is not an id, and must never be joined onto the deck's path.
 const ID = /^[A-Za-z0-9_-]+$/;

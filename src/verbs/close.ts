@@ -5,7 +5,7 @@ import { readCard } from "../cardfile.ts";
 import { requireDeck, stagingName } from "../deck.ts";
 import { locate } from "./show.ts";
 
-const USAGE = "usage: card close <id> --done|--promoted|--declined|--moot, close note on stdin";
+const USAGE = "usage: deck close <id> --done|--promoted|--declined|--moot, close note on stdin";
 const FLAGS = ["--done", "--promoted", "--declined", "--moot"];
 
 /**
@@ -109,7 +109,7 @@ export async function run(args: string[], cwd: string): Promise<void> {
     } catch (error) {
       // The close has already happened, so one bad file leaves the scan
       // incomplete rather than failing the command; this line is what says so.
-      console.error(`card: skipped ${message(error)}`);
+      console.error(`deck: skipped ${message(error)}`);
       continue;
     }
     if (!card.blockedBy.includes(id)) continue;
@@ -129,7 +129,7 @@ export async function run(args: string[], cwd: string): Promise<void> {
         if (blocker === id || closed.has(blocker)) continue;
         if (!stillOpen.has(blocker)) {
           console.error(
-            `card: ${entry.slice(0, -3)} is blocked by ${blocker}, which is in neither open/ nor closed/`,
+            `deck: ${entry.slice(0, -3)} is blocked by ${blocker}, which is in neither open/ nor closed/`,
           );
         }
         held = true;

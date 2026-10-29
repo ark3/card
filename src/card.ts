@@ -1,21 +1,10 @@
 #!/usr/bin/env bun
-import * as close from "./verbs/close.ts";
-import * as init from "./verbs/init.ts";
-import * as lintCommit from "./verbs/lint-commit.ts";
-import * as list from "./verbs/list.ts";
-import * as neu from "./verbs/new.ts";
-import * as show from "./verbs/show.ts";
+// No verb to import yet; this keeps the file a module, which top-level await needs.
+export {};
 
 type Verb = (args: string[], cwd: string) => Promise<void>;
 
-const VERBS: Record<string, Verb> = {
-  init: init.run,
-  new: neu.run,
-  show: show.run,
-  list: list.run,
-  close: close.run,
-  "lint-commit": lintCommit.run,
-};
+const VERBS: Record<string, Verb> = {};
 
 const USAGE = `usage: card <verb> [...]
 

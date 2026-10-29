@@ -89,7 +89,7 @@ test("a blocker in neither directory is reported, never treated as satisfied", a
 
   const { out, err } = await run(["--ready"], repo);
   expect(err).toEqual([
-    "card: proj-aaaaaa is blocked by proj-zzzzzz, which is in neither open/ nor closed/",
+    "deck: proj-aaaaaa is blocked by proj-zzzzzz, which is in neither open/ nor closed/",
   ]);
   expect(out).toEqual(["nothing ready: 1 open card is blocked"]);
 });
@@ -200,7 +200,7 @@ test("an open card whose frontmatter says closed is reported, not passed over", 
 
   expect(out).toEqual(["proj-aaaaaa  open here, closed in its frontmatter"]);
   expect(err).toEqual([
-    "card: proj-aaaaaa is in open/ but its frontmatter says closed: declined",
+    "deck: proj-aaaaaa is in open/ but its frontmatter says closed: declined",
   ]);
 });
 
@@ -243,7 +243,7 @@ test("two listings at once is an error, and so is a flag that names none", async
   const { repo } = await fixture();
   await expect(run(["--open", "--closed"], repo)).rejects.toThrow(/pick one/);
   await expect(run(["--ready", "--closed"], repo)).rejects.toThrow(/pick one/);
-  await expect(run(["--stale"], repo)).rejects.toThrow(/not a listing card understands/);
+  await expect(run(["--stale"], repo)).rejects.toThrow(/not a listing deck understands/);
   await expect(run(["--ready", "--label"], repo)).rejects.toThrow(/--label wants a label/);
 });
 

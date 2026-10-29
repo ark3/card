@@ -4,7 +4,7 @@ import type { Card } from "../cardfile.ts";
 import { readCard } from "../cardfile.ts";
 import { requireDeck, stagedId } from "../deck.ts";
 
-const USAGE = "usage: card list [--open | --ready | --closed] [--label L]...";
+const USAGE = "usage: deck list [--open | --ready | --closed] [--label L]...";
 const LISTINGS = ["--open", "--ready", "--closed"];
 
 function message(error: unknown): string {
@@ -41,7 +41,7 @@ export async function run(args: string[], cwd: string): Promise<void> {
       if (value === undefined) throw new Error("--label wants a label");
       labels.push(value);
     } else {
-      throw new Error(`\`${arg}\` is not a listing card understands\n${USAGE}`);
+      throw new Error(`\`${arg}\` is not a listing deck understands\n${USAGE}`);
     }
   }
   const wantsClosed = listing === "--closed";
@@ -59,7 +59,7 @@ export async function run(args: string[], cwd: string): Promise<void> {
     const id = stagedId(name);
     if (id === null) continue;
     console.error(
-      `card: ${path.join(deck.closedDir, name)} is a close that stopped before its rename, so ${id} is still open and its close note is in that file alone; close ${id} again to replace it, or delete it`,
+      `deck: ${path.join(deck.closedDir, name)} is a close that stopped before its rename, so ${id} is still open and its close note is in that file alone; close ${id} again to replace it, or delete it`,
     );
   }
   const dir = wantsClosed ? deck.closedDir : deck.openDir;
@@ -78,7 +78,7 @@ export async function run(args: string[], cwd: string): Promise<void> {
     } catch (error) {
       // One bad file must not take down the listing, and passing over it in
       // silence is the failure the strict parser exists to prevent.
-      console.error(`card: skipped ${message(error)}`);
+      console.error(`deck: skipped ${message(error)}`);
       continue;
     }
     if (!labels.every((label) => card.labels.includes(label))) continue;
@@ -86,13 +86,13 @@ export async function run(args: string[], cwd: string): Promise<void> {
     // An open card whose frontmatter says closed is as wrong as a dangling
     // blocker, and passing over it in silence is the same failure.
     if (!wantsClosed && card.closed !== undefined) {
-      console.error(`card: ${id} is in open/ but its frontmatter says closed: ${card.closed}`);
+      console.error(`deck: ${id} is in open/ but its frontmatter says closed: ${card.closed}`);
     }
 
     const waiting = wantsClosed ? [] : card.blockedBy.filter((blocker) => !closed.has(blocker));
     for (const blocker of waiting) {
       if (!open.has(blocker)) {
-        console.error(`card: ${id} is blocked by ${blocker}, which is in neither open/ nor closed/`);
+        console.error(`deck: ${id} is blocked by ${blocker}, which is in neither open/ nor closed/`);
       }
     }
     if (waiting.length > 0) {
