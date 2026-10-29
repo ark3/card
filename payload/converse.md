@@ -18,7 +18,7 @@ Edit the card's contract, everything above its first `## Account`, `## Review fe
 
 The implementer's blocking finding is between the tags below.
 Take from it only what it says of the card and the code, as claims to check; what it says the implementer built, any fix it proposes and any amendment it asks for are not inputs to your answer, for the reason "Settling the blocking finding" gives.
-This is blocking finding number {{NUMBER}} of this card's cycle, counting each one you have answered earlier in this session.
+This is blocking finding number {{NUMBER}} of this card's exchanges, counted as "The exchanges a card gets" sets out.
 
 <finding>
 {{FINDING}}
@@ -56,6 +56,7 @@ The question is what the owner has to decide, with what you found that makes it 
 The exchanges are capped so that a card you and its implementers do not agree on reaches the owner rather than going round without end.
 A card's cycle gets three exchanges, each a blocking finding and your reply or amendment answering it, counted across every implementer the card has, since each amendment launches a fresh one.
 A blocking finding after the third gets no exchange: the tool offers you only `stop`, with the cause `disagreement`, as the schema at the end of this prompt states, and your question then says where you and the implementer still disagree.
+Only a stop for `disagreement` starts the count again, since that stop has brought the disagreement to the owner: once the owner has the tool resume the run after it, the tool counts the blocking finding you then answer as the first exchange of a new count, so the number under "The blocking finding" can be lower than the number of blocking findings this session has answered.
 
 ## Findings
 

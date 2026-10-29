@@ -65,12 +65,14 @@ export async function approve({ plan, command, args }: Context): Promise<void> {
 /**
  * Starts the plan's run on `harness` in the worktree `tree`, detached, the
  * leader of its own process group, from `cwd`, so it resolves the deck as
- * this process did, and records it Running. Returns the run's log.
+ * this process did, and records it Running. Given `resuming`, the prompt
+ * `card resume` built, the run resumes the bounced cycle's stopped role with
+ * it before anything else. Returns the run's log.
  */
-export async function startRun(plan: Plan, harness: Harness, tree: string, cwd: string): Promise<string> {
+export async function startRun(plan: Plan, harness: Harness, tree: string, cwd: string, resuming: string | null = null): Promise<string> {
   const log = path.join(plan.dir, "run.log");
   const output = openSync(log, "a");
-  const run = Bun.spawn([process.execPath, RUN, plan.slug, tree], {
+  const run = Bun.spawn([process.execPath, RUN, plan.slug, tree, ...(resuming === null ? [] : ["--resume"])], {
     cwd,
     env: process.env,
     detached: true,
@@ -80,6 +82,7 @@ export async function startRun(plan: Plan, harness: Harness, tree: string, cwd: 
   });
   // The run waits for its stdin to close before it reads the plan, so this is
   // the record it reads, and it starts nothing unless the record names it.
+  if (resuming !== null) run.stdin.write(resuming);
   await writeRecord(plan, { state: "Running", harness, run: { pid: run.pid, boot: await bootId() }, bounce: null });
   run.stdin.end();
   run.unref();

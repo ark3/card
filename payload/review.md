@@ -56,6 +56,7 @@ When you find shortfalls of both kinds, answer `revision` and put the small ones
 Write the feedback for the implementer, who reads it and nothing else of your session: for each shortfall, the requirement of the card it concerns, what the work does instead and where, and what you ran or read that shows it.
 Ask only for what the card requires, never for what you would prefer, because the implementer builds the card and not your preferences.
 A card gets three revision rounds: when a reviewer asks for a revision after the third, the tool stops the run for the owner instead of resuming the implementer, and the owner reads that reviewer's feedback; the cap is no reason to answer `approved` or `fixed` for work with a shortfall that is not small.
+Only that stop starts the count again: once the owner has the tool resume the run after it, the tool counts a revision the resumed reviewer then asks for as the first round of a new count.
 
 The close note says what landed, how you verified it, and how to see it working.
 The tool makes it the body of the card's commit message and the last section of the card, so write it for colleagues who never saw the card: public-safe, and citing no card id, since card ids name the tool's private records and the note goes public with the commit.

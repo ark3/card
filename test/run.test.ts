@@ -1,14 +1,15 @@
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { Cycle } from "../src/cycle.ts";
+import { answerInstruction } from "../src/answer.ts";
+import { type Cycle, RECONCILER } from "../src/cycle.ts";
 import { createDeck, type Deck } from "../src/deck.ts";
 import { git, gitOrThrow } from "../src/git.ts";
 import { ensureBranch, holdWorktree, land } from "../src/landing.ts";
 import { appendRecord, closeCard, fileCard } from "../src/operations.ts";
 import { forOwner } from "../src/owner.ts";
 import { listPlans, type PlanRecord, startPlan, writeRecord } from "../src/plan.ts";
-import { calls, clearCardRoot, queue, type Reply, removeTempDirs, stand, tempRepo } from "./helpers.ts";
+import { calls, clearCardRoot, queue, type Reply, removeTempDirs, script, stand, tempRepo } from "./helpers.ts";
 
 const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
 const OUTER_PATH = process.env.PATH;
@@ -21,11 +22,12 @@ afterEach(() => {
 });
 afterAll(removeTempDirs);
 
-/** Runs `card` under this bun, so the test's PATH need hold nothing but the stand-ins and git. */
-async function card(args: string[], cwd: string) {
+/** Runs `card` under this bun, with `input` on its stdin, so the test's PATH need hold nothing but the stand-ins and git. */
+async function card(args: string[], cwd: string, input?: string) {
   const env = { ...process.env };
   delete env.CARD_ROOT;
-  const proc = Bun.spawn([process.execPath, CARD, ...args], { cwd, env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const stdin = input === undefined ? "ignore" : new Blob([input]);
+  const proc = Bun.spawn([process.execPath, CARD, ...args], { cwd, env, stdin, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   return { code: await proc.exited, stdout, stderr };
 }
@@ -253,7 +255,7 @@ test(
     const cause = "the card depends on work no earlier card has landed, a problem of order for authoring to fix";
     expect(bounce).toEqual({ role: "reconciler", session: bounce!.session, cause, question });
     expect(bounce!.session.id).toBe(cycle!.sessions.reconciler!);
-    expect(cycle).toEqual({ card: first, base, role: "reconciler", step: "reconcile", sessions: { reconciler: bounce!.session.id } });
+    expect(cycle).toEqual({ card: first, base, role: "reconciler", step: "reconcile", sessions: { reconciler: bounce!.session.id }, rounds: 0, exchanges: 0 });
     expect(existsSync(path.join(control, "queue", "2", "answers"))).toBe(true);
     expect(await subjects(repo, base)).toEqual([]);
     expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
@@ -426,7 +428,7 @@ for (const row of ROWS) {
       writeFileSync(path.join(tree, "hello.txt"), "hello\n");
       const commit = await land("Add the greeting", NOTE, tree);
       const sessions = { implementer: crypto.randomUUID(), reviewer: crypto.randomUUID() };
-      const cycle: Cycle = { card: first, base, role: "reviewer", step: "land", sessions, subject: "Add the greeting", note: NOTE };
+      const cycle: Cycle = { card: first, base, role: "reviewer", step: "land", sessions, rounds: 0, exchanges: 0, subject: "Add the greeting", note: NOTE };
       const recorded = row !== ROWS[0];
       if (recorded) cycle.commit = commit;
       const open = path.join(deck.openDir, `${first}.md`);
@@ -567,7 +569,7 @@ test(
 test("bare card in Running reports the card in flight with its role, and the cards closed with their headlines", async () => {
   const { repo, deck, plan, first, final, base } = await inCheck();
   await closeCard(deck, first, "done", "Landed.");
-  const cycle: Cycle = { card: final, base, role: "reviewer", step: "review", sessions: {} };
+  const cycle: Cycle = { card: final, base, role: "reviewer", step: "review", sessions: {}, rounds: 0, exchanges: 0 };
   await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: process.pid, boot: BOOT }, cycle, landed: [{ card: first, commit: base }] });
 
   const report = `The plan \`greeting\`'s run is at this card, with the reviewer:\n\n${final}  Check the plan\n\n1 of the plan's 2 cards have closed:\n\n${first}  Add the greeting\n`;
@@ -585,7 +587,7 @@ for (const [harness, resume] of [
   test(`bare card in Bounced on ${harness} reports the role and its cause byte for byte, and the command that resumes its session from the worktree`, async () => {
     const { repo, plan, first, base } = await inCheck();
     const session = { harness, id: crypto.randomUUID(), dir: path.join(repo, ".worktrees", "greeting") };
-    const cycle: Cycle = { card: first, base, role: "reviewer", step: "review", sessions: { reviewer: session.id } };
+    const cycle: Cycle = { card: first, base, role: "reviewer", step: "review", sessions: { reviewer: session.id }, rounds: 0, exchanges: 0 };
     await writeRecord(plan, { state: "Bounced", harness, cycle, bounce: { role: "reviewer", session, cause: RECORDED } });
 
     const result = await card([], repo);
@@ -606,3 +608,235 @@ test("bare card in Ended reports the branch, the worktree and the final card's c
   expect(result).toEqual({ code: 0, stdout: forOwner(endedReport(final, tree, RECORDED)), stderr: "" });
   expect(result.stdout).toEndWith(`\n\n${RECORDED}</for_owner>\n`);
 });
+
+const ASKED = "Which file did you expect the greeting in?";
+const RESPONSE = "In hello.txt, which the card names.\n\n## Why\n\nThe card says so.  \n";
+
+for (const [harness, argv, stdout] of [
+  ["claude", (id: string) => ["claude", "-p", "--output-format", "json", "--permission-mode", "bypassPermissions", "--resume", id], JSON.stringify({ result: RESPONSE })],
+  ["pi", (id: string) => ["pi", "-p", "--session-id", id], RESPONSE],
+] as const) {
+  test(`card ask on ${harness} resumes the recorded session from the worktree with the question, prints its response for the owner, and changes no state and no file`, async () => {
+    const { repo, deck, plan, first, base } = await inCheck();
+    await ensureBranch("plan/greeting", "main", repo);
+    const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+    // The stopped role's work, left in the worktree.
+    writeFileSync(path.join(tree, "hello.txt"), "half\n");
+    const session = { harness, id: crypto.randomUUID(), dir: tree };
+    const cycle: Cycle = { card: first, base, role: "reconciler", step: "reconcile", sessions: { reconciler: session.id }, rounds: 0, exchanges: 0 };
+    const bounce = { role: "reconciler" as const, session, cause: "the card's intent itself is wrong", question: "Is it?" };
+    await writeRecord(plan, { state: "Bounced", harness, cycle, bounce });
+    const control = stand([harness]);
+    script(control, session.id, { stdout });
+    const unchanged = async () => [
+      readFileSync(path.join(plan.dir, "state.json"), "utf8"),
+      readFileSync(path.join(deck.openDir, `${first}.md`), "utf8"),
+      await gitOrThrow(["rev-parse", "HEAD"], tree),
+      await gitOrThrow(["status", "--porcelain", "--untracked-files=all"], tree),
+    ];
+    const before = await unchanged();
+
+    const result = await card(["ask"], repo, `${ASKED}\n`);
+    expect(result).toEqual({ code: 0, stdout: forOwner(`The reconciler's response:\n\n${RESPONSE}`), stderr: "" });
+    const [only, ...more] = calls(control, session.id);
+    expect(more).toEqual([]);
+    expect(only!.argv).toEqual([...argv(session.id)]);
+    expect(only!.cwd).toBe(tree);
+    expect(only!.stdin).toContain(`\n${ASKED}\n`);
+    // A question-only resume reads no answer, so it states no schema.
+    expect(only!.stdin).not.toContain("JSON Schema");
+    expect(await unchanged()).toEqual(before);
+    expect(record(plan.dir).state).toBe("Bounced");
+  });
+}
+
+test("card ask in Running refuses, and resumes no session", async () => {
+  const { repo, plan, first, base } = await inCheck();
+  const control = stand(["pi"]);
+  const cycle: Cycle = { card: first, base, role: "implementer", step: "implement", sessions: { implementer: crypto.randomUUID() }, rounds: 0, exchanges: 0 };
+  await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: process.pid, boot: BOOT }, cycle });
+
+  const result = await card(["ask"], repo, ASKED);
+  expect(result.code).not.toBe(0);
+  expect(result.stderr).toStartWith("card: `card ask` is not open while the plan `greeting` is in Running");
+  expect(readdirSync(control)).toEqual([]);
+});
+
+const OWNER_ANSWER = "Build greet() in this card: it belongs here.";
+
+test(
+  "card resume returns while the resumed reconciler runs, resumes its session with the owner's answer and its step's schema, and its proceed carries the run on to Ended",
+  async () => {
+    const { repo, plan, base } = await inCheck();
+    const control = stand(["pi"]);
+    const question = "The card calls `greet()`, which nothing defines; should this card build it?";
+    const stop: Reply = { stdout: JSON.stringify({ outcome: "stop", cause: "order", question }) };
+    queue(
+      control,
+      [stop, proceed(hold(control, "resumed"))],
+      [done("printf 'hello\\n' > hello.txt")],
+      [approved("Add the greeting")],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+    const { bounce } = record(plan.dir);
+
+    const resuming = await card(["resume"], repo, `${OWNER_ANSWER}\n`);
+    expect(resuming.stderr).toBe("");
+    expect(resuming.code).toBe(0);
+    const tree = path.join(repo, ".worktrees", "greeting");
+    const log = path.join(plan.dir, "run.log");
+    expect(resuming.stdout).toBe(forOwner(`The plan \`greeting\`'s run is resuming the reconciler's session on pi, in ${tree}; its log is ${log}.\n`));
+
+    await until("the resumed reconciler to start", () => existsSync(path.join(control, "resumed.started")));
+    expect(record(plan.dir).state).toBe("Running");
+    expect(record(plan.dir).bounce).toBeNull();
+    release(control, "resumed");
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const [, resumed, ...more] = calls(control, bounce!.session.id);
+    expect(more).toEqual([]);
+    expect(resumed!.argv).toEqual(["pi", "-p", "--session-id", bounce!.session.id]);
+    expect(resumed!.cwd).toBe(tree);
+    expect(resumed!.stdin).toContain(`\n${OWNER_ANSWER}\n`);
+    expect(resumed!.stdin).toEndWith(answerInstruction(RECONCILER));
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan"]);
+  },
+  SLOW,
+);
+
+test(
+  "card resume with nothing on stdin, after a role failed, resumes that role's session for its final answer, and the run carries on to Ended",
+  async () => {
+    const { repo, plan, base } = await inCheck();
+    const control = stand(["pi"]);
+    queue(
+      control,
+      [proceed()],
+      [{ stderr: "usage limit reached\n", exit: 1 }, done("printf 'hello\\n' > hello.txt")],
+      [approved("Add the greeting")],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+    const { bounce } = record(plan.dir);
+    expect(bounce!.role).toBe("implementer");
+
+    const resuming = await card(["resume"], repo);
+    expect(resuming.stderr).toBe("");
+    expect(resuming.code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const [, resumed, ...more] = calls(control, bounce!.session.id);
+    expect(more).toEqual([]);
+    expect(resumed!.argv).toEqual(["pi", "-p", "--session-id", bounce!.session.id]);
+    expect(resumed!.stdin).toContain("usage limit reached");
+    expect(resumed!.stdin).toContain("\n(none)\n");
+    expect(resumed!.stdin).toContain('"enum":["done","blocked"]');
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan"]);
+    expect(await gitOrThrow(["show", "plan/greeting~1:hello.txt"], repo)).toBe("hello\n");
+  },
+  SLOW,
+);
+
+test(
+  "card resume after the revision rounds ran out resumes the reviewer the report named, and the count starts again, so its next revision is built and reviewed",
+  async () => {
+    const { repo, plan, base } = await inCheck();
+    const control = stand(["pi"]);
+    const revision = (round: number): Reply => ({ stdout: JSON.stringify({ outcome: "revision", feedback: `Round ${round}: not yet.` }) });
+    queue(
+      control,
+      [proceed()],
+      [done(), done(), done(), done(), done()],
+      [revision(1)],
+      [revision(2)],
+      [revision(3)],
+      [revision(4), revision(5)],
+      [approved("Add the greeting")],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+    const { bounce, cycle } = record(plan.dir);
+    expect(bounce!.session.id).toBe(cycle!.sessions.reviewer!);
+
+    expect((await card(["resume"], repo, OWNER_ANSWER)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const resumed = calls(control, bounce!.session.id);
+    expect(resumed).toHaveLength(2);
+    expect(resumed[1]!.stdin).toContain(`\n${OWNER_ANSWER}\n`);
+    expect(resumed[1]!.stdin).toContain('"enum":["approved","fixed","revision"]');
+    expect(calls(control, cycle!.sessions.implementer!)).toHaveLength(5);
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan"]);
+  },
+  SLOW,
+);
+
+test(
+  "card resume after the exchanges ran out resumes the reconciler the report named, offering it the exchange again, and its reply carries the run on",
+  async () => {
+    const { repo, plan, base } = await inCheck();
+    const control = stand(["pi"]);
+    const blocked: Reply = { stdout: JSON.stringify({ outcome: "blocked", finding: "The card names no file to write." }) };
+    const reply: Reply = { stdout: JSON.stringify({ outcome: "reply", reply: "It names hello.txt." }) };
+    const disagreed: Reply = { stdout: JSON.stringify({ outcome: "stop", cause: "disagreement", question: "Does the card name a file?" }) };
+    queue(
+      control,
+      [proceed(), reply, reply, reply, disagreed, reply],
+      [blocked, blocked, blocked, blocked, done("printf 'hello\\n' > hello.txt")],
+      [approved("Add the greeting")],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+    const { bounce, cycle } = record(plan.dir);
+    expect(bounce!.session.id).toBe(cycle!.sessions.reconciler!);
+
+    expect((await card(["resume"], repo, OWNER_ANSWER)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const resumed = calls(control, bounce!.session.id);
+    expect(resumed).toHaveLength(6);
+    expect(resumed[5]!.stdin).toContain(`\n${OWNER_ANSWER}\n`);
+    expect(resumed[5]!.stdin).toContain('"enum":["amended","reply","stop"]');
+    expect(calls(control, cycle!.sessions.implementer!)).toHaveLength(5);
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan"]);
+  },
+  SLOW,
+);
+
+test(
+  "card resume retrying a role that failed carries the counts on as recorded, so a revision past the cap after the retry bounces the plan",
+  async () => {
+    const { repo, plan, base } = await inCheck();
+    const control = stand(["pi"]);
+    const revision = (round: number): Reply => ({ stdout: JSON.stringify({ outcome: "revision", feedback: `Round ${round}: not yet.` }) });
+    // The implementer fails while revising for the third round.
+    const failed: Reply = { stderr: "usage limit reached\n", exit: 1 };
+    queue(control, [proceed()], [done(), done(), done(), failed, done()], [revision(1)], [revision(2)], [revision(3)], [revision(4)]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+    expect(record(plan.dir).bounce!.role).toBe("implementer");
+
+    expect((await card(["resume"], repo)).code).toBe(0);
+    await until("the plan to bounce again", () => record(plan.dir).state === "Bounced");
+
+    const { bounce, cycle } = record(plan.dir);
+    const cause = "the reviewer still asked for a revision after 3 revision rounds, the most a card gets";
+    expect(bounce).toEqual({ role: "reviewer", session: bounce!.session, cause, feedback: "Round 4: not yet." });
+    expect(calls(control, cycle!.sessions.implementer!)).toHaveLength(5);
+    expect(await subjects(repo, base)).toEqual([]);
+  },
+  SLOW,
+);

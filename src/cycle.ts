@@ -49,6 +49,13 @@ export type Cycle = {
    */
   sessions: Partial<Record<Role, string>>;
   /**
+   * The revision rounds and the exchanges the cycle has had, each counted
+   * against its cap, recorded with each step so a resumed cycle carries them
+   * on from the step it resumes.
+   */
+  rounds: number;
+  exchanges: number;
+  /**
    * The reviewer's subject and close note, recorded with step land once they
    * and the diff cite no card id, so a card whose commit lands and whose run
    * dies before it closes closes from them.
@@ -389,142 +396,168 @@ export function reconcilerPrompt(card: { path: string; text: string }, document:
  */
 export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, harness: Harness): Promise<CycleEnd> {
   const base = await headSha(tree);
-  const reconciler: Session = { harness, id: crypto.randomUUID(), dir: tree };
-  let cycle: Cycle = { card: id, base, role: "reconciler", step: "reconcile", sessions: { reconciler: reconciler.id } };
+  const cycle: Cycle = {
+    card: id,
+    base,
+    role: "reconciler",
+    step: "reconcile",
+    sessions: { reconciler: crypto.randomUUID() },
+    rounds: 0,
+    exchanges: 0,
+  };
   plan = await writeRecord(plan, { cycle });
 
   const card = { path: await cardPath(deck, id), text: await cardText(deck, id) };
   const reconciling = reconcilerPrompt(card, { path: plan.document, text: await Bun.file(plan.document).text() });
-  let verdict: Answer;
-  try {
-    verdict = await launch(reconciler, reconciling, RECONCILER, answered);
-  } catch (error) {
-    if (!(error instanceof RoleFailure)) throw error;
-    return { plan, outcome: "stopped", role: "reconciler", session: reconciler, cause: error.message };
+  return cycleFrom(deck, plan, tree, harness, reconciling, launch);
+}
+
+/**
+ * Carries on the cycle that stopped the run, from the step the plan's record
+ * holds and with the counts it holds, by resuming the session of the role
+ * that stopped it with `prompt` and that step's schema, and then as `runCard`
+ * goes on from there. The worktree is as the role left it.
+ */
+export function resumeCard(deck: Deck, plan: Plan, tree: string, harness: Harness, prompt: string): Promise<CycleEnd> {
+  return cycleFrom(deck, plan, tree, harness, prompt, resume);
+}
+
+/**
+ * The cycle `card resume` carries on from the bounced `cycle`, which `bounce`
+ * stopped: a cap's stop has reached the owner, which is what the cap is for,
+ * so the count of the cap that stopped the run starts again, and every other
+ * bounce carries the counts on as recorded. After the revision rounds, a
+ * revision the resumed reviewer asks for is the first round of the new count;
+ * after a stop for disagreement, which only a blocking finding past the
+ * exchanges gets, the blocking finding the resumed reconciler answers is the
+ * first exchange of it.
+ */
+export function restartCap(cycle: Cycle, { question, feedback }: { question?: string; feedback?: string }): Cycle {
+  if (feedback !== undefined) return { ...cycle, rounds: 0 };
+  if (question !== undefined && cycle.exchanges > EXCHANGES) return { ...cycle, exchanges: 1 };
+  return cycle;
+}
+
+/** The answer each step asks of its role, and what the answer has to meet beyond it. */
+function asked(step: Step, exchanges: number): [ObjectSchema, Check] {
+  switch (step) {
+    case "reconcile":
+      return [RECONCILER, answered];
+    case "converse":
+      return [exchanges > EXCHANGES ? DISAGREEMENT : CONVERSE, answered];
+    case "implement":
+      return [IMPLEMENTER, implemented];
+    case "review":
+      return [REVIEWER, reviewed];
+    case "land":
+      throw new Error("no role answers at the land step");
   }
-  plan = await fileFindings(deck, plan, "reconciler", id, verdict);
-  if (verdict.outcome === "stop") {
-    const { cause, question } = verdict as { cause: string; question: string };
-    return { plan, outcome: "stopped", role: "reconciler", session: reconciler, cause: CAUSES[cause]!, question };
-  }
-  // The run's log, where the owner reads what the reconciler changed.
-  console.log(`${id}: the reconciler proceeded: ${verdict.amended}`);
+}
 
-  let implementer: Session = { harness, id: crypto.randomUUID(), dir: tree };
-  cycle = { ...cycle, role: "implementer", step: "implement", sessions: { ...cycle.sessions, implementer: implementer.id } };
-  plan = await writeRecord(plan, { cycle });
-
-  // Read after the reconciler has ended, so its amendments reach the implementer.
-  let implementing = fill(implement, { CARD_TEXT: await cardText(deck, id) });
-  // A fresh implementer is launched; a revision round or a reply resumes it on the work as it left it.
-  let answering = launch;
-  let rounds = 0;
-  let blocking = 0;
-  let subject: string;
-  let note: string;
-  for (;;) {
-    let built: Answer;
-    try {
-      built = await answering(implementer, implementing, IMPLEMENTER, implemented);
-    } catch (error) {
-      if (!(error instanceof RoleFailure)) throw error;
-      return { plan, outcome: "stopped", role: "implementer", session: implementer, cause: error.message };
-    }
-    plan = await fileFindings(deck, plan, "implementer", id, built);
-
-    if (built.outcome === "blocked") {
-      blocking++;
-      // Before the reconciler converses, so HEAD is the branch it amends the card to and the work is uncommitted.
-      await undoMovedHead(base, tree);
-      cycle = { ...cycle, role: "reconciler", step: "converse" };
-      plan = await writeRecord(plan, { cycle });
-      const conversing = fill(converse, { FINDING: (built.finding as string).trimEnd(), NUMBER: String(blocking) });
-      let settled: Answer;
-      try {
-        settled = await resume(reconciler, conversing, blocking > EXCHANGES ? DISAGREEMENT : CONVERSE, answered);
-      } catch (error) {
-        if (!(error instanceof RoleFailure)) throw error;
-        return { plan, outcome: "stopped", role: "reconciler", session: reconciler, cause: error.message };
-      }
-      plan = await fileFindings(deck, plan, "reconciler", id, settled);
-      if (settled.outcome === "stop") {
-        const { cause, question } = settled as { cause: string; question: string };
-        return { plan, outcome: "stopped", role: "reconciler", session: reconciler, cause: CAUSES[cause]!, question };
-      }
-      if (settled.outcome === "reply") {
-        cycle = { ...cycle, role: "implementer", step: "implement" };
-        plan = await writeRecord(plan, { cycle });
-        implementing = fill(reply, { REPLY: (settled.reply as string).trimEnd() });
-        answering = resume;
-        continue;
-      }
-      console.log(`${id}: the reconciler amended the card: ${settled.amended}`);
-      // Discarded, so the amendment owes nothing to the work it replaces.
-      await discard(tree, base);
-      implementer = { harness, id: crypto.randomUUID(), dir: tree };
-      cycle = { ...cycle, role: "implementer", step: "implement", sessions: { ...cycle.sessions, implementer: implementer.id } };
-      plan = await writeRecord(plan, { cycle });
-      implementing = fill(implement, { CARD_TEXT: await cardText(deck, id) });
-      answering = launch;
-      continue;
-    }
-
-    const { account } = built as { account: string };
-    // Before the diff is taken, so the reviewer sees committed work as uncommitted.
-    await undoMovedHead(base, tree);
-    await appendRecord(deck, id, "Account", account);
-
-    const reviewer: Session = { harness, id: crypto.randomUUID(), dir: tree };
-    cycle = { ...cycle, role: "reviewer", step: "review", sessions: { ...cycle.sessions, reviewer: reviewer.id } };
+/**
+ * The cycle recorded in `plan`, from its step on: the step's role is handed
+ * `prompt` by `answering`, and each answer records and prompts the next step,
+ * until the card lands or the cycle stops, as `runCard` sets out.
+ */
+async function cycleFrom(
+  deck: Deck,
+  plan: Plan,
+  tree: string,
+  harness: Harness,
+  prompt: string,
+  answering: typeof launch,
+): Promise<CycleEnd> {
+  let cycle = plan.cycle!;
+  const { card: id, base } = cycle;
+  const session = (role: Role): Session => ({ harness, id: cycle.sessions[role]!, dir: tree });
+  let { rounds, exchanges } = cycle;
+  /** Records the cycle at `role`'s `step`, with the counts, under a fresh session where `fresh`, before the role is called. */
+  const enter = async (role: Role, step: Step, fresh = false) => {
+    const sessions = fresh ? { ...cycle.sessions, [role]: crypto.randomUUID() } : cycle.sessions;
+    cycle = { ...cycle, role, step, sessions, rounds, exchanges };
     plan = await writeRecord(plan, { cycle });
+  };
 
-    // The card's record holds every account and every earlier round's feedback.
-    const { fields } = readDocument(await Bun.file(plan.document).text());
-    const reviewing = fill(review, {
-      CARD_TEXT: await cardText(deck, id),
-      DIFF: (await uncommittedDiff(tree)).trimEnd(),
-      COMMIT_CONVENTION: fields.get("commit-convention") || "(none)",
-    });
+  for (;;) {
+    const { role, step } = cycle;
     let answer: Answer;
     try {
-      answer = await launch(reviewer, reviewing, REVIEWER, reviewed);
+      answer = await answering(session(role), prompt, ...asked(step, exchanges));
+      if (step === "review" && answer.outcome !== "revision") {
+        answer = await referenceChecked(deck, session(role), tree, base, answer);
+      }
     } catch (error) {
       if (!(error instanceof RoleFailure)) throw error;
-      return { plan, outcome: "stopped", role: "reviewer", session: reviewer, cause: error.message };
+      return { plan, outcome: "stopped", role, session: session(role), cause: error.message };
     }
-    if (answer.outcome !== "revision") {
-      try {
-        answer = await referenceChecked(deck, reviewer, tree, base, answer);
-      } catch (error) {
-        if (!(error instanceof RoleFailure)) throw error;
-        return { plan, outcome: "stopped", role: "reviewer", session: reviewer, cause: error.message };
+    // For a reviewer, from the answer that passed, which restates its whole report.
+    plan = await fileFindings(deck, plan, role, id, answer);
+
+    if (answer.outcome === "stop") {
+      const { cause, question } = answer as { cause: string; question: string };
+      return { plan, outcome: "stopped", role, session: session(role), cause: CAUSES[cause]!, question };
+    }
+
+    if (step === "reconcile") {
+      // The run's log, where the owner reads what the reconciler changed.
+      console.log(`${id}: the reconciler proceeded: ${answer.amended}`);
+      await enter("implementer", "implement", true);
+      // Read after the reconciler has ended, so its amendments reach the implementer.
+      prompt = fill(implement, { CARD_TEXT: await cardText(deck, id) });
+      answering = launch;
+    } else if (step === "converse" && answer.outcome === "reply") {
+      await enter("implementer", "implement");
+      prompt = fill(reply, { REPLY: (answer.reply as string).trimEnd() });
+      // A reply resumes the implementer on the work as it left it.
+      answering = resume;
+    } else if (step === "converse") {
+      console.log(`${id}: the reconciler amended the card: ${answer.amended}`);
+      // Discarded, so the amendment owes nothing to the work it replaces.
+      await discard(tree, base);
+      await enter("implementer", "implement", true);
+      prompt = fill(implement, { CARD_TEXT: await cardText(deck, id) });
+      answering = launch;
+    } else if (step === "implement" && answer.outcome === "blocked") {
+      exchanges++;
+      // Before the reconciler converses, so HEAD is the branch it amends the card to and the work is uncommitted.
+      await undoMovedHead(base, tree);
+      await enter("reconciler", "converse");
+      prompt = fill(converse, { FINDING: (answer.finding as string).trimEnd(), NUMBER: String(exchanges) });
+      answering = resume;
+    } else if (step === "implement") {
+      // Before the diff is taken, so the reviewer sees committed work as uncommitted.
+      await undoMovedHead(base, tree);
+      await appendRecord(deck, id, "Account", answer.account as string);
+      await enter("reviewer", "review", true);
+      // The card's record holds every account and every earlier round's feedback.
+      const { fields } = readDocument(await Bun.file(plan.document).text());
+      prompt = fill(review, {
+        CARD_TEXT: await cardText(deck, id),
+        DIFF: (await uncommittedDiff(tree)).trimEnd(),
+        COMMIT_CONVENTION: fields.get("commit-convention") || "(none)",
+      });
+      answering = launch;
+    } else if (answer.outcome === "revision") {
+      const { feedback } = answer as { feedback: string };
+      await appendRecord(deck, id, "Review feedback", feedback);
+      if (rounds === REVISION_ROUNDS) {
+        const cause = `the reviewer still asked for a revision after ${REVISION_ROUNDS} revision rounds, the most a card gets`;
+        return { plan, outcome: "stopped", role, session: session(role), cause, feedback };
       }
-      // From the answer that passed, which restates the reviewer's whole report.
-      plan = await fileFindings(deck, plan, "reviewer", id, answer);
-      ({ subject, close_note: note } = answer as { subject: string; close_note: string });
-      break;
+      rounds++;
+      // The reconciler is not brought back: the card is the contract it was.
+      await enter("implementer", "implement");
+      prompt = fill(revise, { FEEDBACK: feedback.trimEnd() });
+      answering = resume;
+    } else {
+      const { subject, close_note: note } = answer as { subject: string; close_note: string };
+      cycle = { ...cycle, step: "land", subject, note };
+      plan = await writeRecord(plan, { cycle });
+      // `referenceChecked` undid any commit of the reviewer's before it read the diff.
+      const sha = await land(subject, note, tree);
+      plan = await writeRecord(plan, { cycle: { ...cycle, commit: sha } });
+      await closeCard(deck, id, "done", note);
+      return { plan, outcome: "landed", sha };
     }
-    plan = await fileFindings(deck, plan, "reviewer", id, answer);
-
-    const { feedback } = answer as { feedback: string };
-    await appendRecord(deck, id, "Review feedback", feedback);
-    if (rounds === REVISION_ROUNDS) {
-      const cause = `the reviewer still asked for a revision after ${REVISION_ROUNDS} revision rounds, the most a card gets`;
-      return { plan, outcome: "stopped", role: "reviewer", session: reviewer, cause, feedback };
-    }
-    rounds++;
-    // The reconciler is not brought back: the card is the contract it was.
-    cycle = { ...cycle, role: "implementer", step: "implement" };
-    plan = await writeRecord(plan, { cycle });
-    implementing = fill(revise, { FEEDBACK: feedback.trimEnd() });
-    answering = resume;
   }
-
-  cycle = { ...cycle, step: "land", subject, note };
-  plan = await writeRecord(plan, { cycle });
-  // `referenceChecked` undid any commit of the reviewer's before it read the diff.
-  const sha = await land(subject, note, tree);
-  plan = await writeRecord(plan, { cycle: { ...cycle, commit: sha } });
-  await closeCard(deck, id, "done", note);
-  return { plan, outcome: "landed", sha };
 }

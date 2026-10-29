@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import * as bounced from "./bounced.ts";
 import { createDeck, type Deck, DEFAULT_PREFIX, requireDeck, resolveDeck } from "./deck.ts";
 import * as cards from "./cards.ts";
 import * as check from "./check.ts";
@@ -47,7 +48,7 @@ const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Verb>
   },
   Check: { bare: check.printPrompt, open: { approve: { run: check.approve }, amend: { run: check.amend } } },
   Running: { bare: reports.running, open: {} },
-  Bounced: { bare: reports.bounced, open: {} },
+  Bounced: { bare: reports.bounced, open: { ask: { run: bounced.ask }, resume: { run: bounced.resume } } },
   Stopped: { bare: report, open: {} },
   Dead: { bare: dead.carryOn, open: {} },
   Ended: { bare: reports.ended, open: {} },

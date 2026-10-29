@@ -144,6 +144,15 @@ export function resume(session: Session, prompt: string, schema: ObjectSchema, c
 }
 
 /**
+ * Continues `session`, launched before in the same directory, with `prompt`,
+ * and returns its final text as it stands, for a turn the tool reads no
+ * answer from, so `prompt` carries no schema.
+ */
+export function question(session: Session, prompt: string): Promise<string> {
+  return turn(session, true, prompt);
+}
+
+/**
  * Sends `session` the repair prompt for an answer it gave that met its schema
  * and check but that the caller refuses, `invalid` saying why, and returns the
  * corrected answer to `schema`. The correction gets REPAIR_PROMPTS repair

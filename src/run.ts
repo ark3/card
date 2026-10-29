@@ -4,15 +4,19 @@
  * plan's cards not yet closed, in the plan's order, each through one cycle in
  * the worktree, and writes the plan's state after every card, so a run that
  * dies leaves the last card closed recorded. While it lives, it alone writes
- * the plan's state.
+ * the plan's state. `card resume` starts it with `--resume` after them and the
+ * resume prompt on stdin, and its first card's cycle then carries on from the
+ * step that bounced it rather than starting afresh.
  */
-import { runCard } from "./cycle.ts";
+import { resumeCard, runCard } from "./cycle.ts";
 import { locate, requireDeck } from "./deck.ts";
 import { listPlans, writeRecord } from "./plan.ts";
 
-const [slug, tree] = process.argv.slice(2) as [string, string];
-// `card approve` closes stdin once its record names this process.
-await Bun.stdin.text();
+const [slug, tree, flag] = process.argv.slice(2) as [string, string, string?];
+// The verb that starts the run closes stdin once its record names this
+// process, after writing the resume prompt to it where there is one.
+const input = await Bun.stdin.text();
+let resuming = flag === "--resume" ? input : null;
 const deck = await requireDeck(process.cwd());
 let plan = (await listPlans(deck)).find((listed) => listed.slug === slug)!;
 if (plan.run?.pid !== process.pid) {
@@ -23,7 +27,10 @@ if (plan.run?.pid !== process.pid) {
 for (const id of plan.cards) {
   // A card closed done has landed, and one closed any other way left the order.
   if ((await locate(deck, id))?.closed) continue;
-  const ended = await runCard(deck, plan, id, tree, plan.harness!);
+  // The bounced card is the first not closed, since every card before it closed done.
+  const ended =
+    resuming === null ? await runCard(deck, plan, id, tree, plan.harness!) : await resumeCard(deck, plan, tree, plan.harness!, resuming);
+  resuming = null;
   plan = ended.plan;
   if (ended.outcome === "stopped") {
     const { role, session, cause, question, feedback } = ended;
