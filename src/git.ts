@@ -9,6 +9,23 @@ export async function git(args: string[], cwd: string): Promise<GitResult> {
   return { ok: (await proc.exited) === 0, stdout, stderr };
 }
 
+/** `git` where a failure is the caller's failure: its stdout, or git's error thrown. */
+export async function gitOrThrow(args: string[], cwd: string): Promise<string> {
+  const result = await git(args, cwd);
+  if (!result.ok) throw new Error(result.stderr.trim() || `git ${args[0]} failed`);
+  return result.stdout;
+}
+
+/** The commit `cwd`'s HEAD names. */
+export async function headSha(cwd: string): Promise<string> {
+  return (await gitOrThrow(["rev-parse", "HEAD"], cwd)).trim();
+}
+
+/** Whether a local branch named `branch` exists. */
+export async function branchExists(branch: string, cwd: string): Promise<boolean> {
+  return (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], cwd)).ok;
+}
+
 /**
  * The main checkout's `.git`, from anywhere: a subdirectory, a worktree, or
  * inside the deck itself. Null outside a git repository. This is the whole of
