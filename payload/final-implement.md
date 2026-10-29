@@ -9,6 +9,7 @@ Take the card as given rather than weighing whether it is right, since a fresh r
 Your current directory is the root of a git worktree the tool holds for this work, a checkout apart from the repository's main checkout, holding the plan's branch with the work of every other card of the plan landed on it.
 Treat every path in the card and the plan document as relative to the current directory, even one written as absolute, because an absolute path into the main checkout leads to the wrong checkout, which holds none of the plan's work.
 Leave your work uncommitted in the worktree, and create, switch or delete no branch: the tool makes the card's one commit after review and owns every branch, so any instruction from the repository's own documentation to commit or to put work on a branch does not apply here.
+Card ids name the tool's private records, and the card's commit goes public, so write no card id into any line your work adds, whether code, a comment, a test name or documentation, not even an id the card or the plan document cites.
 
 ## The card
 
