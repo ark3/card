@@ -6,6 +6,7 @@ import { readDocument } from "./document.ts";
 import { resolveCommit } from "./git.ts";
 import { chooseHarness, type Harness } from "./harness.ts";
 import { ensureBranch, holdWorktree } from "./landing.ts";
+import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
 import { bootId, type Context, type Plan, writeRecord } from "./plan.ts";
 
@@ -58,7 +59,7 @@ export async function approve({ plan, command, args }: Context): Promise<void> {
   await ensureBranch(branch, start, cwd);
   const tree = await holdWorktree(plan.slug, branch, cwd);
   const log = await startRun(plan, harness, tree, cwd);
-  console.log(`The plan \`${plan.slug}\` is running on ${harness}, since ${why}, in ${tree}; its log is ${log}.`);
+  process.stdout.write(forOwner(`The plan \`${plan.slug}\` is running on ${harness}, since ${why}, in ${tree}; its log is ${log}.\n`));
 }
 
 /**

@@ -47,6 +47,15 @@ function command(harness: Harness, id: string, resuming: boolean): string[] {
 }
 
 /**
+ * The command that resumes `session` interactively at a terminal, from the
+ * directory it ran in. Pi's `--session-id` takes the exact id, as at launch,
+ * where its `--session` would also match a partial one.
+ */
+export function resumeCommand({ harness, id, dir }: Session): string {
+  return `cd ${dir} && ${harness === "pi" ? `pi --session-id ${id}` : `claude --resume ${id}`}`;
+}
+
+/**
  * Runs one turn of `session` with `prompt` on stdin, which has no size limit
  * where an argument does, and returns the session's final text. The session
  * gets this process's environment, because Bun otherwise resolves the

@@ -6,6 +6,7 @@ import * as dead from "./dead.ts";
 import * as document from "./document.ts";
 import { forOwner } from "./owner.ts";
 import { type Context, listPlans, listWaiting, type Plan, refuseSlug, startPlan, type State, waitingCards } from "./plan.ts";
+import * as reports from "./reports.ts";
 
 type Handler = (context: Context) => Promise<void>;
 /** A verb's code, and the arguments every printed command shows it with. */
@@ -45,11 +46,11 @@ const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Verb>
     open: { done: { run: cards.done }, join: { run: cards.join, args: "<id>" }, later: { run: cards.later, args: "<id>" } },
   },
   Check: { bare: check.printPrompt, open: { approve: { run: check.approve }, amend: { run: check.amend } } },
-  Running: { bare: printState, open: {} },
-  Bounced: { bare: printState, open: {} },
+  Running: { bare: reports.running, open: {} },
+  Bounced: { bare: reports.bounced, open: {} },
   Stopped: { bare: report, open: {} },
   Dead: { bare: dead.carryOn, open: {} },
-  Ended: { bare: printState, open: {} },
+  Ended: { bare: reports.ended, open: {} },
 };
 
 const USAGE = `usage: card [<verb>] [--plan <slug>]
@@ -70,11 +71,6 @@ function openCommands(plan: Plan, command: string): string {
 /** Bare `card` in a state whose own printout is later work: where the plan stands, and what is open. */
 async function report({ plan, command }: Context): Promise<void> {
   process.stdout.write(`The plan \`${plan.slug}\` is in ${plan.state}, where these commands are open:\n${openCommands(plan, command)}`);
-}
-
-/** Bare `card` in a state whose report is later work: the state's name and nothing more. */
-async function printState({ plan }: Context): Promise<void> {
-  process.stdout.write(`${plan.state}\n`);
 }
 
 /** The waiting cards, for the owner, when there are any. */

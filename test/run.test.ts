@@ -6,6 +6,7 @@ import { createDeck, type Deck } from "../src/deck.ts";
 import { git, gitOrThrow } from "../src/git.ts";
 import { ensureBranch, holdWorktree, land } from "../src/landing.ts";
 import { appendRecord, closeCard, fileCard } from "../src/operations.ts";
+import { forOwner } from "../src/owner.ts";
 import { listPlans, type PlanRecord, startPlan, writeRecord } from "../src/plan.ts";
 import { clearCardRoot, queue, type Reply, removeTempDirs, stand, tempRepo } from "./helpers.ts";
 
@@ -72,6 +73,16 @@ async function until(what: string, check: () => boolean): Promise<void> {
   }
 }
 
+/** What bare `card` reports for the owner in Bounced, with the card `inCheck` filed first. */
+function bouncedReport(id: string, role: string, cause: string, resume: string): string {
+  return `The plan \`greeting\`'s run bounced at this card, where the ${role} stopped it:\n\n${id}  Add the greeting\n\nThe cause recorded for it:\n\n${cause}\n\nTo resume the ${role}'s session at a terminal, run this from the plan's worktree:\n\n  ${resume}\n`;
+}
+
+/** What bare `card` reports for the owner in Ended, with `inCheck`'s final card closed under `note`. */
+function endedReport(final: string, tree: string, note: string): string {
+  return `The plan \`greeting\`'s run has ended, with every card closed.\n\nIts branch is \`plan/greeting\`, checked out in the worktree ${tree}.\n\nThe final card, ${final}  Check the plan, closed with this note, which is the guide to the plan's work:\n\n${note}`;
+}
+
 /** The subjects of the commits the plan's branch holds beyond `base`, oldest first. */
 async function subjects(repo: string, base: string): Promise<string[]> {
   return (await gitOrThrow(["log", "--reverse", "--format=%s", `${base}..plan/greeting`], repo)).split("\n").filter(Boolean);
@@ -89,12 +100,18 @@ test(
     const approving = await card(["approve"], repo);
     expect(approving.stderr).toBe("");
     expect(approving.code).toBe(0);
+    const tree = path.join(repo, ".worktrees", "greeting");
+    const log = path.join(plan.dir, "run.log");
+    expect(approving.stdout).toBe(
+      forOwner(`The plan \`greeting\` is running on pi, since pi is on PATH and claude is not, in ${tree}; its log is ${log}.\n`),
+    );
 
     await until("the first role to start", () => existsSync(path.join(control, "first.started")));
     expect(record(plan.dir).state).toBe("Running");
     expect(record(plan.dir).harness).toBe("pi");
     expect(await subjects(repo, base)).toEqual([]);
-    expect(await card([], repo)).toEqual({ code: 0, stdout: "Running\n", stderr: "" });
+    const running = `The plan \`greeting\`'s run is at this card, with the implementer:\n\n${first}  Add the greeting\n\n0 of the plan's 2 cards have closed.\n`;
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(running), stderr: "" });
 
     release(control, "first");
     await until("the plan to end", () => record(plan.dir).state === "Ended");
@@ -102,7 +119,7 @@ test(
     expect(await gitOrThrow(["show", "plan/greeting~1:hello.txt"], repo)).toBe("hello\n");
     for (const id of [first, final]) expect(readFileSync(path.join(deck.closedDir, `${id}.md`), "utf8")).toContain("closed: done");
     expect(readFileSync(path.join(plan.dir, "run.log"), "utf8")).toContain("ended");
-    expect(await card([], repo)).toEqual({ code: 0, stdout: "Ended\n", stderr: "" });
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(endedReport(final, tree, "Landed it.\n")), stderr: "" });
   },
   SLOW,
 );
@@ -167,7 +184,8 @@ test(
     expect(bounce?.cause).toContain("usage limit reached");
     expect(await subjects(repo, base)).toEqual([]);
     expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
-    expect(await card([], repo)).toEqual({ code: 0, stdout: "Bounced\n", stderr: "" });
+    const report = bouncedReport(first, "implementer", bounce!.cause, `cd ${bounce!.session.dir} && pi --session-id ${bounce!.session.id}`);
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
   },
   SLOW,
 );
@@ -376,3 +394,46 @@ test(
   },
   SLOW,
 );
+
+test("bare card in Running reports the card in flight with its role, and the cards closed with their headlines", async () => {
+  const { repo, deck, plan, first, final, base } = await inCheck();
+  await closeCard(deck, first, "done", "Landed.");
+  const cycle: Cycle = { card: final, base, role: "reviewer", step: "review", sessions: {} };
+  await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: process.pid, boot: BOOT }, cycle, landed: [{ card: first, commit: base }] });
+
+  const report = `The plan \`greeting\`'s run is at this card, with the reviewer:\n\n${final}  Check the plan\n\n1 of the plan's 2 cards have closed:\n\n${first}  Add the greeting\n`;
+  expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
+});
+
+// Recorded text the owner reads, which the reports carry byte for byte: lines
+// of markdown, trailing spaces and a heading below the record's own.
+const RECORDED = "First line.  \n\n## Trying it\n\n```sh\nbun run greet --loud\n```\n\n- one\n  - **two**\n";
+
+for (const [harness, resume] of [
+  ["claude", (id: string) => `claude --resume ${id}`],
+  ["pi", (id: string) => `pi --session-id ${id}`],
+] as const) {
+  test(`bare card in Bounced on ${harness} reports the role and its cause byte for byte, and the command that resumes its session from the worktree`, async () => {
+    const { repo, plan, first, base } = await inCheck();
+    const session = { harness, id: crypto.randomUUID(), dir: path.join(repo, ".worktrees", "greeting") };
+    const cycle: Cycle = { card: first, base, role: "reviewer", step: "review", sessions: { reviewer: session.id } };
+    await writeRecord(plan, { state: "Bounced", harness, cycle, bounce: { role: "reviewer", session, cause: RECORDED } });
+
+    const result = await card([], repo);
+    expect(result.stdout).toBe(forOwner(bouncedReport(first, "reviewer", RECORDED, `cd ${session.dir} && ${resume(session.id)}`)));
+    expect(result.stdout).toContain(`  cd ${session.dir} && ${resume(session.id)}\n`);
+  });
+}
+
+test("bare card in Ended reports the branch, the worktree and the final card's close note byte for byte", async () => {
+  const { repo, deck, plan, first, final } = await inCheck();
+  await ensureBranch("plan/greeting", "main", repo);
+  const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+  await closeCard(deck, first, "done", "Landed.");
+  await closeCard(deck, final, "done", RECORDED);
+  await writeRecord(plan, { state: "Ended", harness: "pi" });
+
+  const result = await card([], repo);
+  expect(result).toEqual({ code: 0, stdout: forOwner(endedReport(final, tree, RECORDED)), stderr: "" });
+  expect(result.stdout).toEndWith(`\n\n${RECORDED}</for_owner>\n`);
+});
