@@ -261,7 +261,8 @@ The owner settles findings one decision at a time, each its own invocation carry
 
 - `card join` accepts a finding into the plan, ahead of the final card, when it falls within the plan's intent.
   At a plan's end it takes the plan back to the Cards stage, where the finding is rewritten as a card for a fresh implementer, since a role wrote it in whatever words it had, and the plan document is updated if the finding changes what the plan is.
-  The plan then passes the check before approval like any other, and `card approve` runs the joined cards and then the final card again, reopened in place; the plan is not done until it does, which is the fact about its cards and not a regression.
+  The join itself reopens the final card in place, so from that moment the plan is not done until the final card closes done again, which is the fact about its cards and not a regression.
+  The plan then passes the check before approval like any other, and `card approve` runs the joined cards and then the final card again.
 - `card later` leaves a finding outside the plan, waiting, for a Cards stage not yet run to join, when it falls outside the plan's intent; a settling verb that started a plan for it instead would put a second plan in progress as a side effect of settling, and a plan's name on every command.
 - `card decline` closes it, with the reason on stdin.
 - `card promote` sends it to the owner's ticket layer, in two invocations.
@@ -497,7 +498,8 @@ It binds every site where the tool tells the owner something: the stop and what 
 The card file's format is the API, and it stays greppable.
 
 - A card is a markdown file named by its id, with exactly one `# ` line, its headline, which never wraps, and prose below it in whatever shape its own work needs.
-- Its frontmatter has exactly three fields, one line each and no block sequences, so a grep for `^labels:` shows a line with its values: `blocked-by:` and `labels:`, lists the author writes, and `closed:`, the outcome the tool writes at close.
+- Its frontmatter permits three fields and no others, one line each and no block sequences, so a grep for `^labels:` shows a line with its values: `blocked-by:` and `labels:`, lists the author writes, and `closed:`, the outcome the tool writes at close.
+  Each field is optional: a writer omits a list that is empty, `closed:` appears only on a closed card, and a card with no fields has no frontmatter.
 - Labels are opaque strings the tool stores and matches, with no opinion about what any of them mean.
 - An id is the deck's prefix and random consonant-vowel syllables, drawn, checked against both directories and created exclusively as one act, because writers are unbounded even on one machine.
 - A card ends one way: it moves from `open/` to `closed/`, gains `closed:` holding `done`, `promoted`, `declined` or `moot`, and gains its close note under a `## Close note` heading.
