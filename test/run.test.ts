@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import documentStage from "../payload/document.md" with { type: "text" };
 import settle from "../payload/settle.md" with { type: "text" };
 import { answerInstruction } from "../src/answer.ts";
 import { type Cycle, RECONCILER } from "../src/cycle.ts";
@@ -10,7 +11,7 @@ import { ensureBranch, holdWorktree, land } from "../src/landing.ts";
 import { appendRecord, closeCard, fileCard, reopenCard } from "../src/operations.ts";
 import { forOwner } from "../src/owner.ts";
 import { fill, wrapPayload } from "../src/payload.ts";
-import { listPlans, type Plan, type PlanRecord, startPlan, waitingCards, writeRecord } from "../src/plan.ts";
+import { listPlans, type Plan, type PlanRecord, startPlan, type State, waitingCards, writeRecord } from "../src/plan.ts";
 import { calls, clearCardRoot, queue, type Reply, removeTempDirs, script, stand, tempRepo } from "./helpers.ts";
 
 const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
@@ -1491,3 +1492,190 @@ test(
   },
   SLOW,
 );
+
+/**
+ * The table under "The plan's states and the verb surface": the verbs open in
+ * each state, as the refusals print them. `decline` and `promote` are in no
+ * row, being open in every state for a waiting card; `drop` is in every row.
+ */
+const OPEN: Record<State, string[]> = {
+  Document: ["done", "drop"],
+  Cards: ["join <id>", "later <id>", "done", "drop"],
+  Check: ["approve", "amend", "drop"],
+  Running: ["stop", "drop"],
+  Bounced: ["ask", "resume", "amend", "drop"],
+  Stopped: ["resume", "amend", "drop"],
+  Dead: ["stop", "drop"],
+  Ended: ["later <id>", "join <id>", "finish", "drop"],
+};
+const VERBS = ["done", "approve", "amend", "stop", "ask", "resume", "join", "later", "decline", "promote", "finish", "drop"];
+
+/** The commands open in `state` under `command`, bare `card` among them, sorted, since the table sets no order. */
+function opened(command: string, state: State): string[] {
+  return [command, ...OPEN[state].map((verb) => `${command} ${verb}`)].sort();
+}
+
+/**
+ * Asserts that every verb the table leaves closed in `state` refuses, naming
+ * the plan's state and printing the commands open in it, that `decline` and
+ * `promote` reach the waiting card, as only an open verb does, and that none
+ * of it changed the plan's state file.
+ */
+async function closedIn(repo: string, dir: string, state: State, waiting: string): Promise<void> {
+  const before = readFileSync(path.join(dir, "state.json"), "utf8");
+  for (const verb of VERBS.filter((verb) => !["decline", "promote"].includes(verb))) {
+    if (OPEN[state].some((open) => open.split(" ")[0] === verb)) continue;
+    const result = await card([verb], repo);
+    expect(result.code).not.toBe(0);
+    const [first, ...lines] = result.stderr.trimEnd().split("\n");
+    expect(first).toBe(`card: \`card ${verb}\` is not open while the plan \`${path.basename(dir)}\` is in ${state}, where these commands are open:`);
+    expect(lines.map((line) => line.trim()).sort()).toEqual(opened("card", state));
+  }
+  // With nothing on stdin each refuses only once it has the waiting card in hand.
+  expect((await card(["decline", waiting], repo)).stderr).toBe(`card: \`card decline ${waiting}\` needs the owner's reason on stdin, which becomes its close note\n`);
+  expect((await card(["promote", waiting], repo)).stderr).toBe(`card: \`card promote ${waiting}\` needs the session's draft on stdin, which is printed for the owner to post\n`);
+  expect(readFileSync(path.join(dir, "state.json"), "utf8")).toBe(before);
+}
+
+test(
+  "one plan walked through every state of the table, through the executable: bare card does what each row says, and every verb not open there refuses, naming the state and the commands open in it",
+  async () => {
+    const repo = await tempRepo();
+    const deck = await createDeck(repo, "proj");
+    const waiting = await fileCard(deck, { labels: [], blockedBy: [], headline: "A thought put down earlier", body: "Body.\n" });
+    const control = stand(["pi"]);
+    const question = "The card calls `greet()`, which nothing defines; should this card build it?";
+    const guide = "The greeting plan is done: run `cat hello.txt` in the worktree and see hello.";
+    queue(
+      control,
+      [{ stdout: JSON.stringify({ outcome: "stop", cause: "order", question }), run: hold(control, "running") }, proceed()],
+      [done(hold(control, "stopping"))],
+      [proceed()],
+      [done(hold(control, "dying"))],
+      [proceed(hold(control, "carried"))],
+      [done("printf 'hello\\n' > hello.txt")],
+      [approved("Add the greeting")],
+      [proceed()],
+      [done()],
+      [{ stdout: JSON.stringify({ outcome: "approved", subject: "Check the plan", close_note: guide }) }],
+    );
+
+    // Starting: the waiting card with decline and promote, then the Document stage's prompt.
+    const starting = await card([], repo);
+    expect(starting.code).toBe(0);
+    expect(starting.stdout).toContain(`  card decline ${waiting}\n  card promote ${waiting}\n`);
+    const [draft] = await listPlans(deck);
+    const documentPrompt = wrapPayload("card", fill(documentStage, { CARD: "card", PLAN_DOCUMENT: draft!.document }));
+    expect(starting.stdout).toEndWith(documentPrompt);
+
+    // Document.
+    expect(await card([], repo)).toEqual({ code: 0, stdout: documentPrompt, stderr: "" });
+    await closedIn(repo, draft!.dir, "Document", waiting);
+    await Bun.write(draft!.document, `---\nbranch: plan/greeting\nstart-point: main\n---\n\n# Greeting\n\n${DOCUMENT_BODY}\n`);
+    expect((await card(["done"], repo)).code).toBe(0);
+
+    // Cards.
+    const [plan] = await listPlans(deck);
+    expect(plan!.slug).toBe("greeting");
+    const drafting = await card([], repo);
+    expect(drafting.stdout).toContain("# The Cards stage");
+    expect(drafting.stdout).toContain(deck.deckDir);
+    expect(drafting.stdout).toContain(`${waiting}  A thought put down earlier\n  card join ${waiting}\n  card later ${waiting}\n`);
+    await closedIn(repo, plan!.dir, "Cards", waiting);
+    await Bun.write(path.join(plan!.cardsDir, "01-add-the-greeting.md"), "# Add the greeting\n\nBody.\n");
+    await Bun.write(path.join(plan!.cardsDir, "02-check-the-plan.md"), "# Check the plan\n\nBody.\n");
+    expect((await card(["done"], repo)).code).toBe(0);
+
+    // Check.
+    const [first, final] = record(plan!.dir).cards as [string, string];
+    const checking = await card([], repo);
+    expect(checking.stdout).toContain("# The Check stage");
+    expect(checking.stdout).toContain(`${first}  Add the greeting\n`);
+    expect(checking.stdout).toContain(`${final}  Check the plan  (final card)\n`);
+    await closedIn(repo, plan!.dir, "Check", waiting);
+    expect((await card(["approve"], repo)).code).toBe(0);
+
+    // Running, the reconciler held.
+    await until("the first reconciler to start", () => existsSync(path.join(control, "running.started")));
+    const running = `The plan \`greeting\`'s run is at this card, with the reconciler:\n\n${first}  Add the greeting\n\n0 of the plan's 2 cards have closed.\n`;
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(running), stderr: "" });
+    await closedIn(repo, plan!.dir, "Running", waiting);
+    release(control, "running");
+
+    // Bounced, by the reconciler's stop.
+    await until("the plan to bounce", () => record(plan!.dir).state === "Bounced");
+    const tree = path.join(repo, ".worktrees", "greeting");
+    const { bounce } = record(plan!.dir);
+    const report = bouncedReport(first, "reconciler", bounce!.cause, `cd ${tree} && pi --session-id ${bounce!.session.id}`, question);
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
+    await closedIn(repo, plan!.dir, "Bounced", waiting);
+    expect((await card(["resume"], repo, `${OWNER_ANSWER}\n`)).code).toBe(0);
+
+    // Stopped, by `card stop` while the implementer works.
+    await until("the implementer to start", () => existsSync(path.join(control, "stopping.started")));
+    expect(await card(["stop"], repo)).toEqual({ code: 0, stdout: forOwner(stoppedReport(first)), stderr: "" });
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(stoppedReport(first)), stderr: "" });
+    await closedIn(repo, plan!.dir, "Stopped", waiting);
+    expect((await card(["resume"], repo)).code).toBe(0);
+
+    // Dead, the run killed with its role while the next implementer works.
+    await until("the rerun's implementer to start", () => existsSync(path.join(control, "dying.started")));
+    process.kill(-record(plan!.dir).run!.pid, "SIGKILL");
+    for (const deadline = Date.now() + 5_000; (await stateOf(deck)) !== "Dead"; await Bun.sleep(50)) {
+      if (Date.now() > deadline) throw new Error("timed out waiting for the run to read as Dead");
+    }
+    await closedIn(repo, plan!.dir, "Dead", waiting);
+    const log = path.join(plan!.dir, "run.log");
+    const carried = `The plan \`greeting\`'s run had died; it is carried on, on pi, in ${tree}; its log is ${log}.\n`;
+    expect(await card([], repo)).toEqual({ code: 0, stdout: carried, stderr: "" });
+    await until("the carried-on reconciler to start", () => existsSync(path.join(control, "carried.started")));
+    expect(await stateOf(deck)).toBe("Running");
+    release(control, "carried");
+
+    // Ended.
+    await until("the plan to end", () => record(plan!.dir).state === "Ended");
+    expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan!, final, tree, `${guide}\n`), stderr: "" });
+    await closedIn(repo, plan!.dir, "Ended", waiting);
+
+    // Over: the worktree gone, the branch kept, and no plan left in progress.
+    const finishing = await card(["finish"], repo);
+    expect(finishing).toEqual({
+      code: 0,
+      stdout: forOwner(`The plan \`greeting\` is finished: its worktree ${tree} is removed, and its branch \`plan/greeting\` is kept, for the owner to land.\n`),
+      stderr: "",
+    });
+    expect(await listPlans(deck)).toEqual([]);
+    expect(existsSync(tree)).toBe(false);
+    expect(await branchExists("plan/greeting", repo)).toBe(true);
+    expect((await waitingCards(deck)).map(({ id }) => id)).toEqual([waiting]);
+  },
+  4 * SLOW,
+);
+
+test("a second plan started with --plan while the first is in Check: bare card lists both with their states, every command with its --plan right after the word card", async () => {
+  const { repo, deck } = await inCheck();
+  const starting = await card(["--plan", "second"], repo);
+  expect(starting.code).toBe(0);
+  expect(starting.stdout).toContain("run `card --plan second done`");
+  expect((await listPlans(deck)).map(({ slug, state }) => `${slug} ${state}`)).toEqual(["greeting Check", "second Document"]);
+
+  const listing = await card([], repo);
+  expect(listing.code).toBe(0);
+  const [head, ...blocks] = listing.stdout.split("\n\n");
+  expect(head).toBe("More than one plan is in progress, so every command names its plan:");
+  const listed = blocks.map((block) => {
+    const [title, ...lines] = block.trimEnd().split("\n");
+    return { title, commands: lines.map((line) => line.trim()).sort() };
+  });
+  expect(listed).toEqual([
+    { title: "greeting  Check", commands: opened("card --plan greeting", "Check") },
+    { title: "second  Document", commands: opened("card --plan second", "Document") },
+  ]);
+
+  // A verb not open in the plan it names is refused with that plan's commands, under its --plan.
+  const refused = await card(["--plan", "greeting", "done"], repo);
+  expect(refused.code).not.toBe(0);
+  const [first, ...lines] = refused.stderr.trimEnd().split("\n");
+  expect(first).toBe("card: `card --plan greeting done` is not open while the plan `greeting` is in Check, where these commands are open:");
+  expect(lines.map((line) => line.trim()).sort()).toEqual(opened("card --plan greeting", "Check"));
+});
