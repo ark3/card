@@ -310,9 +310,9 @@ const reviewed: Check = (answer: Answer) => {
 
 /**
  * The reviewer's answer when the landing sends it back for a card id or a
- * hook's refusal: its whole report again, under an outcome that lands,
- * findings included, since the answer that lands is the one whose findings
- * are filed.
+ * hook's refusal, or when a cycle that stopped at the land step is resumed:
+ * its whole report again, under an outcome that lands, findings included,
+ * since the answer that lands is the one whose findings are filed.
  */
 const LANDING: ObjectSchema = {
   type: "object",
@@ -485,7 +485,9 @@ export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, 
  * Carries on the cycle that stopped the run, from the step the plan's record
  * holds and with the counts it holds, by resuming the session of the role
  * that stopped it with `prompt` and that step's schema, and then as `runCard`
- * goes on from there. The worktree is as the role left it.
+ * goes on from there. The worktree is as the role left it. At the land step
+ * that is the reviewer's landing answer, which lands as a review's approval
+ * does, id checks and hook returns included.
  */
 export function resumeCard(deck: Deck, plan: Plan, tree: string, harness: Harness, prompt: string): Promise<CycleEnd> {
   return cycleFrom(deck, plan, tree, harness, prompt, resume);
@@ -507,7 +509,11 @@ export function restartCap(cycle: Cycle, { question, feedback }: { question?: st
   return cycle;
 }
 
-/** The answer each step asks of its role, on the plan's final card where `final`, and what the answer has to meet beyond it. */
+/**
+ * The answer each step asks of its role, on the plan's final card where
+ * `final`, and what the answer has to meet beyond it. At the land step, which
+ * only a resumed cycle starts from, it is the reviewer's landing answer.
+ */
 function asked(step: Step, exchanges: number, final: boolean): [ObjectSchema, Check] {
   switch (step) {
     case "reconcile":
@@ -520,7 +526,7 @@ function asked(step: Step, exchanges: number, final: boolean): [ObjectSchema, Ch
     case "review":
       return [REVIEWER, reviewed];
     case "land":
-      throw new Error("no role answers at the land step");
+      return [LANDING, reviewed];
   }
 }
 
@@ -568,7 +574,8 @@ async function cycleFrom(
     let sha = "";
     try {
       answer = await answering(session(role), prompt, ...asked(step, exchanges, final));
-      for (let hookReturns = 0; step === "review" && answer.outcome !== "revision"; hookReturns++) {
+      // A cycle resumed at the land step lands its reviewer's landing answer here too.
+      for (let hookReturns = 0; (step === "review" || step === "land") && answer.outcome !== "revision"; hookReturns++) {
         answer = await referenceChecked(deck, session(role), tree, base, answer);
         const { subject, close_note: note } = answer as { subject: string; close_note: string };
         cycle = { ...cycle, step: "land", subject, note };

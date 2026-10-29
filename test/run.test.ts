@@ -1,11 +1,11 @@
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import documentStage from "../payload/document.md" with { type: "text" };
 import settle from "../payload/settle.md" with { type: "text" };
 import { answerInstruction } from "../src/answer.ts";
 import { startRun } from "../src/check.ts";
-import { type Cycle, RECONCILER } from "../src/cycle.ts";
+import { type Cycle, RECONCILER, type Role, type Step } from "../src/cycle.ts";
 import { createDeck, type Deck } from "../src/deck.ts";
 import { branchExists, git, gitOrThrow, listWorktrees } from "../src/git.ts";
 import { ensureBranch, holdWorktree, land } from "../src/landing.ts";
@@ -1298,6 +1298,83 @@ test(
   },
   SLOW,
 );
+
+test(
+  "card resume after a hook refused the commit past its returns resumes the reviewer at the land step for its landing answer, and the card lands as one commit",
+  async () => {
+    const { repo, plan, base } = await inCheck();
+    const hook = path.join(repo, ".git", "hooks", "pre-commit");
+    writeFileSync(hook, "#!/bin/sh\necho 'the hook refuses' >&2\nexit 1\n", { mode: 0o755 });
+    const control = stand(["pi"]);
+    const fixed: Reply = { stdout: JSON.stringify({ outcome: "fixed", subject: "Add the greeting", close_note: "Landed it." }) };
+    queue(
+      control,
+      [proceed()],
+      [done("printf 'hello\\n' > hello.txt")],
+      [approved("Add the greeting"), fixed, fixed, fixed],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the run to end", () => !running(record(plan.dir).run!.pid));
+    const { state, bounce, cycle } = record(plan.dir);
+    expect(state).toBe("Bounced");
+    expect(cycle).toMatchObject({ role: "reviewer", step: "land" });
+    expect(bounce!.session.id).toBe(cycle!.sessions.reviewer!);
+    expect(bounce!.cause).toContain("the hook refuses");
+
+    rmSync(hook);
+    expect((await card(["resume"], repo, OWNER_ANSWER)).code).toBe(0);
+    await until("the run to end", () => !running(record(plan.dir).run!.pid));
+
+    expect(record(plan.dir)).toMatchObject({ state: "Ended", bounce: null });
+    const resumed = calls(control, bounce!.session.id);
+    expect(resumed).toHaveLength(4);
+    expect(resumed[3]!.argv).toEqual(["pi", "-p", "--session-id", bounce!.session.id]);
+    expect(resumed[3]!.stdin).toContain(`\n${OWNER_ANSWER}\n`);
+    expect(resumed[3]!.stdin).toContain('"enum":["approved","fixed"]');
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan"]);
+  },
+  SLOW,
+);
+
+// Every step a cycle can record, with the role that answers it, so a step
+// added without a role to resume fails the type check, and one added without
+// a resume path fails the test below.
+const STEP_ROLES: Record<Step, Role> = {
+  reconcile: "reconciler",
+  converse: "reconciler",
+  implement: "implementer",
+  review: "reviewer",
+  land: "reviewer",
+};
+
+for (const [step, role] of Object.entries(STEP_ROLES) as [Step, Role][]) {
+  test(
+    `card resume of a cycle bounced at the ${step} step resumes the ${role}'s recorded session`,
+    async () => {
+      const { repo, plan, first, base } = await inCheck();
+      const control = stand(["pi"]);
+      await ensureBranch("plan/greeting", "main", repo);
+      const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+      const session = { harness: "pi" as const, id: crypto.randomUUID(), dir: tree };
+      // The resumed session fails, which bounces the plan again with its failure as the cause.
+      script(control, session.id, { stderr: "usage limit reached\n", exit: 1 });
+      const cycle: Cycle = { card: first, base, role, step, sessions: { [role]: session.id }, rounds: 0, exchanges: 0 };
+      const bounce = { role, session, cause: "usage limit reached" };
+      await writeRecord(plan, { state: "Bounced", harness: "pi", run: { pid: await deadPid(), boot: BOOT }, cycle, bounce });
+
+      expect((await card(["resume"], repo)).code).toBe(0);
+      await until("the run to end", () => !running(record(plan.dir).run!.pid));
+
+      expect(record(plan.dir)).toMatchObject({ state: "Bounced", bounce: { role, session, cause: "pi exited with status 1: usage limit reached" } });
+      const resumed = calls(control, session.id);
+      expect(resumed.map(({ argv }) => argv)).toEqual([["pi", "-p", "--session-id", session.id]]);
+    },
+    SLOW,
+  );
+}
 
 /** What bare `card` and `card stop` report for the owner in Stopped, with the card `inCheck` filed first. */
 function stoppedReport(id: string): string {
