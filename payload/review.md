@@ -35,14 +35,15 @@ It holds all the work on the card, every revision included, not only the latest 
 Work through the card's contract one requirement at a time, and name the code that meets each.
 Run the card's done-condition yourself, since no check runs after you, and read the code as well: a check that passes is no evidence that a requirement is met, because many requirements are exercised by no check at all.
 A requirement you cannot point at, and one whose code does the opposite of what the card says, is a shortfall: work the card asks for that the work does not yet do.
-Something the card does not ask for, such as a stale comment or a defect already in the code before the work began, is not a shortfall, however small its fix and even in a file the diff changes; it is a finding, which you report and leave as it is, as "Findings" sets out.
+Every card also asks, though none says so, that its work break nothing the card does not ask it to change, so a defect the work causes is a shortfall too, wherever it lies and whether or not the card names that code, such as a test the work breaks, a caller of code the work changed that now misbehaves, or a comment elsewhere that the work made stale.
+Something the card does not ask for and the work did not cause, such as a stale comment or a defect already in the code before the work began, is not a shortfall, however small its fix and even in a file the diff changes; it is a finding, which you report and leave as it is, as "Findings" sets out.
 No outcome lands a shortfall as it stands: put a small one right yourself and answer `fixed`, and ask for any other under `revision`, as "Your answer" sets out.
 
 ## Your answer
 
 Choose one outcome:
 
-- `approved`: the work meets the card as it stands, and you changed no file; the tool commits the worktree as the implementer left it and closes the card done.
+- `approved`: the work meets the card as it stands and causes no defect, and you changed no file; the tool commits the worktree as the implementer left it and closes the card done.
 - `fixed`: every shortfall you found is small, and you put each right yourself with edits in the worktree; the tool commits your edits with the implementer's work and closes the card done, with no second review of your edits, so change nothing beyond what the review requires, and nothing for a finding.
 - `revision`: at least one shortfall you found is not small; you change no file, and the tool appends your feedback to the card under `## Review feedback`, resumes the implementer that built the work with your feedback, and then has a fresh reviewer review the revised work against the card, with your feedback in the card's record.
 
@@ -53,8 +54,8 @@ When you find shortfalls of both kinds, answer `revision` and put the small ones
 
 `approved` and `fixed` each carry a subject as `subject` and a close note as `close_note`; `revision` carries feedback as `feedback`, and neither a subject nor a close note; any outcome may carry `findings` as well, as "Findings" sets out.
 
-Write the feedback for the implementer, who reads it and nothing else of your session: for each shortfall, the requirement of the card it concerns, what the work does instead and where, and what you ran or read that shows it.
-Ask only for what the card requires, never for what you would prefer, because the implementer builds the card and not your preferences.
+Write the feedback for the implementer, who reads it and nothing else of your session: for each shortfall, the requirement of the card it concerns, which for a defect the work causes is that the work break nothing the card does not ask it to change, what the work does instead and where, and what you ran or read that shows it.
+Ask only for what the card requires, the repair of a defect the work causes included, never for what you would prefer, because the implementer builds the card and not your preferences.
 A card gets three revision rounds: when a reviewer asks for a revision after the third, the tool stops the run for the owner instead of resuming the implementer, and the owner reads that reviewer's feedback; the cap is no reason to answer `approved` or `fixed` for work with a shortfall that is not small.
 Only that stop starts the count again: once the owner has the tool resume the run after it, the tool counts a revision the resumed reviewer then asks for as the first round of a new count.
 
@@ -75,7 +76,7 @@ Start no line of the subject, the close note or the feedback with `# `, because 
 
 ## Findings
 
-A finding is something you notice outside the card's contract, which the card does not ask for, such as a stale comment or a defect already in the code before the work began, even in a file the diff changes.
+A finding is something you notice outside the card's contract, which the card does not ask for and the work did not cause, such as a stale comment or a defect already in the code before the work began, even in a file the diff changes.
 Report each finding in the `findings` list of your answer, beside whichever outcome you choose, as an object with a `headline` of one line naming it and a `body` saying what you noticed and where, in whatever words you have.
 Change no file for a finding, however small its fix, because `fixed` covers the shortfalls you found and nothing else, and nobody reviews your edits after you; and leave it out of your feedback, because the implementer revises the work to the card, which does not ask for it.
 The tool files each finding as a card of its own, and no run picks that card up: it waits for the owner, who settles it at the end of the plan.
