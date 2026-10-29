@@ -52,17 +52,19 @@ async function mainState(repo: string): Promise<string[]> {
 /**
  * A repository with a `proj` deck, a plan running one card, its document
  * carrying `frontmatter`, and the plan's branch held in its worktree; the main
- * checkout's state is taken after.
+ * checkout's state is taken after. The card is the plan's final card where
+ * `final` says so, and otherwise a card the plan's final card comes after.
  */
-async function running(frontmatter = `commit-convention: ${CONVENTION}\n`) {
+async function running(frontmatter = `commit-convention: ${CONVENTION}\n`, { final = false } = {}) {
   const repo = await tempRepo();
   const deck = await createDeck(repo, "proj");
   const id = await fileCard(deck, { labels: [], blockedBy: [], headline: "Add the greeting", body: CONTRACT });
+  const last = final ? id : await fileCard(deck, { labels: [], blockedBy: [], headline: "Check the plan", body: "Check it.\n" });
   const plan = await writeRecord(await startPlan(deck, "greeting"), {
     state: "Running",
     placeholder: false,
-    cards: [id],
-    final: id,
+    cards: final ? [id] : [id, last],
+    final: last,
     run: { pid: process.pid, boot: await bootId() },
   });
   await Bun.write(
@@ -179,6 +181,8 @@ test("neither the implementer nor the reviewer sees the plan document, and the r
 
   const implementer = calls(control, ids[1]!)[0]!.stdin;
   const reviewer = calls(control, ids[2]!)[0]!.stdin;
+  expect(implementer).toStartWith("# Implementing one card\n");
+  expect(reviewer).toStartWith("# Reviewing one card\n");
   for (const stdin of [implementer, reviewer]) {
     expect(stdin).not.toContain(DOCUMENT_BODY);
     expect(stdin).not.toContain(plan.document);
@@ -525,7 +529,7 @@ test("an implementer's blocked answer resumes the reconciler under its recorded 
   expect(ended.session).toEqual({ harness: "pi", id: ids[0]!, dir: tree });
   expect(ended.question).toBe(QUESTION);
   const sessions = { reconciler: ids[0], implementer: ids[1] };
-  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions, rounds: 0, exchanges: 1 });
+  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions, rounds: 0, exchanges: 1, finding: FINDING });
   expect((await listPlans(deck))[0]!.cycle).toEqual(ended.plan.cycle);
   expect(existsSync(path.join(control, ids[2]!, "calls"))).toBe(false);
 });
@@ -615,7 +619,110 @@ test(`a card gets ${EXCHANGES} exchanges counted across its implementers, and a 
   expect(ended.cause).toBe("the reconciler and the implementer had not agreed after 3 exchanges, the most a card gets");
   expect(ended.question).toBe(DISAGREEMENT);
   const sessions = { reconciler: ids[0], implementer: ids[2] };
-  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions, rounds: 0, exchanges: EXCHANGES + 1 });
+  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions, rounds: 0, exchanges: EXCHANGES + 1, finding: FINDING });
+});
+
+// The plan's final card: its implementer verifying the plan finds a gap, and
+// its reconciler stops the run for it.
+const GAP = "The plan document's criterion that `hello.txt` holds `hello` does not hold: the branch holds no `hello.txt`.";
+const gapped = (run?: string) => answer({ outcome: "blocked", finding: GAP }, run);
+const GAP_QUESTION = "No card of the plan writes `hello.txt`; should authoring add one ahead of the final card?";
+const gapStop = answer({ outcome: "stop", cause: "gap", question: GAP_QUESTION });
+const GAP_CAUSE =
+  "the final card found an acceptance criterion of the plan document that does not hold on the plan's branch, a gap in the plan for authoring to close with cards ahead of the final card";
+
+test("only the plan's final card has its implementer and reviewer handed the plan document beside the card, under the final card's prompts", async () => {
+  const { deck, plan, id, tree } = await running(undefined, { final: true });
+  const { control, ended } = await cycle(deck, plan, id, tree, [done("printf 'hello\\n' > hello.txt")], [approved()]);
+
+  const implementer = calls(control, ids[1]!)[0]!.stdin;
+  const reviewer = calls(control, ids[2]!)[0]!.stdin;
+  expect(implementer).toStartWith("# Implementing the final card\n");
+  expect(reviewer).toStartWith("# Reviewing the final card\n");
+  for (const stdin of [implementer, reviewer]) {
+    expect(stdin).toContain(`<plan_document>\n---\nbranch: plan/greeting\n`);
+    expect(stdin).toContain(`\n${DOCUMENT_BODY}\n</plan_document>\n`);
+    expect(stdin).toContain(`<card>\n# Add the greeting\n\n${CONTRACT}`);
+    expect(stdin).not.toContain("{{");
+  }
+  expect(implementer).toContain('"enum":["done","blocked"]');
+  expect(reviewer).toContain(`## Account\n\n${ACCOUNT}\n`);
+  expect(reviewer).toContain("+++ b/hello.txt\n@@ -0,0 +1 @@\n+hello\n");
+  expect(reviewer).toContain(CONVENTION);
+  expect(reviewer).toContain('"enum":["approved","fixed","revision"]');
+  expect(ended.outcome).toBe("landed");
+});
+
+test("the final card's revision resumes its implementer under the final card's revision prompt, and a fresh reviewer under the final card's review prompt", async () => {
+  const { deck, plan, id, tree } = await running(undefined, { final: true });
+  const { control, ended } = await cycle(deck, plan, id, tree, [done(MISSPELT), revised(RESPELT)], [revision()], [proceed()], [[approved()]]);
+
+  const [, resumed] = calls(control, ids[1]!);
+  expect(resumed!.stdin).toStartWith("# Revising the final card\n");
+  expect(resumed!.stdin).toContain(`<feedback>\n${FEEDBACK}\n</feedback>\n`);
+  expect(resumed!.stdin).toContain('"enum":["done","blocked"]');
+  expect(resumed!.stdin).not.toContain("{{");
+  const second = calls(control, ids[3]!)[0]!.stdin;
+  expect(second).toStartWith("# Reviewing the final card\n");
+  expect(second).toContain(DOCUMENT_BODY);
+  expect(ended.outcome).toBe("landed");
+});
+
+test("a final implementer's blocked answer that the reconciler stops on for a gap ends the cycle stopped, with the gap in the card's record under `## Gap` and the card open", async () => {
+  const { deck, plan, id, tree, base } = await running(undefined, { final: true });
+  const { control, ended } = await drawn(deck, plan, id, tree, [proceed(), gapStop], [gapped()]);
+
+  const [, conversing] = calls(control, ids[0]!);
+  expect(conversing!.stdin).toStartWith("# Answering a blocking finding\n");
+  expect(conversing!.stdin).toContain("This card is the plan's final card.");
+  expect(conversing!.stdin).toContain(`<finding>\n${GAP}\n</finding>\n`);
+  expect(conversing!.stdin).toContain('"enum":["amended","reply","stop"]');
+  expect(conversing!.stdin).toContain('"enum":["intent","gap"]');
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reconciler");
+  expect(ended.session).toEqual({ harness: "pi", id: ids[0]!, dir: tree });
+  expect(ended.cause).toBe(GAP_CAUSE);
+  expect(ended.question).toBe(GAP_QUESTION);
+  expect(ended.gap).toBe(GAP);
+  expect(ended.plan.cycle?.step).toBe("converse");
+  expect(await headSha(tree)).toBe(base);
+  expect(existsSync(path.join(deck.openDir, `${id}.md`))).toBe(true);
+  expect(cardFile(deck, id)).toBe(`# Add the greeting\n\n${CONTRACT}\n## Gap\n\n${GAP}\n`);
+});
+
+test("a final reviewer's revision for a gap brings the resumed implementer to blocked, and the reconciler's stop for the gap records it below the feedback", async () => {
+  const { deck, plan, id, tree } = await running(undefined, { final: true });
+  const feedback = "The plan document's criterion that `hello.txt` holds `hello` does not hold, and the account says it does.";
+  const { ended } = await drawn(deck, plan, id, tree, [proceed(), gapStop], [done(), gapped()], [revision(feedback)]);
+
+  expect(ended.outcome === "stopped" && ended.gap).toBe(GAP);
+  expect(cardFile(deck, id)).toBe(
+    `# Add the greeting\n\n${CONTRACT}\n## Account\n\n${ACCOUNT}\n\n## Review feedback\n\n${feedback}\n\n## Gap\n\n${GAP}\n`,
+  );
+});
+
+test("past the exchanges, the final card's reconciler may still stop for a gap", async () => {
+  const { deck, plan, id, tree } = await running(undefined, { final: true });
+  const { control, ended } = await drawn(deck, plan, id, tree, [proceed(), reply(), reply(), reply(), gapStop], [gapped(), gapped(), gapped(), gapped()]);
+
+  const turns = calls(control, ids[0]!);
+  expect(turns[4]!.stdin).toContain('"enum":["stop"]');
+  expect(turns[4]!.stdin).toContain('"enum":["disagreement","gap"]');
+  expect(ended.outcome === "stopped" && ended.cause).toBe(GAP_CAUSE);
+  expect(cardFile(deck, id)).toEndWith(`\n## Gap\n\n${GAP}\n`);
+});
+
+test("a reconciler stopping for a gap on any card but the final one draws the repair prompt, since the cause is not offered there", async () => {
+  const { deck, plan, id, tree } = await running();
+  const { control, ended } = await drawn(deck, plan, id, tree, [proceed(), gapStop, stop()], [blocked()]);
+
+  const [, conversing, repair] = calls(control, ids[0]!);
+  expect(conversing!.stdin).toContain("This card is not the plan's final card.");
+  expect(conversing!.stdin).toContain('"enum":["intent","order"]');
+  expect(repair!.stdin).toContain('The previous report was invalid:\nanswer.cause is "gap", which is not one of "intent", "order"');
+  expect(ended.outcome === "stopped" && ended.gap).toBeUndefined();
+  expect(cardFile(deck, id)).not.toContain("## Gap");
 });
 
 const FOUND = [

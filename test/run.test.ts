@@ -343,6 +343,62 @@ test(
   SLOW,
 );
 
+test(
+  "a final card's implementer finding a gap, which its reconciler stops on, bounces the plan with the gap in the report and the card's record, and the final card stays open",
+  async () => {
+    const { repo, deck, plan, final, base } = await inCheck();
+    const control = stand(["pi"]);
+    const gap = "The plan document's criterion that `hello.txt` holds `hello` does not hold: the branch holds no `hello.txt`.";
+    const blocked: Reply = { stdout: JSON.stringify({ outcome: "blocked", finding: gap }) };
+    const question = "No card of the plan writes `hello.txt`; should authoring add one ahead of the final card?";
+    const stop: Reply = { stdout: JSON.stringify({ outcome: "stop", cause: "gap", question }) };
+    queue(control, [proceed()], [done()], [approved("Add the greeting")], [proceed(), stop], [blocked]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+
+    const { bounce, cycle } = record(plan.dir);
+    const cause =
+      "the final card found an acceptance criterion of the plan document that does not hold on the plan's branch, a gap in the plan for authoring to close with cards ahead of the final card";
+    expect(bounce).toEqual({ role: "reconciler", session: bounce!.session, cause, question, gap });
+    expect(cycle!.card).toBe(final);
+    expect(bounce!.session.id).toBe(cycle!.sessions.reconciler!);
+    expect(await subjects(repo, base)).toEqual(["Add the greeting"]);
+    expect(existsSync(path.join(deck.openDir, `${final}.md`))).toBe(true);
+    expect(readFileSync(path.join(deck.openDir, `${final}.md`), "utf8")).toBe(`# Check the plan\n\nBody.\n\n## Gap\n\n${gap}\n`);
+    const resume = `cd ${bounce!.session.dir} && pi --session-id ${bounce!.session.id}`;
+    const report =
+      `The plan \`greeting\`'s run bounced at this card, where the reconciler stopped it:\n\n${final}  Check the plan\n\n` +
+      `The cause recorded for it:\n\n${cause}\n\nThe gap the final card found:\n\n${gap}\n\nThe question it asks:\n\n${question}\n\n` +
+      `To resume the reconciler's session at a terminal, run this from the plan's worktree:\n\n  ${resume}\n`;
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
+  },
+  SLOW,
+);
+
+test(
+  "the final card's reviewer, handed the plan document beside the card, approves with the owner's guide as its close note, which bare card prints at Ended",
+  async () => {
+    const { repo, plan, final } = await inCheck();
+    const control = stand(["pi"]);
+    const guide = "The greeting plan is done: run `cat hello.txt` in the worktree and see hello.\n\nOnly the owner can judge whether hello is the greeting wanted.";
+    const guiding: Reply = { stdout: JSON.stringify({ outcome: "approved", subject: "Check the plan", close_note: guide }) };
+    queue(control, [proceed()], [done()], [approved("Add the greeting")], [proceed()], [done()], [guiding]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const { cycle } = record(plan.dir);
+    expect(cycle!.card).toBe(final);
+    const reviewer = calls(control, cycle!.sessions.reviewer!)[0]!.stdin;
+    expect(reviewer).toStartWith("# Reviewing the final card\n");
+    expect(reviewer).toContain(`\n${DOCUMENT_BODY}\n</plan_document>\n`);
+    const tree = path.join(repo, ".worktrees", "greeting");
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(endedReport(final, tree, `${guide}\n`)), stderr: "" });
+  },
+  SLOW,
+);
+
 /** Asserts that nothing of a run started: the plan in Check, no branch, no worktree, no log, and no role called. */
 async function nothingLaunched(repo: string, dir: string, control: string): Promise<void> {
   expect(record(dir).state).toBe("Check");

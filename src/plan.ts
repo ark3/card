@@ -62,10 +62,11 @@ export type PlanRecord = {
   /**
    * The role that stopped the run, its session and the cause, while the plan
    * is Bounced, with the question for the owner of a reconciler that stopped
-   * it, or the last feedback of a reviewer that asked for a revision past the
-   * cap; a role that failed asks none.
+   * it, and the gap where it stopped the final card for one, or the last
+   * feedback of a reviewer that asked for a revision past the cap; a role
+   * that failed asks none.
    */
-  bounce: { role: Role; session: Session; cause: string; question?: string; feedback?: string } | null;
+  bounce: { role: Role; session: Session; cause: string; question?: string; feedback?: string; gap?: string } | null;
 };
 
 /** What a state file written before a field existed reads as for that field. */

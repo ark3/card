@@ -1,4 +1,7 @@
 import converse from "../payload/converse.md" with { type: "text" };
+import finalImplement from "../payload/final-implement.md" with { type: "text" };
+import finalReview from "../payload/final-review.md" with { type: "text" };
+import finalRevise from "../payload/final-revise.md" with { type: "text" };
 import implement from "../payload/implement.md" with { type: "text" };
 import reconcile from "../payload/reconcile.md" with { type: "text" };
 import reply from "../payload/reply.md" with { type: "text" };
@@ -64,16 +67,23 @@ export type Cycle = {
   note?: string;
   /** The card's commit, recorded once it lands and before the card closes. */
   commit?: string;
+  /**
+   * The implementer's latest blocking finding, recorded with step converse,
+   * which a stop for a gap appends to the card's record, a resumed
+   * reconciler's included.
+   */
+  finding?: string;
 };
 
 /**
  * How a cycle ended, and the plan as it then stands. A reconciler that stops
- * the run asks the owner `question`; a reviewer that asks for a revision past
- * the cap leaves its `feedback`; a role that fails asks nothing.
+ * the run asks the owner `question`, and one that stops it for a gap names
+ * the `gap`; a reviewer that asks for a revision past the cap leaves its
+ * `feedback`; a role that fails asks nothing.
  */
 export type CycleEnd = { plan: Plan } & (
   | { outcome: "landed"; sha: string }
-  | { outcome: "stopped"; role: Role; session: Session; cause: string; question?: string; feedback?: string }
+  | { outcome: "stopped"; role: Role; session: Session; cause: string; question?: string; feedback?: string; gap?: string }
 );
 
 /** How many revision rounds a card's cycle gets before a reviewer asking for another stops the run. */
@@ -128,32 +138,53 @@ export const RECONCILER: ObjectSchema = {
 
 /**
  * The reconciler's answer to an implementer's blocking finding, within the
- * exchanges a cycle gets; `carried` checks its fields by outcome.
+ * exchanges a cycle gets, its stop for a cause among `causes`; `carried`
+ * checks its fields by outcome.
  */
-const CONVERSE: ObjectSchema = {
-  type: "object",
-  properties: {
-    outcome: { type: "string", enum: ["amended", "reply", "stop"] },
-    amended: { type: "string" },
-    reply: { type: "string" },
-    cause: { type: "string", enum: ["intent", "order"] },
-    question: { type: "string" },
-    findings: FINDINGS,
-  },
-  required: ["outcome"],
-};
+function conversing(causes: string[]): ObjectSchema {
+  return {
+    type: "object",
+    properties: {
+      outcome: { type: "string", enum: ["amended", "reply", "stop"] },
+      amended: { type: "string" },
+      reply: { type: "string" },
+      cause: { type: "string", enum: causes },
+      question: { type: "string" },
+      findings: FINDINGS,
+    },
+    required: ["outcome"],
+  };
+}
 
-/** The reconciler's answer to a blocking finding past the exchanges a cycle gets: the stop for disagreement alone. */
-const DISAGREEMENT: ObjectSchema = {
-  type: "object",
-  properties: {
-    outcome: { type: "string", enum: ["stop"] },
-    cause: { type: "string", enum: ["disagreement"] },
-    question: { type: "string" },
-    findings: FINDINGS,
-  },
-  required: ["outcome", "cause", "question"],
-};
+/**
+ * The reconciler's answer to a blocking finding past the exchanges a cycle
+ * gets: a stop, for a cause among `causes`.
+ */
+function disagreeing(causes: string[]): ObjectSchema {
+  return {
+    type: "object",
+    properties: {
+      outcome: { type: "string", enum: ["stop"] },
+      cause: { type: "string", enum: causes },
+      question: { type: "string" },
+      findings: FINDINGS,
+    },
+    required: ["outcome", "cause", "question"],
+  };
+}
+
+/**
+ * The reconciler's answers to a blocking finding. On the plan's final card a
+ * blocking finding can be a gap in the plan, which only that card verifies,
+ * so the cause `gap` is offered there alone and `order` is not, since work
+ * no earlier card landed is what a gap is; past the exchanges the stop for
+ * disagreement is offered beside it. Which cause a finding is, the
+ * reconciler judges, and the tool routes on it.
+ */
+const CONVERSE = conversing(["intent", "order"]);
+const DISAGREEMENT = disagreeing(["disagreement"]);
+const FINAL_CONVERSE = conversing(["intent", "gap"]);
+const FINAL_DISAGREEMENT = disagreeing(["disagreement", "gap"]);
 
 /**
  * The fields each role's outcomes carry. No two roles share an outcome word,
@@ -208,6 +239,7 @@ const CAUSES: Record<string, string> = {
   intent: "the card's intent itself is wrong, which only the owner can change",
   order: "the card depends on work no earlier card has landed, a problem of order for authoring to fix",
   disagreement: `the reconciler and the implementer had not agreed after ${EXCHANGES} exchanges, the most a card gets`,
+  gap: "the final card found an acceptance criterion of the plan document that does not hold on the plan's branch, a gap in the plan for authoring to close with cards ahead of the final card",
 };
 
 /** The implementer's answer, whose fields by outcome `carried` checks, as it does the reconciler's. */
@@ -383,7 +415,12 @@ export function reconcilerPrompt(card: { path: string; text: string }, document:
  * goes back to the cycle's base for a fresh implementer, for up to EXCHANGES
  * exchanges, after which a blocking finding gets the reconciler's stop for
  * disagreement alone. Neither the implementer nor the reviewer is shown the
- * plan document; the reviewer gets its commit convention alone. Nothing is
+ * plan document, and the reviewer gets its commit convention alone, except on
+ * the plan's final card, which verifies the plan's acceptance criteria: its
+ * implementer, a revision of it and its reviewer each get a prompt of their
+ * own with the plan document beside the card, and a blocking finding there
+ * may be a gap in the plan, which the reconciler stops the run for and the
+ * tool appends to the card's record under `## Gap`. Nothing is
  * committed until the reviewer's subject and close note, and the lines the
  * diff adds, cite no card id of the deck, as `referenceChecked` holds them.
  * Every answer's findings are filed as waiting cards as the answer is read,
@@ -438,13 +475,14 @@ export function restartCap(cycle: Cycle, { question, feedback }: { question?: st
   return cycle;
 }
 
-/** The answer each step asks of its role, and what the answer has to meet beyond it. */
-function asked(step: Step, exchanges: number): [ObjectSchema, Check] {
+/** The answer each step asks of its role, on the plan's final card where `final`, and what the answer has to meet beyond it. */
+function asked(step: Step, exchanges: number, final: boolean): [ObjectSchema, Check] {
   switch (step) {
     case "reconcile":
       return [RECONCILER, answered];
     case "converse":
-      return [exchanges > EXCHANGES ? DISAGREEMENT : CONVERSE, answered];
+      if (exchanges > EXCHANGES) return [final ? FINAL_DISAGREEMENT : DISAGREEMENT, answered];
+      return [final ? FINAL_CONVERSE : CONVERSE, answered];
     case "implement":
       return [IMPLEMENTER, implemented];
     case "review":
@@ -469,7 +507,18 @@ async function cycleFrom(
 ): Promise<CycleEnd> {
   let cycle = plan.cycle!;
   const { card: id, base } = cycle;
+  const final = id === plan.final;
   const session = (role: Role): Session => ({ harness, id: cycle.sessions[role]!, dir: tree });
+  const documentText = async () => (await Bun.file(plan.document).text()).trimEnd();
+  /**
+   * The prompt that launches an implementer on the card as its file then
+   * stands, so a reconciler's amendments reach it, with the plan document
+   * beside the card on the final card.
+   */
+  const implementing = async () =>
+    final
+      ? fill(finalImplement, { CARD_TEXT: await cardText(deck, id), DOCUMENT_TEXT: await documentText() })
+      : fill(implement, { CARD_TEXT: await cardText(deck, id) });
   let { rounds, exchanges } = cycle;
   /** Records the cycle at `role`'s `step`, with the counts, under a fresh session where `fresh`, before the role is called. */
   const enter = async (role: Role, step: Step, fresh = false) => {
@@ -482,7 +531,7 @@ async function cycleFrom(
     const { role, step } = cycle;
     let answer: Answer;
     try {
-      answer = await answering(session(role), prompt, ...asked(step, exchanges));
+      answer = await answering(session(role), prompt, ...asked(step, exchanges, final));
       if (step === "review" && answer.outcome !== "revision") {
         answer = await referenceChecked(deck, session(role), tree, base, answer);
       }
@@ -495,7 +544,13 @@ async function cycleFrom(
 
     if (answer.outcome === "stop") {
       const { cause, question } = answer as { cause: string; question: string };
-      return { plan, outcome: "stopped", role, session: session(role), cause: CAUSES[cause]!, question };
+      const stopped = { plan, outcome: "stopped", role, session: session(role), cause: CAUSES[cause]!, question } as const;
+      if (cause !== "gap") return stopped;
+      // Only a conversing reconciler on the final card is offered `gap`, and the converse step records the finding.
+      const gap = cycle.finding!;
+      // In the record, so the roles that run the final card again read what this run found.
+      await appendRecord(deck, id, "Gap", gap);
+      return { ...stopped, gap };
     }
 
     if (step === "reconcile") {
@@ -503,7 +558,7 @@ async function cycleFrom(
       console.log(`${id}: the reconciler proceeded: ${answer.amended}`);
       await enter("implementer", "implement", true);
       // Read after the reconciler has ended, so its amendments reach the implementer.
-      prompt = fill(implement, { CARD_TEXT: await cardText(deck, id) });
+      prompt = await implementing();
       answering = launch;
     } else if (step === "converse" && answer.outcome === "reply") {
       await enter("implementer", "implement");
@@ -515,14 +570,19 @@ async function cycleFrom(
       // Discarded, so the amendment owes nothing to the work it replaces.
       await discard(tree, base);
       await enter("implementer", "implement", true);
-      prompt = fill(implement, { CARD_TEXT: await cardText(deck, id) });
+      prompt = await implementing();
       answering = launch;
     } else if (step === "implement" && answer.outcome === "blocked") {
       exchanges++;
       // Before the reconciler converses, so HEAD is the branch it amends the card to and the work is uncommitted.
       await undoMovedHead(base, tree);
+      cycle = { ...cycle, finding: answer.finding as string };
       await enter("reconciler", "converse");
-      prompt = fill(converse, { FINDING: (answer.finding as string).trimEnd(), NUMBER: String(exchanges) });
+      prompt = fill(converse, {
+        FINDING: (answer.finding as string).trimEnd(),
+        NUMBER: String(exchanges),
+        FINAL: final ? "the plan's final card" : "not the plan's final card",
+      });
       answering = resume;
     } else if (step === "implement") {
       // Before the diff is taken, so the reviewer sees committed work as uncommitted.
@@ -531,11 +591,12 @@ async function cycleFrom(
       await enter("reviewer", "review", true);
       // The card's record holds every account and every earlier round's feedback.
       const { fields } = readDocument(await Bun.file(plan.document).text());
-      prompt = fill(review, {
+      const reviewing = {
         CARD_TEXT: await cardText(deck, id),
         DIFF: (await uncommittedDiff(tree)).trimEnd(),
         COMMIT_CONVENTION: fields.get("commit-convention") || "(none)",
-      });
+      };
+      prompt = final ? fill(finalReview, { ...reviewing, DOCUMENT_TEXT: await documentText() }) : fill(review, reviewing);
       answering = launch;
     } else if (answer.outcome === "revision") {
       const { feedback } = answer as { feedback: string };
@@ -547,7 +608,7 @@ async function cycleFrom(
       rounds++;
       // The reconciler is not brought back: the card is the contract it was.
       await enter("implementer", "implement");
-      prompt = fill(revise, { FEEDBACK: feedback.trimEnd() });
+      prompt = fill(final ? finalRevise : revise, { FEEDBACK: feedback.trimEnd() });
       answering = resume;
     } else {
       const { subject, close_note: note } = answer as { subject: string; close_note: string };

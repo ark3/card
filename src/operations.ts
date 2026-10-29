@@ -162,7 +162,7 @@ function recordOutcome(id: string, text: string, outcome: string): string {
 }
 
 /** The headings a record section can carry, all of them written by the tool. */
-export type RecordHeading = "Account" | "Review feedback" | "Close note" | "Promotion";
+export type RecordHeading = "Account" | "Review feedback" | "Gap" | "Close note" | "Promotion";
 
 /**
  * `text` with a record section appended: `heading`, then `body`. The heading

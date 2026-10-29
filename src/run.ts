@@ -33,8 +33,8 @@ for (const id of plan.cards) {
   resuming = null;
   plan = ended.plan;
   if (ended.outcome === "stopped") {
-    const { role, session, cause, question, feedback } = ended;
-    await writeRecord(plan, { state: "Bounced", bounce: { role, session, cause, question, feedback } });
+    const { role, session, cause, question, feedback, gap } = ended;
+    await writeRecord(plan, { state: "Bounced", bounce: { role, session, cause, question, feedback, gap } });
     console.log(`The run bounced at ${id}: the ${role} stopped it: ${cause}`);
     if (question !== undefined) console.log(`It asks the owner: ${question}`);
     process.exit(0);
