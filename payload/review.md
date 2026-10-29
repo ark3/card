@@ -66,6 +66,7 @@ Write the subject as one line, the commit's first, under the repository's conven
     {{COMMIT_CONVENTION}}
 
 Where that reads `(none)`, the owner recorded no convention: write the subject as an imperative with a capital letter and no trailing period, such as `Add the export button`, as Git's own history is written.
+The subject goes public with the commit, as the close note does, so it cites no card id either.
 
 Start no line of the subject, the close note or the feedback with `# `, because in a card only its headline starts that way, and the tool refuses a subject, a close note or feedback that does.
 

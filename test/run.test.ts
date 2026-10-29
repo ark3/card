@@ -290,6 +290,29 @@ test(
 );
 
 test(
+  "a close note still citing a card id after its returns bounces the plan with the reviewer as the session to resume, and commits nothing",
+  async () => {
+    const { repo, deck, plan, first, base } = await inCheck();
+    const control = stand(["pi"]);
+    const citing: Reply = { stdout: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Follows proj-dagobe." }) };
+    queue(control, [proceed()], [done()], [citing, citing, citing]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+
+    const { bounce, cycle } = record(plan.dir);
+    expect(bounce?.role).toBe("reviewer");
+    expect(bounce!.session.id).toBe(cycle!.sessions.reviewer!);
+    expect(bounce?.cause).toStartWith("the subject and close note still cited a card id after 2 returns: answer.close_note cites proj-dagobe");
+    expect(cycle!.step).toBe("review");
+    expect(calls(control, cycle!.sessions.reviewer!)).toHaveLength(3);
+    expect(await subjects(repo, base)).toEqual([]);
+    expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
+  },
+  SLOW,
+);
+
+test(
   "an implementer and a reconciler that have not agreed after the cap bounce the plan with the reconciler as the session to resume",
   async () => {
     const { repo, deck, plan, first, base } = await inCheck();

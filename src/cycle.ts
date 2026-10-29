@@ -4,13 +4,15 @@ import reconcile from "../payload/reconcile.md" with { type: "text" };
 import reply from "../payload/reply.md" with { type: "text" };
 import review from "../payload/review.md" with { type: "text" };
 import revise from "../payload/revise.md" with { type: "text" };
+import stripIds from "../payload/strip-ids.md" with { type: "text" };
 import type { Answer, ObjectSchema, Schema } from "./answer.ts";
 import { refuseHeadline, refuseHeadlines } from "./cardfile.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { headSha } from "./git.ts";
-import { type Check, type Harness, launch, resume, RoleFailure, type Session } from "./harness.ts";
-import { discard, land, uncommittedDiff, undoMovedHead } from "./landing.ts";
+import { type Check, correct, type Harness, launch, resume, RoleFailure, type Session } from "./harness.ts";
+import { citedIds } from "./id.ts";
+import { addedLines, discard, land, uncommittedDiff, undoMovedHead } from "./landing.ts";
 import { appendRecord, closeCard, fileCard } from "./operations.ts";
 import { fill } from "./payload.ts";
 import { type Plan, writeRecord } from "./plan.ts";
@@ -47,8 +49,9 @@ export type Cycle = {
    */
   sessions: Partial<Record<Role, string>>;
   /**
-   * The reviewer's subject and close note, recorded with step land, so a card
-   * whose commit lands and whose run dies before it closes closes from them.
+   * The reviewer's subject and close note, recorded with step land once they
+   * and the diff cite no card id, so a card whose commit lands and whose run
+   * dies before it closes closes from them.
    */
   subject?: string;
   note?: string;
@@ -76,6 +79,15 @@ export const REVISION_ROUNDS = 3;
  * alone.
  */
 export const EXCHANGES = 3;
+
+/**
+ * How many times a card's landing sends the reviewer back for a card id
+ * before a third failure has the reviewer failed: the subject and close note
+ * get this many returns, and the lines the diff adds as many again, each
+ * counted apart from the other and from the repair prompts of a malformed
+ * answer.
+ */
+export const ID_RETURNS = 2;
 
 /**
  * The findings every role's answer may carry, each something outside the
@@ -240,6 +252,76 @@ const reviewed: Check = (answer: Answer) => {
 };
 
 /**
+ * The reviewer's answer when the landing sends it back for a card id: its
+ * whole report again, under an outcome that lands, findings included, since
+ * the answer that passes the checks is the one whose findings are filed.
+ */
+const LANDING: ObjectSchema = {
+  type: "object",
+  properties: {
+    outcome: { type: "string", enum: ["approved", "fixed"] },
+    subject: { type: "string" },
+    close_note: { type: "string" },
+    findings: FINDINGS,
+  },
+  required: ["outcome", "subject", "close_note"],
+};
+
+/**
+ * What the one-way reference rule finds wrong with the subject and close note
+ * of `answer`, naming each card id of the `prefix` deck they cite, or null
+ * where they cite none.
+ */
+function messageCites(answer: Answer, prefix: string): string | null {
+  const cites = ["subject", "close_note"].flatMap((field) => {
+    const ids = citedIds(answer[field] as string, prefix);
+    return ids.length === 0 ? [] : [`answer.${field} cites ${ids.join(", ")}`];
+  });
+  if (cites.length === 0) return null;
+  return `${cites.join(", and ")}: the subject and close note go public as the card's commit message, so neither may cite a card id`;
+}
+
+/**
+ * Holds the reviewer's landing answer to the one-way reference rule before
+ * the card's commit is made, and returns the answer that passes. Its subject
+ * and close note are checked for the deck's card ids, then the lines the
+ * worktree's diff adds. A message citing one goes back to the reviewer by the
+ * repair prompt, scoped to the message alone; a diff citing one resumes the
+ * reviewer under strip-ids.md with the offending lines quoted, to remove each
+ * id as a small fix, and both checks run again on its answer. Each check
+ * sends the reviewer back ID_RETURNS times, and its next failure throws
+ * RoleFailure, quoting what still cites an id.
+ */
+async function referenceChecked(deck: Deck, reviewer: Session, tree: string, base: string, answer: Answer): Promise<Answer> {
+  let messageReturns = 0;
+  let diffReturns = 0;
+  for (;;) {
+    const cited = messageCites(answer, deck.prefix);
+    if (cited !== null) {
+      if (messageReturns === ID_RETURNS) {
+        throw new RoleFailure(`the subject and close note still cited a card id after ${ID_RETURNS} returns: ${cited}`);
+      }
+      messageReturns++;
+      answer = await correct(reviewer, cited, LANDING, reviewed);
+      continue;
+    }
+    // A reviewer committing its fixes would otherwise hide them from the
+    // diff, and give the card two commits.
+    await undoMovedHead(base, tree);
+    const lines = (await addedLines(tree)).filter((line) => citedIds(line, deck.prefix).length > 0);
+    if (lines.length === 0) return answer;
+    if (diffReturns === ID_RETURNS) {
+      const quoted = lines.map((line) => JSON.stringify(line)).join(", ");
+      throw new RoleFailure(`the lines the card's diff adds still cited a card id after ${ID_RETURNS} returns: ${quoted}`);
+    }
+    diffReturns++;
+    const ids = [...new Set(lines.flatMap((line) => citedIds(line, deck.prefix)))];
+    const stripping = fill(stripIds, { LINES: lines.join("\n"), IDS: ids.map((id) => `\`${id}\``).join(", ") });
+    answer = await resume(reviewer, stripping, LANDING, reviewed);
+  }
+}
+
+/**
  * Files each finding in `answer`, from the role `role` working the card
  * `card`, through deck's filing function: into `open/` and in no plan's
  * order, so it waits and no run picks it up, with the role, the card and the
@@ -294,11 +376,16 @@ export function reconcilerPrompt(card: { path: string; text: string }, document:
  * goes back to the cycle's base for a fresh implementer, for up to EXCHANGES
  * exchanges, after which a blocking finding gets the reconciler's stop for
  * disagreement alone. Neither the implementer nor the reviewer is shown the
- * plan document; the reviewer gets its commit convention alone. Every
- * answer's findings are filed as waiting cards as the answer is read,
- * whatever its outcome. A reconciler that stops, a reviewer asking for a
- * revision past the cap, or a role that fails, ends the cycle stopped, with
- * its cause and session.
+ * plan document; the reviewer gets its commit convention alone. Nothing is
+ * committed until the reviewer's subject and close note, and the lines the
+ * diff adds, cite no card id of the deck, as `referenceChecked` holds them.
+ * Every answer's findings are filed as waiting cards as the answer is read,
+ * whatever its outcome, but for a reviewer's `approved` or `fixed`: each
+ * answer the landing sends back is replaced by the reviewer's next, which
+ * restates the whole report, so the findings filed are those of the answer
+ * that passes, and a reviewer that fails at its last return files none. A
+ * reconciler that stops, a reviewer asking for a revision past the cap, or a
+ * role that fails, ends the cycle stopped, with its cause and session.
  */
 export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, harness: Harness): Promise<CycleEnd> {
   const base = await headSha(tree);
@@ -405,11 +492,19 @@ export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, 
       if (!(error instanceof RoleFailure)) throw error;
       return { plan, outcome: "stopped", role: "reviewer", session: reviewer, cause: error.message };
     }
-    plan = await fileFindings(deck, plan, "reviewer", id, answer);
     if (answer.outcome !== "revision") {
+      try {
+        answer = await referenceChecked(deck, reviewer, tree, base, answer);
+      } catch (error) {
+        if (!(error instanceof RoleFailure)) throw error;
+        return { plan, outcome: "stopped", role: "reviewer", session: reviewer, cause: error.message };
+      }
+      // From the answer that passed, which restates the reviewer's whole report.
+      plan = await fileFindings(deck, plan, "reviewer", id, answer);
       ({ subject, close_note: note } = answer as { subject: string; close_note: string });
       break;
     }
+    plan = await fileFindings(deck, plan, "reviewer", id, answer);
 
     const { feedback } = answer as { feedback: string };
     await appendRecord(deck, id, "Review feedback", feedback);
@@ -427,8 +522,7 @@ export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, 
 
   cycle = { ...cycle, step: "land", subject, note };
   plan = await writeRecord(plan, { cycle });
-  // A reviewer committing its fixes would otherwise give the card two commits.
-  await undoMovedHead(base, tree);
+  // `referenceChecked` undid any commit of the reviewer's before it read the diff.
   const sha = await land(subject, note, tree);
   plan = await writeRecord(plan, { cycle: { ...cycle, commit: sha } });
   await closeCard(deck, id, "done", note);

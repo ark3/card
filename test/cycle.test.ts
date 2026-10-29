@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { EXCHANGES, RECONCILER, REVISION_ROUNDS, runCard } from "../src/cycle.ts";
+import { EXCHANGES, ID_RETURNS, RECONCILER, REVISION_ROUNDS, runCard } from "../src/cycle.ts";
 import { createDeck, type Deck } from "../src/deck.ts";
 import { gitOrThrow, headSha } from "../src/git.ts";
 import { ensureBranch, holdWorktree } from "../src/landing.ts";
@@ -699,4 +699,147 @@ test("every role's answer schema carries the optional findings list of headline 
   expect(turns).toHaveLength(5);
   for (const turn of turns) expect(turn.stdin).toContain(field);
   expect(RECONCILER.required).not.toContain("findings");
+});
+
+// A card id of the `proj` deck the tests run on, and two more for a message
+// that cites several, then one shaped alike under a prefix no deck here has.
+const CITED = "proj-dagobe";
+const ALSO = "proj-bafoki";
+const ELSEWHERE = "acme-dagobe";
+const citing = (subject = SUBJECT, note = `${NOTE}\n\nFollows ${CITED}.`) => answer({ outcome: "approved", subject, close_note: note });
+// The implementer's work with a second line citing an id.
+const CITING_WORK = `printf 'hello\\nsee ${CITED}\\n' > hello.txt`;
+// A reviewer's answer after removing the id, as its small fix.
+const stripped = (run = `sed -i '/${CITED}/d' hello.txt`) => answer({ outcome: "fixed", subject: SUBJECT, close_note: NOTE }, run);
+const LANDING_ENUM = '"enum":["approved","fixed"]';
+
+test("a subject and close note citing card ids of the deck go back to the reviewer once, by the repair prompt naming each id, and the clean message lands", async () => {
+  const { deck, plan, id, tree, base } = await running();
+  const cited = citing(`${SUBJECT} for ${CITED}`, `${NOTE}\n\nFollows ${CITED} and ${ALSO}.`);
+  const { control, ended } = await cycle(deck, plan, id, tree, [done("printf 'hello\\n' > hello.txt")], [cited, approved()]);
+
+  const [, repair, ...more] = calls(control, ids[2]!);
+  expect(more).toEqual([]);
+  expect(repair!.argv).toEqual(["pi", "-p", "--session-id", ids[2]!]);
+  expect(repair!.stdin).toStartWith("The work attempt is finished.\n");
+  expect(repair!.stdin).toContain(`The previous report was invalid:\nanswer.subject cites ${CITED}, and answer.close_note cites ${CITED}, ${ALSO}`);
+  expect(repair!.stdin).toContain(LANDING_ENUM);
+  expect(ended.outcome).toBe("landed");
+  expect((await gitOrThrow(["rev-parse", "HEAD~1"], tree)).trim()).toBe(base);
+  expect(await message(tree)).toBe(`${SUBJECT}\n\n${NOTE}\n`);
+  expect(cardFile(deck, id)).toEndWith(`## Close note\n\n${NOTE}\n`);
+  expect((await listPlans(deck))[0]!.cycle).toMatchObject({ step: "land", subject: SUBJECT, note: NOTE });
+});
+
+test("a line the diff adds citing a card id of the deck resumes the reviewer under strip-ids with the line quoted, and lands once the id is gone", async () => {
+  const { deck, plan, id, tree, base } = await running();
+  const marks = tempDir();
+  const during = path.join(marks, "state.json");
+  const strip = stripped(`cp '${path.join(plan.dir, "state.json")}' '${during}'; sed -i '/${CITED}/d' hello.txt`);
+  const { control, ended } = await cycle(deck, plan, id, tree, [done(CITING_WORK)], [approved(), strip]);
+
+  const [, stripping, ...more] = calls(control, ids[2]!);
+  expect(more).toEqual([]);
+  expect(stripping!.argv).toEqual(["pi", "-p", "--session-id", ids[2]!]);
+  expect(stripping!.cwd).toBe(tree);
+  expect(stripping!.stdin).toStartWith("# Removing card ids from the diff\n");
+  expect(stripping!.stdin).toContain(`<lines>\nsee ${CITED}\n</lines>\n`);
+  expect(stripping!.stdin).toContain(LANDING_ENUM);
+  expect(stripping!.stdin).not.toContain("{{");
+  // Nothing that has not passed the checks is recorded at step land.
+  const recorded = JSON.parse(readFileSync(during, "utf8")).cycle;
+  expect(recorded.step).toBe("review");
+  expect(recorded.subject).toBeUndefined();
+  expect(ended.outcome).toBe("landed");
+  expect((await gitOrThrow(["rev-parse", "HEAD~1"], tree)).trim()).toBe(base);
+  expect(await gitOrThrow(["show", "HEAD:hello.txt"], tree)).toBe("hello\n");
+  expect(await message(tree)).toBe(`${SUBJECT}\n\n${NOTE}\n`);
+});
+
+test(`a diff still citing a card id after ${ID_RETURNS} returns stops the cycle as a reviewer that failed, quoting the line, and commits nothing`, async () => {
+  const { repo, deck, plan, id, tree, base, before } = await running();
+  const { control, ended } = await cycle(deck, plan, id, tree, [done(CITING_WORK)], [approved(), approved(), approved()]);
+
+  expect(ID_RETURNS).toBe(2);
+  expect(calls(control, ids[2]!)).toHaveLength(1 + ID_RETURNS);
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reviewer");
+  expect(ended.session).toEqual({ harness: "pi", id: ids[2]!, dir: tree });
+  expect(ended.cause).toBe(`the lines the card's diff adds still cited a card id after ${ID_RETURNS} returns: "see ${CITED}"`);
+  expect(ended.plan.cycle).toEqual({
+    card: id,
+    base,
+    role: "reviewer",
+    step: "review",
+    sessions: { reconciler: ids[0], implementer: ids[1], reviewer: ids[2] },
+  });
+  expect(await headSha(tree)).toBe(base);
+  expect(await gitOrThrow(["status", "--porcelain"], tree)).toBe("?? hello.txt\n");
+  expect(existsSync(path.join(deck.openDir, `${id}.md`))).toBe(true);
+  expect(await mainState(repo)).toEqual(before);
+});
+
+test(`a close note still citing a card id after ${ID_RETURNS} returns stops the cycle as a reviewer that failed, naming the id, and commits nothing`, async () => {
+  const { deck, plan, id, tree, base } = await running();
+  const { control, ended } = await cycle(deck, plan, id, tree, [done("printf 'hello\\n' > hello.txt")], [citing(), citing(), citing()]);
+
+  expect(calls(control, ids[2]!)).toHaveLength(1 + ID_RETURNS);
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reviewer");
+  expect(ended.session.id).toBe(ids[2]!);
+  expect(ended.cause).toStartWith(`the subject and close note still cited a card id after ${ID_RETURNS} returns: answer.close_note cites ${CITED}`);
+  expect(ended.plan.cycle?.step).toBe("review");
+  expect(await headSha(tree)).toBe(base);
+  expect(existsSync(path.join(deck.openDir, `${id}.md`))).toBe(true);
+});
+
+test("each check gets its own returns, apart from each other and from the repair prompts a malformed answer gets", async () => {
+  const { deck, plan, id, tree } = await running();
+  const reviewer = [{ stdout: "not JSON" }, citing(), citing(), approved(), approved(), stripped()];
+  const { control, ended } = await cycle(deck, plan, id, tree, [done(CITING_WORK)], reviewer);
+
+  const turns = calls(control, ids[2]!);
+  expect(turns).toHaveLength(6);
+  expect(turns.slice(1, 4).map(({ stdin }) => stdin.split("\n")[0])).toEqual(Array(3).fill("The work attempt is finished."));
+  expect(turns.slice(4).map(({ stdin }) => stdin.split("\n")[0])).toEqual(Array(2).fill("# Removing card ids from the diff"));
+  expect(ended.outcome).toBe("landed");
+  expect(await gitOrThrow(["show", "HEAD:hello.txt"], tree)).toBe("hello\n");
+});
+
+test("an id under another prefix, in the message or the diff, passes both checks and lands at once", async () => {
+  const { deck, plan, id, tree } = await running();
+  const note = `${NOTE}\n\nFollows ${ELSEWHERE}.`;
+  const work = `printf 'hello\\nsee ${ELSEWHERE}\\n' > hello.txt`;
+  const { control, ended } = await cycle(deck, plan, id, tree, [done(work)], [citing(SUBJECT, note)]);
+
+  expect(calls(control, ids[2]!)).toHaveLength(1);
+  expect(ended.outcome).toBe("landed");
+  expect(await message(tree)).toBe(`${SUBJECT}\n\n${note}\n`);
+  expect(await gitOrThrow(["show", "HEAD:hello.txt"], tree)).toBe(`hello\nsee ${ELSEWHERE}\n`);
+});
+
+test("a landing answer's findings are filed from the answer that passes the checks, each restated finding once and a new one too", async () => {
+  const { deck, plan, id, tree } = await running();
+  const [first, added] = FOUND as [{ headline: string; body: string }, { headline: string; body: string }];
+  const reviewer = [finding(citing(), [first]), finding(approved(), [first]), finding(stripped(), [first, added])];
+  const { control, ended } = await cycle(deck, plan, id, tree, [done(CITING_WORK)], reviewer);
+
+  expect(ended.outcome).toBe("landed");
+  const field = '"findings":{"type":"array"';
+  for (const turn of calls(control, ids[2]!)) expect(turn.stdin).toContain(field);
+  const { findings, files, waiting } = await filed(deck);
+  expect(files).toEqual([findingFile("reviewer", id, first), findingFile("reviewer", id, added)]);
+  expect(waiting).toEqual(findings.map((found) => found.id).sort());
+});
+
+test("a reviewer that fails at the third return files none of its findings, as a role that fails", async () => {
+  const { deck, plan, id, tree } = await running();
+  const reviewer = [finding(citing()), finding(citing()), finding(citing())];
+  const { ended } = await cycle(deck, plan, id, tree, [done()], reviewer);
+
+  expect(ended.outcome).toBe("stopped");
+  expect((await filed(deck)).findings).toEqual([]);
+  expect(ended.plan.findings).toEqual([]);
 });

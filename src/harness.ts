@@ -101,14 +101,18 @@ async function turn(session: Session, resuming: boolean, prompt: string): Promis
  */
 export type Check = (answer: Answer) => void;
 
+/** The repair prompt for an answer that `invalid` says is wrong, restating `schema`. */
+function repairPrompt(invalid: string, schema: ObjectSchema): string {
+  return fill(repair, { VALIDATION_ERROR: invalid, ANSWER_INSTRUCTION: answerInstruction(schema) });
+}
+
 /**
- * Runs `prompt` with `schema`'s instruction appended and reads the answer. A
- * malformed answer, one `check` refuses included, gets a repair prompt by
- * resuming the same session, which keeps what the session knows of its work
- * while the prompt fences the work off, up to REPAIR_PROMPTS times.
+ * Reads the answer in `text`, `session`'s final text. A malformed answer, one
+ * `check` refuses included, gets a repair prompt by resuming the same session,
+ * which keeps what the session knows of its work while the prompt fences the
+ * work off, up to REPAIR_PROMPTS times.
  */
-async function ask(session: Session, resuming: boolean, prompt: string, schema: ObjectSchema, check: Check): Promise<Answer> {
-  let text = await turn(session, resuming, `${prompt}\n\n${answerInstruction(schema)}`);
+async function read(session: Session, text: string, schema: ObjectSchema, check: Check): Promise<Answer> {
   for (let repairs = 0; ; repairs++) {
     try {
       const answer = readAnswer(schema, text);
@@ -119,10 +123,14 @@ async function ask(session: Session, resuming: boolean, prompt: string, schema: 
       if (repairs === REPAIR_PROMPTS) {
         throw new RoleFailure(`the answer was still malformed after ${REPAIR_PROMPTS} repair prompts: ${invalid}`);
       }
-      const values = { VALIDATION_ERROR: invalid, ANSWER_INSTRUCTION: answerInstruction(schema) };
-      text = await turn(session, true, fill(repair, values));
+      text = await turn(session, true, repairPrompt(invalid, schema));
     }
   }
+}
+
+/** Runs `prompt` with `schema`'s instruction appended and reads the answer. */
+async function ask(session: Session, resuming: boolean, prompt: string, schema: ObjectSchema, check: Check): Promise<Answer> {
+  return read(session, await turn(session, resuming, `${prompt}\n\n${answerInstruction(schema)}`), schema, check);
 }
 
 /** Starts `session` under the id it names, and returns its answer to `prompt`. */
@@ -133,4 +141,15 @@ export function launch(session: Session, prompt: string, schema: ObjectSchema, c
 /** Continues `session`, launched before in the same directory, and returns its answer to `prompt`. */
 export function resume(session: Session, prompt: string, schema: ObjectSchema, check: Check = () => {}): Promise<Answer> {
   return ask(session, true, prompt, schema, check);
+}
+
+/**
+ * Sends `session` the repair prompt for an answer it gave that met its schema
+ * and check but that the caller refuses, `invalid` saying why, and returns the
+ * corrected answer to `schema`. The correction gets REPAIR_PROMPTS repair
+ * prompts of its own for a malformed answer, so a caller that counts its own
+ * refusals counts them apart from those.
+ */
+export async function correct(session: Session, invalid: string, schema: ObjectSchema, check: Check = () => {}): Promise<Answer> {
+  return read(session, await turn(session, true, repairPrompt(invalid, schema)), schema, check);
 }
