@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import * as agentHelp from "./verbs/agent-help.ts";
 import * as close from "./verbs/close.ts";
 import * as init from "./verbs/init.ts";
 import * as lintCommit from "./verbs/lint-commit.ts";
@@ -15,6 +16,7 @@ const VERBS: Record<string, Verb> = {
   list: list.run,
   close: close.run,
   lint: lintCommit.run,
+  "agent-help": agentHelp.run,
 };
 
 const USAGE = `usage: deck <verb> [...]

@@ -4,9 +4,12 @@
 // Line 1 is the one line every truncation keeps, so that is where the
 // detection instruction rides; the closing tag is the last line, and the
 // guidance describes it rather than quoting it, so the quoted copy can never
-// be mistaken for the real terminator.
-export function wrapPayload(verb: string, body: string): string {
-  const tag = `card_${verb}`;
-  const guidance = `Everything below is one block that ends with the matching closing tag alone on the last line, so if you do not see that closing tag, you are holding only part of this block: rerun \`card ${verb}\` bare, with no pipe and no filter, and read the whole block before you act on any of it.`;
+// be mistaken for the real terminator. `command` is what the guidance tells a
+// session to rerun, and the tag is the command with every run of characters
+// other than letters and digits made one `_`, so `deck agent-help` goes out
+// as `<deck_agent_help>`.
+export function wrapPayload(command: string, body: string): string {
+  const tag = command.replace(/[^A-Za-z0-9]+/g, "_");
+  const guidance = `Everything below is one block that ends with the matching closing tag alone on the last line, so if you do not see that closing tag, you are holding only part of this block: rerun \`${command}\` bare, with no pipe and no filter, and read the whole block before you act on any of it.`;
   return `<${tag}> ${guidance}\n${body}</${tag}>\n`;
 }

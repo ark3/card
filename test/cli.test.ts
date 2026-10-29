@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import path from "node:path";
-import { removeTempDirs, tempRepo } from "./helpers.ts";
+import { removeTempDirs, tempDir, tempRepo } from "./helpers.ts";
 
 const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
 const DECK = path.join(import.meta.dir, "..", "src", "deck-cli.ts");
@@ -66,6 +66,23 @@ test("deck refuses lint-commit, now lint, and the workflow's status as unknown",
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain(`no such verb as \`${name}\``);
   }
+});
+
+test("agent-help prints its payload whole, inside the envelope, with no deck", async () => {
+  const text = await Bun.file(path.join(import.meta.dir, "..", "payload", "agent-help.md")).text();
+  const result = await deck(["agent-help"], tempDir());
+  expect(result.code).toBe(0);
+
+  const lines = result.stdout.split("\n");
+  expect(lines.pop()).toBe("");
+  expect(lines[0]).toStartWith("<deck_agent_help> ");
+  expect(lines[0]).toContain("rerun `deck agent-help` bare");
+  expect(lines.at(-1)).toBe("</deck_agent_help>");
+
+  const headings = text.split("\n").filter((line) => line.startsWith("#"));
+  expect(headings.length).toBeGreaterThan(0);
+  for (const heading of headings) expect(lines).toContain(heading);
+  expect(lines.slice(1, -1).join("\n") + "\n").toBe(text);
 });
 
 test("one card walks the whole loop, through the real executable", async () => {
