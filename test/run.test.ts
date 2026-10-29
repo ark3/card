@@ -4,6 +4,7 @@ import path from "node:path";
 import documentStage from "../payload/document.md" with { type: "text" };
 import settle from "../payload/settle.md" with { type: "text" };
 import { answerInstruction } from "../src/answer.ts";
+import { startRun } from "../src/check.ts";
 import { type Cycle, RECONCILER } from "../src/cycle.ts";
 import { createDeck, type Deck } from "../src/deck.ts";
 import { branchExists, git, gitOrThrow, listWorktrees } from "../src/git.ts";
@@ -12,7 +13,7 @@ import { appendRecord, closeCard, fileCard, reopenCard } from "../src/operations
 import { forOwner } from "../src/owner.ts";
 import { fill, wrapPayload } from "../src/payload.ts";
 import { listPlans, type Plan, type PlanRecord, startPlan, type State, waitingCards, writeRecord } from "../src/plan.ts";
-import { calls, clearCardRoot, queue, type Reply, removeTempDirs, script, stand, tempRepo } from "./helpers.ts";
+import { calls, clearCardRoot, queue, type Reply, removeTempDirs, script, stand, tempDir, tempRepo } from "./helpers.ts";
 
 const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
 const OUTER_PATH = process.env.PATH;
@@ -657,6 +658,46 @@ test(
   },
   SLOW,
 );
+
+test(
+  "an error a card's cycle throws that is no role's failure bounces the plan with the error as its cause, naming the recorded step's session, and ends the run, so bare card reports the bounce rather than carrying the run on",
+  async () => {
+    const { repo, plan, first } = await inCheck();
+    // A hook refusing the commit throws while the card lands, with no role running.
+    writeFileSync(path.join(repo, ".git", "hooks", "pre-commit"), "#!/bin/sh\necho 'the hook says no' >&2\nexit 1\n", { mode: 0o755 });
+    const control = stand(["pi"]);
+    queue(control, [proceed()], [done("printf 'hello\\n' > hello.txt")], [approved("Add the greeting")]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    const { pid } = record(plan.dir).run!;
+    await until("the run to end", () => !running(pid));
+
+    const { state, cycle, bounce } = record(plan.dir);
+    expect(state).toBe("Bounced");
+    expect(bounce!.cause).toContain("the hook says no");
+    const tree = path.join(repo, ".worktrees", "greeting");
+    expect(bounce).toEqual({ role: "reviewer", session: { harness: "pi", id: cycle!.sessions.reviewer!, dir: tree }, cause: bounce!.cause });
+    const report = bouncedReport(first, "reviewer", bounce!.cause, `cd ${tree} && pi --session-id ${bounce!.session.id}`);
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
+    expect(record(plan.dir).state).toBe("Bounced");
+  },
+  SLOW,
+);
+
+test("an error thrown before a card's cycle is recorded stops the plan, with no session to name, and ends the run, so bare card reports it stopped rather than carrying the run on", async () => {
+  const { repo, plan } = await inCheck();
+  const control = stand(["pi"]);
+  // Not a git worktree, so the cycle's first read of HEAD throws.
+  const log = await startRun(plan, "pi", tempDir(), repo);
+  const { pid } = record(plan.dir).run!;
+  await until("the run to end", () => !running(pid));
+
+  expect(record(plan.dir)).toMatchObject({ state: "Stopped", cycle: null, bounce: null });
+  expect(readFileSync(log, "utf8")).toContain("not a git repository");
+  const report = "The plan `greeting`'s run is stopped between cards, and the next card not closed runs from a fresh reconciler when the run is resumed.\n";
+  expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
+  expect(readdirSync(control)).toEqual([]);
+});
 
 test("bare card in Running reports the card in flight with its role, and the cards closed with their headlines", async () => {
   const { repo, deck, plan, first, final, base } = await inCheck();

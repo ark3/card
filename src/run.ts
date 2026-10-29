@@ -8,7 +8,7 @@
  * resume prompt on stdin, and its first card's cycle then carries on from the
  * step that bounced it rather than starting afresh.
  */
-import { resumeCard, runCard } from "./cycle.ts";
+import { type CycleEnd, resumeCard, runCard } from "./cycle.ts";
 import { locate, requireDeck } from "./deck.ts";
 import { listPlans, writeRecord } from "./plan.ts";
 
@@ -27,9 +27,29 @@ if (plan.run?.pid !== process.pid) {
 for (const id of plan.cards) {
   // A card closed done has landed, and one closed any other way left the order.
   if ((await locate(deck, id))?.closed) continue;
-  // The bounced card is the first not closed, since every card before it closed done.
-  const ended =
-    resuming === null ? await runCard(deck, plan, id, tree, plan.harness!) : await resumeCard(deck, plan, tree, plan.harness!, resuming);
+  let ended: CycleEnd;
+  try {
+    // The bounced card is the first not closed, since every card before it closed done.
+    ended =
+      resuming === null ? await runCard(deck, plan, id, tree, plan.harness!) : await resumeCard(deck, plan, tree, plan.harness!, resuming);
+  } catch (error) {
+    // An error no role's failure is, such as a hook refusing the commit, stops
+    // the run as a role that failed does, rather than leaving it to read as
+    // Dead and rerun into the same error. The record is as the cycle last
+    // wrote it, which `plan` predates.
+    console.error(error);
+    const cause = (error as Error).message;
+    const current = (await listPlans(deck)).find((listed) => listed.slug === slug)!;
+    if (resuming === null && Bun.deepEquals(current.cycle, plan.cycle)) {
+      // Thrown before the card's cycle was recorded, so no session of it has
+      // anything to answer, and the card reruns from a fresh reconciler.
+      await writeRecord(current, { state: "Stopped" });
+      console.log(`The run stopped before ${id}'s cycle started: ${cause}`);
+      process.exit(0);
+    }
+    const { role, sessions } = current.cycle!;
+    ended = { plan: current, outcome: "stopped", role, session: { harness: plan.harness!, id: sessions[role]!, dir: tree }, cause };
+  }
   resuming = null;
   plan = ended.plan;
   if (ended.outcome === "stopped") {
