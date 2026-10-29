@@ -90,7 +90,10 @@ The guide says:
 - how the acceptance criteria were verified.
 
 The tool makes the close note the body of the card's commit message and the last section of the card, so write it for colleagues who never saw the card: public-safe, and citing no card id, since card ids name the tool's private records and the note goes public with the commit.
-Separate its paragraphs with a blank line, and write no list, heading or hand-wrapped line, because the tool refills each paragraph to 72 columns for the commit, which runs a list's items together; write each thing for the owner to try as a paragraph of its own.
+Separate its paragraphs with a blank line; a list may stand as a paragraph of its own, each item one line beginning with `-` or with a number and a period.
+Wrap no line by hand, because the tool fills each paragraph and each list item to 72 columns for the commit.
+Write no heading, because git takes a line beginning with `#` for a comment when someone later edits the message, and no code, neither a fenced block nor an indented line, because a commit message is no place for code; a command or a name in backticks within a sentence is prose.
+Write each thing for the owner to try as a paragraph or a list item of its own.
 
 Write the subject as one line, the commit's first, under the repository's convention for commit subjects, which the owner recorded for this work as:
 

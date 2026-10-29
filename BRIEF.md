@@ -287,6 +287,7 @@ The reviewer writes it on approval: what landed, how it was verified, and how to
 It is public-safe — no card ids, written for colleagues — so the one text serves the hand-back, a closed pile and a public tracker, while the card above it keeps the private detail.
 It is also the body of the card's commit message, so it is written to serve as one; the subject is the reviewer's too, one line under the host repository's commit convention, which the plan document records beside the branch ("Authoring" below), and where the document records none, an imperative with a capital letter and no trailing period, as Git's own history is written.
 The tool composes the message — the subject, a blank line, the note wrapped at 72 columns — and checks both for card ids before committing; a subject or note that fails goes back to the reviewer by the repair prompt under "Delivery", scoped to the message alone.
+The note may hold paragraphs and lists, which the tool fills paragraph by paragraph and item by item, each item's continuation lines under its text, so a list's items never run together; it holds no code, fenced or indented, because a commit message is no place for code, and a command named in backticks within a sentence is prose.
 The note is read where it lands, in the commit and in the closed card, which `git log` on the plan's branch and `deck show` reach; bare `card` lists a closed card by its headline and never prints its note, and posting the note to a tracker is the owner's act.
 
 ### The harness

@@ -207,6 +207,42 @@ test("a commit message is the subject, a blank line and the body wrapped at 72",
   );
 });
 
+test("a commit message fills each list item on its own, its continuation lines under its text", () => {
+  const body = [
+    "Fill a close note the way an editor would,",
+    "so that a list in it survives the trip into the commit message.",
+    "",
+    "- A short item.",
+    "- Prose paragraphs are refilled to 72 columns, and a line that begins with a list marker starts an item of its own.",
+    "  - A nested item keeps its indent, and its continuation lines sit under its own text as well.",
+    "- A last item.",
+    "",
+    "1) Numbered steps work the same way, whatever the marker, and their continuation lines line up too.",
+    "2) A second step.",
+  ].join("\n");
+
+  expect(commitMessage("Fill a list item by item", body)).toBe(
+    [
+      "Fill a list item by item",
+      "",
+      "Fill a close note the way an editor would, so that a list in it survives",
+      "the trip into the commit message.",
+      "",
+      "- A short item.",
+      "- Prose paragraphs are refilled to 72 columns, and a line that begins",
+      "  with a list marker starts an item of its own.",
+      "  - A nested item keeps its indent, and its continuation lines sit under",
+      "    its own text as well.",
+      "- A last item.",
+      "",
+      "1) Numbered steps work the same way, whatever the marker, and their",
+      "   continuation lines line up too.",
+      "2) A second step.",
+      "",
+    ].join("\n"),
+  );
+});
+
 test("landing commits everything in the worktree under the message, byte for byte", async () => {
   const { repo, tree, before } = await held();
   writeFileSync(path.join(tree, "README.md"), "landed\n");

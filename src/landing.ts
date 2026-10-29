@@ -107,25 +107,57 @@ function added(diff: string): string[] {
 
 const WIDTH = 72;
 
+const ITEM = /^(\s*)([-*+]|\d+[.)])\s+/;
+const HEADING = /^#{1,6}\s/;
+
 /**
- * The subject, a blank line, and the body wrapped at 72 columns. Blank lines
- * separate the body's paragraphs, and each paragraph is refilled; a word longer
- * than the width, such as a URL, stays whole on a line of its own.
+ * The subject, a blank line, and the body filled at 72 columns, as an editor
+ * fills it. Blank lines separate the body's paragraphs, and each paragraph is
+ * refilled. A line beginning with a list marker (`-`, `*`, `+`, `1.` or `1)`)
+ * starts an item filled on its own, keeping its indent, its continuation
+ * lines indented to sit under its text. A heading stays as it is, and a word
+ * longer than the width, such as a URL, stays whole on a line of its own.
  */
 export function commitMessage(subject: string, body: string): string {
-  const paragraphs = body.trim().split(/\n\s*\n/).map((paragraph) => fill(paragraph.trim().split(/\s+/)));
-  return `${subject}\n\n${paragraphs.join("\n\n")}\n`;
+  const out: string[] = [];
+  let words: string[] = [];
+  let first = "";
+  let rest = "";
+  const flush = () => {
+    if (words.length > 0) out.push(fill(words, first, rest));
+    words = [];
+  };
+  for (const line of body.trim().split("\n")) {
+    const item = ITEM.exec(line);
+    if (line.trim() === "") {
+      flush();
+      if (out.at(-1) !== "") out.push("");
+    } else if (HEADING.test(line)) {
+      flush();
+      out.push(line);
+    } else if (item) {
+      flush();
+      first = `${item[1]}${item[2]} `;
+      rest = " ".repeat(first.length);
+      words = line.slice(item[0].length).match(/\S+/g) ?? [];
+    } else {
+      if (words.length === 0) first = rest = "";
+      words.push(...line.trim().split(/\s+/));
+    }
+  }
+  flush();
+  return `${subject}\n\n${out.join("\n")}\n`;
 }
 
-function fill(words: string[]): string {
+/** Fills `words` at the width, the first line after `first` and each later line after `rest`. */
+function fill(words: string[], first: string, rest: string): string {
   const lines: string[] = [];
-  let line = "";
-  for (const word of words) {
-    if (line === "") line = word;
-    else if (line.length + 1 + word.length <= WIDTH) line += ` ${word}`;
+  let line = first + words[0];
+  for (const word of words.slice(1)) {
+    if (line.length + 1 + word.length <= WIDTH) line += ` ${word}`;
     else {
       lines.push(line);
-      line = word;
+      line = rest + word;
     }
   }
   lines.push(line);
