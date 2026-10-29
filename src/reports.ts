@@ -9,6 +9,11 @@ export async function named(deck: Deck, id: string): Promise<string> {
   return `${id}  ${(await readCard((await locate(deck, id))!.path)).headline}`;
 }
 
+/** The close of a report bare `card` makes: the commands open in the plan's state. */
+function listed({ plan, command, openCommands }: Context): string {
+  return `\nThe commands open while the plan is in ${plan.state}:\n\n${openCommands(plan, command)}`;
+}
+
 /** Bare `card` in Running: the card in flight with its role, and the cards the run has closed. */
 export async function running({ deck, plan }: Context): Promise<void> {
   const { cycle } = plan;
@@ -24,23 +29,25 @@ export async function running({ deck, plan }: Context): Promise<void> {
   );
 }
 
-/** Bare `card` in Stopped: the card the run stopped at, which resuming reruns from its reconciler. */
-export async function stopped({ deck, plan }: Context): Promise<void> {
+/** Bare `card` in Stopped: the card the run stopped at, which resuming reruns from its reconciler, and the commands open. */
+export async function stopped(context: Context): Promise<void> {
+  const { deck, plan } = context;
   const { cycle } = plan;
   // No cycle yet, or the last one's commit has landed and the next card's cycle had not started.
   const at =
     cycle === null || cycle.commit !== undefined
       ? "between cards, and the next card not closed runs from a fresh reconciler when the run is resumed.\n"
       : `at this card, which reruns from a fresh reconciler when the run is resumed:\n\n${await named(deck, cycle.card)}\n`;
-  process.stdout.write(forOwner(`The plan \`${plan.slug}\`'s run is stopped ${at}`));
+  process.stdout.write(forOwner(`The plan \`${plan.slug}\`'s run is stopped ${at}${listed(context)}`));
 }
 
 /**
  * Bare `card` in Bounced: the role that stopped the run, its cause, any gap
- * the final card found, any question or last revision feedback, and how to
- * resume its session.
+ * the final card found, any question or last revision feedback, how to
+ * resume its session, and the commands open.
  */
-export async function bounced({ deck, plan }: Context): Promise<void> {
+export async function bounced(context: Context): Promise<void> {
+  const { deck, plan } = context;
   const { role, session, cause, question, feedback, gap } = plan.bounce!;
   process.stdout.write(
     forOwner(
@@ -49,7 +56,8 @@ export async function bounced({ deck, plan }: Context): Promise<void> {
         (gap === undefined ? "" : `The gap the final card found:\n\n${gap}\n\n`) +
         (question === undefined ? "" : `The question it asks:\n\n${question}\n\n`) +
         (feedback === undefined ? "" : `The revision it last asked for:\n\n${feedback}\n\n`) +
-        `To resume the ${role}'s session at a terminal, run this from the plan's worktree:\n\n  ${resumeCommand(session)}\n`,
+        `To resume the ${role}'s session at a terminal, run this from the plan's worktree:\n\n  ${resumeCommand(session)}\n` +
+        listed(context),
     ),
   );
 }

@@ -97,9 +97,11 @@ export type Plan = PlanRecord & {
 /**
  * What a verb acting on one plan is handed. `command` is how every printed
  * command starts: `card`, or `card --plan <slug>` while more than one plan is
- * in progress.
+ * in progress. `openCommands` lists the commands open in a plan's state, one
+ * per line, from the table the verbs are dispatched by, which a verb cannot
+ * import, since that table imports the verbs.
  */
-export type Context = { deck: Deck; plan: Plan; command: string; args: string[] };
+export type Context = { deck: Deck; plan: Plan; command: string; args: string[]; openCommands: (plan: Plan, command: string) => string };
 
 const STATE_FILE = "state.json";
 // What `slugify` makes: lowercase letters and digits in runs joined by single

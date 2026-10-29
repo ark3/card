@@ -13,7 +13,8 @@ import * as reports from "./reports.ts";
  * open, and records the plan Stopped, reporting the card it stopped at. The
  * record is written only once the run is gone, so nothing writes over it.
  */
-export async function stop({ deck, plan, command, args }: Context): Promise<void> {
+export async function stop(context: Context): Promise<void> {
+  const { deck, plan, command, args } = context;
   if (args.length > 0) throw new Error(`usage: ${command} stop`);
   const ended = await endRun(deck, plan);
   // The run wrote a state of its own, a bounce or its end, before the kill reached it, and that state stands.
@@ -22,7 +23,7 @@ export async function stop({ deck, plan, command, args }: Context): Promise<void
     return;
   }
   const { plan: settled } = await settle(deck, { ...ended, state: "Stopped" });
-  await reports.stopped({ deck, plan: await writeRecord(settled, { state: "Stopped" }), command, args });
+  await reports.stopped({ ...context, plan: await writeRecord(settled, { state: "Stopped" }) });
 }
 
 /**

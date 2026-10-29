@@ -102,7 +102,7 @@ async function start(deck: Deck, slug: string | null, many: boolean): Promise<vo
   const plan = await startPlan(deck, slug);
   const command = commandFor(plan, many);
   await printWaiting(deck, command);
-  await TABLE[plan.state].bare({ deck, plan, command, args: [] });
+  await TABLE[plan.state].bare({ deck, plan, command, args: [], openCommands });
 }
 
 /** Bare `card`: the next thing, or where things stand. */
@@ -114,13 +114,13 @@ async function bare(slug: string | null, cwd: string): Promise<void> {
 
   if (slug !== null) {
     const named = plans.find((plan) => plan.slug === slug);
-    if (named !== undefined) return TABLE[named.state].bare({ deck, plan: named, command: commandFor(named, many), args: [] });
+    if (named !== undefined) return TABLE[named.state].bare({ deck, plan: named, command: commandFor(named, many), args: [], openCommands });
     // The one place a slug no plan has starts something.
     refuseSlug(slug);
     return start(deck, slug, plans.length > 0);
   }
   if (plans.length === 0) return start(deck, null, false);
-  if (!many) return TABLE[plans[0]!.state].bare({ deck, plan: plans[0]!, command: "card", args: [] });
+  if (!many) return TABLE[plans[0]!.state].bare({ deck, plan: plans[0]!, command: "card", args: [], openCommands });
 
   const listing = plans.map((plan) => `${plan.slug}  ${plan.state}\n${openCommands(plan, commandFor(plan, true))}`);
   process.stdout.write(`More than one plan is in progress, so every command names its plan:\n\n${listing.join("\n")}`);
@@ -181,7 +181,7 @@ async function main(argv: string[], cwd: string): Promise<void> {
       `\`${command} ${name}\` is not open while the plan \`${plan.slug}\` is in ${plan.state}, where these commands are open:\n${openCommands(plan, command).trimEnd()}`,
     );
   }
-  await verb.run({ deck, plan, command, args });
+  await verb.run({ deck, plan, command, args, openCommands });
 }
 
 try {

@@ -82,11 +82,17 @@ async function until(what: string, check: () => boolean): Promise<void> {
   }
 }
 
+/** The close of a report in `state`: the commands open there under `command`, bare `card` first, in the table's order. */
+function openList(state: State, command = "card"): string {
+  const lines = [command, ...OPEN[state].map((verb) => `${command} ${verb}`)].map((line) => `  ${line}\n`).join("");
+  return `\nThe commands open while the plan is in ${state}:\n\n${lines}`;
+}
+
 /** What bare `card` reports for the owner in Bounced, with the card `inCheck` filed first. */
 function bouncedReport(id: string, role: string, cause: string, resume: string, question?: string, feedback?: string): string {
   const asks = question === undefined ? "" : `The question it asks:\n\n${question}\n\n`;
   const revision = feedback === undefined ? "" : `The revision it last asked for:\n\n${feedback}\n\n`;
-  return `The plan \`greeting\`'s run bounced at this card, where the ${role} stopped it:\n\n${id}  Add the greeting\n\nThe cause recorded for it:\n\n${cause}\n\n${asks}${revision}To resume the ${role}'s session at a terminal, run this from the plan's worktree:\n\n  ${resume}\n`;
+  return `The plan \`greeting\`'s run bounced at this card, where the ${role} stopped it:\n\n${id}  Add the greeting\n\nThe cause recorded for it:\n\n${cause}\n\n${asks}${revision}To resume the ${role}'s session at a terminal, run this from the plan's worktree:\n\n  ${resume}\n${openList("Bounced")}`;
 }
 
 const NO_FINDINGS = "The run filed no findings.\n";
@@ -390,7 +396,7 @@ test(
     const report =
       `The plan \`greeting\`'s run bounced at this card, where the reconciler stopped it:\n\n${final}  Check the plan\n\n` +
       `The cause recorded for it:\n\n${cause}\n\nThe gap the final card found:\n\n${gap}\n\nThe question it asks:\n\n${question}\n\n` +
-      `To resume the reconciler's session at a terminal, run this from the plan's worktree:\n\n  ${resume}\n`;
+      `To resume the reconciler's session at a terminal, run this from the plan's worktree:\n\n  ${resume}\n${openList("Bounced")}`;
     expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
   },
   SLOW,
@@ -776,9 +782,18 @@ test("an error thrown before a card's cycle is recorded stops the plan, with no 
 
   expect(record(plan.dir)).toMatchObject({ state: "Stopped", cycle: null, bounce: null });
   expect(readFileSync(log, "utf8")).toContain("not a git repository");
-  const report = "The plan `greeting`'s run is stopped between cards, and the next card not closed runs from a fresh reconciler when the run is resumed.\n";
+  const report = `The plan \`greeting\`'s run is stopped between cards, and the next card not closed runs from a fresh reconciler when the run is resumed.\n${openList("Stopped")}`;
   expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
   expect(readdirSync(control)).toEqual([]);
+});
+
+test("bare card --plan in Stopped, with another plan in progress, ends its report with the commands open there under its --plan", async () => {
+  const { repo, deck, plan } = await inCheck();
+  await writeRecord(plan, { state: "Stopped" });
+  await startPlan(deck, "other");
+
+  const report = `The plan \`greeting\`'s run is stopped between cards, and the next card not closed runs from a fresh reconciler when the run is resumed.\n${openList("Stopped", "card --plan greeting")}`;
+  expect(await card(["--plan", "greeting"], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
 });
 
 test("bare card in Running reports the card in flight with its role, and the cards closed with their headlines", async () => {
@@ -1218,7 +1233,7 @@ test(
 
 /** What bare `card` and `card stop` report for the owner in Stopped, with the card `inCheck` filed first. */
 function stoppedReport(id: string): string {
-  return `The plan \`greeting\`'s run is stopped at this card, which reruns from a fresh reconciler when the run is resumed:\n\n${id}  Add the greeting\n`;
+  return `The plan \`greeting\`'s run is stopped at this card, which reruns from a fresh reconciler when the run is resumed:\n\n${id}  Add the greeting\n${openList("Stopped")}`;
 }
 
 /** Shell, as a role's work, that commits part of it, leaves the rest uncommitted, and starts a child that sleeps, writing the role's pid and the child's to `pids`. */
