@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import * as bounced from "./bounced.ts";
+import type { Card } from "./cardfile.ts";
 import { createDeck, type Deck, DEFAULT_PREFIX, requireDeck, resolveDeck } from "./deck.ts";
 import * as cards from "./cards.ts";
 import * as check from "./check.ts";
@@ -7,7 +8,7 @@ import * as dead from "./dead.ts";
 import * as document from "./document.ts";
 import * as ended from "./ended.ts";
 import { forOwner } from "./owner.ts";
-import { type Context, listPlans, listWaiting, type Plan, refuseSlug, startPlan, type State, waitingCards } from "./plan.ts";
+import { awaitingKey, type Context, listPlans, listWaiting, type Plan, refuseSlug, startPlan, type State, waitingCards } from "./plan.ts";
 import * as reports from "./reports.ts";
 import * as stopped from "./stopped.ts";
 
@@ -41,9 +42,9 @@ type VerbName = (typeof VERBS)[number];
  * does in each state, and the verbs open there with the code each runs. Both
  * dispatch and every printed list of open commands read it, so a session is
  * never shown a command that would be refused, nor refused one it was shown.
- * `decline` is in no row: it is open in every state and with no plan at all,
- * so `main` runs it ahead of the table, and it is printed only beside the
- * waiting cards it closes.
+ * `decline` and `promote` are in no row: they are open in every state and
+ * with no plan at all, so `main` runs them ahead of the table, and they are
+ * printed only beside the waiting cards they settle.
  */
 const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Verb>> }> = {
   Document: { bare: document.printPrompt, open: { done: { run: document.done } } },
@@ -77,11 +78,16 @@ function openCommands(plan: Plan, command: string): string {
   return [command, ...verbs].map((line) => `  ${line}\n`).join("");
 }
 
-/** The waiting cards, for the owner, when there are any. */
+/**
+ * The waiting cards, for the owner, when there are any. A card awaiting its
+ * promotion's key is listed with the command that records it alone, since the
+ * owner has settled it already.
+ */
 async function printWaiting(deck: Deck, command: string): Promise<void> {
   const listed = await waitingCards(deck);
   if (listed.length === 0) return;
-  process.stdout.write(forOwner(listWaiting(listed, command, ["decline", "promote"])));
+  const settle = (id: string, card: Card) => (awaitingKey(card) ? [`promote ${id} --key <KEY>`] : [`decline ${id}`, `promote ${id}`]);
+  process.stdout.write(forOwner(listWaiting(listed, command, settle)));
 }
 
 /** Starts a plan, under `slug` or a placeholder, and prints what a start prints. */
@@ -155,10 +161,10 @@ async function main(argv: string[], cwd: string): Promise<void> {
 
   const deck = await requireDeck(cwd);
   const plans = await listPlans(deck);
-  if (name === "decline") {
+  if (name === "decline" || name === "promote") {
     // A slug it is given must still name a plan, so a typo is refused here as everywhere.
     if (slug !== null) pick(plans, slug, name);
-    return cards.decline(deck, args);
+    return cards[name](deck, args);
   }
   const plan = pick(plans, slug, name);
   const command = commandFor(plan, plans.length > 1);

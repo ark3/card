@@ -7,7 +7,7 @@ import { readDocument } from "./document.ts";
 import { holdWorktree, removeWorktree } from "./landing.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
-import type { Context, Plan } from "./plan.ts";
+import { awaitingKey, type Context, type Plan } from "./plan.ts";
 import { named } from "./reports.ts";
 
 // What `closeCard` writes above a close note.
@@ -15,15 +15,17 @@ const CLOSE_NOTE = "\n## Close note\n\n";
 
 /**
  * Each finding the run filed, with its headline and how the owner settled it:
- * left for later, or closed with its outcome; null while it is unsettled.
+ * closed with its outcome, drafted for promotion and awaiting its key, or
+ * left for later; null while it is unsettled. `awaiting` is the second.
  */
-async function findings(deck: Deck, plan: Plan): Promise<{ id: string; role: Role; headline: string; settled: string | null }[]> {
+async function findings(deck: Deck, plan: Plan): Promise<{ id: string; role: Role; headline: string; settled: string | null; awaiting: boolean }[]> {
   return Promise.all(
     plan.findings.map(async ({ id, role }) => {
       const found = (await locate(deck, id))!;
       const card = await readCard(found.path);
-      const settled = found.closed ? `closed ${card.closed}` : plan.later.includes(id) ? "left for later" : null;
-      return { id, role, headline: card.headline, settled };
+      const awaiting = !found.closed && awaitingKey(card);
+      const settled = found.closed ? `closed ${card.closed}` : awaiting ? "drafted for promotion, awaiting its key" : plan.later.includes(id) ? "left for later" : null;
+      return { id, role, headline: card.headline, settled, awaiting };
     }),
   );
 }
@@ -38,7 +40,8 @@ async function branchOf(plan: Plan): Promise<string> {
  * findings the run filed, and the final card's close note as the guide to
  * the plan's work, then the settling prompt. An unsettled finding is listed
  * with the commands that settle it, and a settled one with how it was, and
- * no command, since the owner has decided it already.
+ * no command, since the owner has decided it already, but for one awaiting
+ * its key, which is listed with the command that records it.
  */
 export async function printPrompt({ deck, plan, command }: Context): Promise<void> {
   const final = plan.final!;
@@ -48,10 +51,10 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
   const branch = await branchOf(plan);
   // `card approve` made the worktree, which is returned as it stands.
   const tree = await holdWorktree(plan.slug, branch, process.cwd());
-  const listed = (await findings(deck, plan)).map(({ id, role, headline, settled }) =>
+  const listed = (await findings(deck, plan)).map(({ id, role, headline, settled, awaiting }) =>
     settled === null
-      ? `${id}  ${headline}\n  filed by the ${role}\n  ${command} later ${id}\n  ${command} decline ${id}\n`
-      : `${id}  ${headline}\n  filed by the ${role}, ${settled}\n`,
+      ? `${id}  ${headline}\n  filed by the ${role}\n  ${command} later ${id}\n  ${command} decline ${id}\n  ${command} promote ${id}\n`
+      : `${id}  ${headline}\n  filed by the ${role}, ${settled}\n${awaiting ? `  ${command} promote ${id} --key <KEY>\n` : ""}`,
   );
   const filed =
     listed.length > 0

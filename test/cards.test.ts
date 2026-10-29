@@ -219,3 +219,36 @@ test("card decline refuses a card a plan has joined", async () => {
   expect(result).toEqual({ code: 1, stdout: "", stderr: `card: ${id} has joined the plan \`the-plan\`, so it is not waiting\n` });
   expect(existsSync(path.join(deck.openDir, `${id}.md`))).toBe(true);
 });
+
+test("with no plan in progress, card promote refuses a draft citing a card id, naming each it cites, and one with no draft, and marks neither card", async () => {
+  const repo = await tempRepo();
+  const deck = await createDeck(repo, "proj");
+  const first = await fileCard(deck, finding("The first finding"));
+  const second = await fileCard(deck, finding("The second finding"));
+  const read = (id: string) => Bun.file(path.join(deck.openDir, `${id}.md`)).text();
+  const before = [await read(first), await read(second)];
+
+  const citing = await card(["promote", first, second], repo, `Both came up under ${second}, and ${first} names the fix; ${second} again.\n`);
+  expect(citing).toEqual({ code: 1, stdout: "", stderr: `card: the draft must cite no card id, and it cites ${second}, ${first}\n` });
+  const silent = await card(["promote", first], repo);
+  expect(silent).toEqual({
+    code: 1,
+    stdout: "",
+    stderr: `card: \`card promote ${first}\` needs the session's draft on stdin, which is printed for the owner to post\n`,
+  });
+
+  expect([await read(first), await read(second)]).toEqual(before);
+  expect(await listPlans(deck)).toEqual([]);
+});
+
+test("card promote refuses a card a plan has joined, in either form, and marks nothing", async () => {
+  const { repo, deck } = await inCards();
+  const id = await fileCard(deck, finding("A joined finding"));
+  expect((await card(["join", id], repo)).code).toBe(0);
+  const before = await Bun.file(path.join(deck.openDir, `${id}.md`)).text();
+
+  const refusal = { code: 1, stdout: "", stderr: `card: ${id} has joined the plan \`the-plan\`, so it is not waiting\n` };
+  expect(await card(["promote", id], repo, "A clean draft.\n")).toEqual(refusal);
+  expect(await card(["promote", id, "--key", "GREET-42"], repo)).toEqual(refusal);
+  expect(await Bun.file(path.join(deck.openDir, `${id}.md`)).text()).toBe(before);
+});

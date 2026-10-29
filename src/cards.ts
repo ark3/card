@@ -3,7 +3,8 @@ import path from "node:path";
 import prompt from "../payload/cards.md" with { type: "text" };
 import { type Card, readCard } from "./cardfile.ts";
 import { type Deck, locate } from "./deck.ts";
-import { closeCard, fileCard } from "./operations.ts";
+import { citedIds } from "./id.ts";
+import { appendRecord, closeCard, fileCard } from "./operations.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
 import { type Context, listPlans, listWaiting, type Plan, waitingCards, writeRecord } from "./plan.ts";
@@ -50,7 +51,9 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
     DRAFTING_DIR: plan.cardsDir,
     DECK: deck.deckDir,
     WAITING_CARDS: forOwner(
-      waiting.length > 0 ? listWaiting(waiting, command, ["join", "later"]) : "No waiting card is left for this plan to settle.\n",
+      waiting.length > 0
+        ? listWaiting(waiting, command, (id) => [`join ${id}`, `later ${id}`])
+        : "No waiting card is left for this plan to settle.\n",
     ).trimEnd(),
     JOINED_FINDINGS: joined.length > 0 ? joined.join("").trimEnd() : "No finding has joined this plan.",
     PLAN_CARDS: cards.length > 0 ? cards.join("").trimEnd() : "The plan holds no cards yet: this is its first pass through this stage.",
@@ -172,6 +175,18 @@ export async function later(context: Context): Promise<void> {
   console.log(`${id} stays waiting, outside the plan \`${plan.slug}\`, for a later plan to take up: ${card.headline}`);
 }
 
+/** The waiting card `decline` or `promote` names: an open card in no plan's order and joined to none. */
+async function waitingCard(deck: Deck, id: string): Promise<Card> {
+  const found = await locate(deck, id);
+  if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
+  if (found.closed) throw new Error(`${id} is closed, so it is not waiting`);
+  for (const plan of await listPlans(deck)) {
+    if (plan.cards.includes(id)) throw new Error(`${id} is one of the plan \`${plan.slug}\`'s cards, so it is not waiting`);
+    if (plan.joins.includes(id)) throw new Error(`${id} has joined the plan \`${plan.slug}\`, so it is not waiting`);
+  }
+  return readCard(found.path);
+}
+
 /**
  * `card decline <id>`, with the owner's reason on stdin: closes a waiting card
  * declined, the reason its close note. A waiting card belongs to no plan, so
@@ -181,16 +196,47 @@ export async function later(context: Context): Promise<void> {
 export async function decline(deck: Deck, args: string[]): Promise<void> {
   if (args.length !== 1) throw new Error("usage: card decline <id>, with the owner's reason on stdin");
   const id = args[0]!;
-  const found = await locate(deck, id);
-  if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
-  if (found.closed) throw new Error(`${id} is closed, so it is not waiting`);
-  for (const plan of await listPlans(deck)) {
-    if (plan.cards.includes(id)) throw new Error(`${id} is one of the plan \`${plan.slug}\`'s cards, so it is not waiting`);
-    if (plan.joins.includes(id)) throw new Error(`${id} has joined the plan \`${plan.slug}\`, so it is not waiting`);
-  }
+  const { headline } = await waitingCard(deck, id);
   const reason = (await Bun.stdin.text()).trim();
   if (reason === "") throw new Error(`\`card decline ${id}\` needs the owner's reason on stdin, which becomes its close note`);
-  const { headline } = await readCard(found.path);
   await closeCard(deck, id, "declined", reason);
   console.log(`${id} is closed declined: ${headline}`);
+}
+
+const PROMOTE_USAGE = "usage: card promote <id>..., with the session's draft on stdin, then card promote <id>... --key <KEY>";
+
+/**
+ * `card promote <id>...`, with the session's draft of a ticket on stdin: the
+ * draft, checked for card ids as a close note is, since it goes to a tracker
+ * outside the deck, is printed for the owner to post and appended to each
+ * card's record as `## Promotion`, which marks the card awaiting a key.
+ * `card promote <id>... --key <KEY>`: the owner posted it, and each card
+ * closes promoted, the key in its close note. Like `decline`, it needs no
+ * plan and writes no plan's record, and it refuses before marking any card.
+ */
+export async function promote(deck: Deck, args: string[]): Promise<void> {
+  const at = args.indexOf("--key");
+  const key = at === -1 ? null : args[at + 1];
+  const ids = at === -1 ? args : [...args.slice(0, at), ...args.slice(at + 2)];
+  if (ids.length === 0 || key === undefined || ids.includes("--key")) throw new Error(PROMOTE_USAGE);
+  const cards = await Promise.all(ids.map((id) => waitingCard(deck, id)));
+
+  if (key !== null) {
+    for (const [index, id] of ids.entries()) {
+      await closeCard(deck, id, "promoted", `Promoted to ${key}.`);
+      console.log(`${id} is closed promoted, as ${key}: ${cards[index]!.headline}`);
+    }
+    return;
+  }
+  const draft = await Bun.stdin.text();
+  if (draft.trim() === "") {
+    throw new Error(`\`card promote ${ids.join(" ")}\` needs the session's draft on stdin, which is printed for the owner to post`);
+  }
+  const cited = citedIds(draft, deck.prefix);
+  if (cited.length > 0) throw new Error(`the draft must cite no card id, and it cites ${cited.join(", ")}`);
+  for (const id of ids) await appendRecord(deck, id, "Promotion", draft);
+  process.stdout.write(forOwner(draft));
+  console.log(
+    `Marked awaiting the ticket's key: ${ids.join(", ")}. Once the owner posts the draft and gives back its key, run \`card promote ${ids.join(" ")} --key <KEY>\`.`,
+  );
 }

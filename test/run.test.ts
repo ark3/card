@@ -10,7 +10,7 @@ import { ensureBranch, holdWorktree, land } from "../src/landing.ts";
 import { appendRecord, closeCard, fileCard } from "../src/operations.ts";
 import { forOwner } from "../src/owner.ts";
 import { fill, wrapPayload } from "../src/payload.ts";
-import { listPlans, type Plan, type PlanRecord, startPlan, writeRecord } from "../src/plan.ts";
+import { listPlans, type Plan, type PlanRecord, startPlan, waitingCards, writeRecord } from "../src/plan.ts";
 import { calls, clearCardRoot, queue, type Reply, removeTempDirs, script, stand, tempRepo } from "./helpers.ts";
 
 const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
@@ -105,7 +105,7 @@ function ended(plan: Plan, final: string, tree: string, note: string, findings =
 /** A finding as bare `card` lists it in Ended: unsettled, with the commands that settle it, or settled as `settled` says. */
 function listed(id: string, headline: string, settled?: string): string {
   if (settled !== undefined) return `${id}  ${headline}\n  filed by the reviewer, ${settled}\n`;
-  return `${id}  ${headline}\n  filed by the reviewer\n  card later ${id}\n  card decline ${id}\n`;
+  return `${id}  ${headline}\n  filed by the reviewer\n  card later ${id}\n  card decline ${id}\n  card promote ${id}\n`;
 }
 
 /** The subjects of the commits the plan's branch holds beyond `base`, oldest first. */
@@ -739,6 +739,65 @@ test(
   },
   SLOW,
 );
+
+// A ticket for two findings, as a session drafts one: headed sections, a
+// line ending in spaces and no final newline, which the owner sees as written.
+const DRAFT = "The greeting's docs and license\n\n## What is wrong\n\nThe README names `greet.sh`,  \nand nothing says how the code is licensed.\n\n## What to do\n\nRename it, and pick a license.";
+
+test("card promote at Ended prints a clean draft for two findings for the owner and marks both awaiting a key, which settles them for card finish; bare card lists both with the --key form until card promote --key closes both promoted", async () => {
+  const { repo, deck, plan, first, final } = await inCheck();
+  await ensureBranch("plan/greeting", "main", repo);
+  const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+  await closeCard(deck, first, "done", "Landed.");
+  await closeCard(deck, final, "done", "Guide.\n");
+  const finding = (headline: string) => ({ labels: [], blockedBy: [], headline, body: "Found.\n" });
+  const [readmeHeadline, licenseHeadline] = ["The README still names greet.sh", "Nothing says how the code is licensed"];
+  const readme = await fileCard(deck, finding(readmeHeadline));
+  const license = await fileCard(deck, finding(licenseHeadline));
+  await writeRecord(plan, {
+    state: "Ended",
+    harness: "pi",
+    findings: [readme, license].map((id) => ({ id, role: "reviewer" as const, card: first })),
+  });
+
+  const promoting = await card(["promote", readme, license], repo, DRAFT);
+  expect(promoting.stderr).toBe("");
+  expect(promoting.code).toBe(0);
+  expect(promoting.stdout).toStartWith(forOwner(DRAFT));
+  expect(promoting.stdout).toContain(`<for_owner>\n${DRAFT}\n</for_owner>\n`);
+  for (const id of [readme, license]) {
+    expect(readFileSync(path.join(deck.openDir, `${id}.md`), "utf8")).toEndWith(`Found.\n\n## Promotion\n\n${DRAFT}\n`);
+  }
+
+  const awaiting = (id: string, headline: string) =>
+    `${id}  ${headline}\n  filed by the reviewer, drafted for promotion, awaiting its key\n  card promote ${id} --key <KEY>\n`;
+  const filed = `The run filed these findings, each a waiting card until the owner settles it:\n\n${awaiting(readme, readmeHeadline)}\n${awaiting(license, licenseHeadline)}`;
+  expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan, final, tree, "Guide.\n", filed), stderr: "" });
+
+  const finishing = await card(["finish"], repo);
+  expect(finishing.stderr).toBe("");
+  expect(finishing.code).toBe(0);
+  expect(await listPlans(deck)).toEqual([]);
+
+  const next = await card([], repo);
+  expect(next.code).toBe(0);
+  expect(next.stdout).toContain(`${readme}  ${readmeHeadline}\n  card promote ${readme} --key <KEY>\n`);
+  expect(next.stdout).toContain(`${license}  ${licenseHeadline}\n  card promote ${license} --key <KEY>\n`);
+  expect(next.stdout).not.toContain(`card decline ${readme}`);
+
+  const keyed = await card(["promote", readme, license, "--key", "GREET-42"], repo);
+  expect(keyed).toEqual({
+    code: 0,
+    stdout: `${readme} is closed promoted, as GREET-42: ${readmeHeadline}\n${license} is closed promoted, as GREET-42: ${licenseHeadline}\n`,
+    stderr: "",
+  });
+  for (const id of [readme, license]) {
+    const closed = readFileSync(path.join(deck.closedDir, `${id}.md`), "utf8");
+    expect(closed).toContain("closed: promoted");
+    expect(closed).toEndWith(`## Promotion\n\n${DRAFT}\n\n## Close note\n\nPromoted to GREET-42.\n`);
+  }
+  expect(await waitingCards(deck)).toEqual([]);
+});
 
 test(
   "card decline during a run refuses one of the plan's cards, and closes a waiting card declined without touching the run's record or its course",

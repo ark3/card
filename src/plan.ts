@@ -1,5 +1,6 @@
 import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { Card } from "./cardfile.ts";
 import type { Cycle, Role } from "./cycle.ts";
 import type { Deck } from "./deck.ts";
 import type { Harness, Session } from "./harness.ts";
@@ -235,8 +236,22 @@ export async function waitingCards(deck: Deck, except: string[] = []): Promise<L
   return listed.filter(({ id }) => !taken.has(id));
 }
 
-/** The waiting cards for the owner, each with its id and headline and the commands that settle it beside it. */
-export function listWaiting(listed: Listed[], command: string, verbs: string[]): string {
-  const lines = listed.map(({ id, card }) => `${id}  ${card.headline}\n${verbs.map((verb) => `  ${command} ${verb} ${id}\n`).join("")}`);
+/**
+ * Whether an open card was drafted for promotion and awaits the key of the
+ * ticket the owner posts: the first `card promote` appends `## Promotion` to
+ * its record and the second closes it, so the card says so with no plan's
+ * record, and a listing made after its plan is gone still knows it.
+ */
+export function awaitingKey(card: Card): boolean {
+  return /^## Promotion$/m.test(card.body);
+}
+
+/**
+ * The waiting cards for the owner, each with its id and headline and the
+ * commands that settle it beside it, `settle` giving each command's words
+ * after `command`.
+ */
+export function listWaiting(listed: Listed[], command: string, settle: (id: string, card: Card) => string[]): string {
+  const lines = listed.map(({ id, card }) => `${id}  ${card.headline}\n${settle(id, card).map((words) => `  ${command} ${words}\n`).join("")}`);
   return `Cards waiting in no plan, which no run picks up:\n\n${lines.join("\n")}`;
 }
