@@ -26,6 +26,17 @@ export async function running({ deck, plan }: Context): Promise<void> {
   );
 }
 
+/** Bare `card` in Stopped: the card the run stopped at, which resuming reruns from its reconciler. */
+export async function stopped({ deck, plan }: Context): Promise<void> {
+  const { cycle } = plan;
+  // No cycle yet, or the last one's commit has landed and the next card's cycle had not started.
+  const at =
+    cycle === null || cycle.commit !== undefined
+      ? "between cards, and the next card not closed runs from a fresh reconciler when the run is resumed.\n"
+      : `at this card, which reruns from a fresh reconciler when the run is resumed:\n\n${await named(deck, cycle.card)}\n`;
+  process.stdout.write(forOwner(`The plan \`${plan.slug}\`'s run is stopped ${at}`));
+}
+
 /**
  * Bare `card` in Bounced: the role that stopped the run, its cause, any gap
  * the final card found, any question or last revision feedback, and how to

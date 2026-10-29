@@ -896,3 +896,101 @@ test(
   },
   SLOW,
 );
+
+/** What bare `card` and `card stop` report for the owner in Stopped, with the card `inCheck` filed first. */
+function stoppedReport(id: string): string {
+  return `The plan \`greeting\`'s run is stopped at this card, which reruns from a fresh reconciler when the run is resumed:\n\n${id}  Add the greeting\n`;
+}
+
+/** Shell, as a role's work, that commits part of it, leaves the rest uncommitted, and starts a child that sleeps, writing the role's pid and the child's to `pids`. */
+function sleeping(control: string, pids: string): string {
+  return `printf 'half\\n' > half.txt; git add half.txt; git commit -q -m half; printf 'more\\n' > more.txt; sleep 30 & echo $PPID $! > '${pids}'; ${hold(control, "first")}`;
+}
+
+test(
+  "card stop in Running returns with the run, the role and the role's child gone, the worktree clean, the card open and the plan Stopped; bare card names the card, and card resume reruns it from a fresh reconciler",
+  async () => {
+    const { repo, deck, plan, first, final, base } = await inCheck();
+    const control = stand(["pi"]);
+    const pids = path.join(control, "pids");
+    const seen = path.join(control, "seen");
+    queue(
+      control,
+      [proceed()],
+      [done(sleeping(control, pids))],
+      [proceed(`{ git rev-parse HEAD; git status --porcelain; } > '${seen}'`)],
+      [done("printf 'hello\\n' > hello.txt")],
+      [approved("Add the greeting")],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the first role to start", () => existsSync(path.join(control, "first.started")) && existsSync(pids));
+    const processes = [record(plan.dir).run!.pid, ...readFileSync(pids, "utf8").trim().split(" ").map(Number)];
+    expect(processes.map(running)).toEqual([true, true, true]);
+
+    const stopping = await card(["stop"], repo);
+    expect(stopping).toEqual({ code: 0, stdout: forOwner(stoppedReport(first)), stderr: "" });
+    expect(processes.map(running)).toEqual([false, false, false]);
+    const tree = path.join(repo, ".worktrees", "greeting");
+    expect((await gitOrThrow(["rev-parse", "HEAD"], tree)).trim()).toBe(base);
+    expect(await gitOrThrow(["status", "--porcelain", "--untracked-files=all"], tree)).toBe("");
+    expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
+    expect(record(plan.dir).state).toBe("Stopped");
+
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(stoppedReport(first)), stderr: "" });
+    const asking = await card(["ask"], repo, ASKED);
+    expect(asking.code).not.toBe(0);
+    expect(asking.stderr).toStartWith("card: `card ask` is not open while the plan `greeting` is in Stopped");
+    // No session waits after a stop, so an answer has no one to reach.
+    const answering = await card(["resume"], repo, OWNER_ANSWER);
+    expect(answering.code).not.toBe(0);
+    expect(record(plan.dir).state).toBe("Stopped");
+
+    const resuming = await card(["resume"], repo);
+    const log = path.join(plan.dir, "run.log");
+    expect(resuming).toEqual({ code: 0, stdout: forOwner(`The plan \`greeting\`'s run is carried on, on pi, in ${tree}; its log is ${log}.\n`), stderr: "" });
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    expect(readFileSync(seen, "utf8")).toBe(`${base}\n`);
+    expect(record(plan.dir).landed.map(({ card }) => card)).toEqual([first, final]);
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan"]);
+    // The stopped cycle's reconciler, and a fresh one after the resume, each launched once on the card and never resumed.
+    const reconcilers = readdirSync(control)
+      .filter((id) => existsSync(path.join(control, id, "calls")))
+      .map((id) => calls(control, id))
+      .filter(([launched]) => launched!.stdin.startsWith("# Reconciling one card\n") && launched!.stdin.includes("<card>\n# Add the greeting\n"));
+    expect(reconcilers.map((made) => made.length)).toEqual([1, 1]);
+  },
+  SLOW,
+);
+
+test(
+  "card stop in Dead ends the role the dead run left running, and the role's child, and leaves the worktree clean, the card open and the plan Stopped",
+  async () => {
+    const { repo, deck, plan, first, base } = await inCheck();
+    const control = stand(["pi"]);
+    const pids = path.join(control, "pids");
+    queue(control, [proceed()], [done(sleeping(control, pids))]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the first role to start", () => existsSync(path.join(control, "first.started")) && existsSync(pids));
+    process.kill(record(plan.dir).run!.pid, "SIGKILL");
+    for (const deadline = Date.now() + 5_000; (await stateOf(deck)) !== "Dead"; await Bun.sleep(50)) {
+      if (Date.now() > deadline) throw new Error("timed out waiting for the run to read as Dead");
+    }
+    const left = readFileSync(pids, "utf8").trim().split(" ").map(Number);
+    expect(left.map(running)).toEqual([true, true]);
+
+    const stopping = await card(["stop"], repo);
+    expect(stopping).toEqual({ code: 0, stdout: forOwner(stoppedReport(first)), stderr: "" });
+    expect(left.map(running)).toEqual([false, false]);
+    const tree = path.join(repo, ".worktrees", "greeting");
+    expect((await gitOrThrow(["rev-parse", "HEAD"], tree)).trim()).toBe(base);
+    expect(await gitOrThrow(["status", "--porcelain", "--untracked-files=all"], tree)).toBe("");
+    expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
+    expect(record(plan.dir).state).toBe("Stopped");
+    expect(await stateOf(deck)).toBe("Stopped");
+  },
+  SLOW,
+);
