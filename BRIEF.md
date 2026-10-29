@@ -160,7 +160,7 @@ For each card, in the order authoring set, the roles run in the order below.
 A fresh session before every implementation checks the card against the code at the tip of the plan's branch and amends it within its intent.
 It runs once per card, before the card's first implementer; a blocking finding brings it back to converse and amend, and the fresh implementer that follows needs no second reconciling, since the amendment is the reconciler's own; revision rounds do not bring it back.
 It also keeps the plan document true, within the plan's intent.
-It edits the card's contract and the plan document and nothing else, and the tool holds it to that when it proceeds: a reconciler that has changed the worktree, or the card's frontmatter or record, has failed ("When a role fails" below), with each changed path or record section named.
+It edits the card's contract and the plan document and nothing else, and the tool holds it to that when it proceeds and when it amends the card after a blocking finding: a reconciler that has changed the worktree, or the card's frontmatter or record, has failed ("When a role fails" below), with each changed path or record section named.
 The tool stops rather than repairs, leaving the change in place for the owner: a reconciler that oversteps is a bug in the reconciler or its prompt, to be found and fixed, and undoing the change quietly would hide it.
 A done-condition only the owner can judge, it rewrites to name evidence an agent can check, and the card's close note then passes the owner's trial on in its "how to see it working".
 It stops the run for the owner when the intent itself is wrong, when the card depends on work no earlier card has landed — a problem of order for authoring to fix — or when it cannot reach agreement with the implementer within a cap.
@@ -176,7 +176,8 @@ The contract is the card as authoring and the reconciler wrote it; what the tool
 Implementation only: "I really don't want the implementer thinking about whether the card is correct. I want the implementer's frame of mind to be implementation."
 A finding that does not block the work goes into the implementer's answer, and the tool files it as a card.
 A finding that blocks it — the card cannot be implemented as written: something it cites is absent, its approach cannot work, its done-condition cannot be reached — goes to the reconciler, and the two converse until they agree, within a cap.
-On agreement the card is amended, the tool discards the uncommitted work by resetting and cleaning the plan's worktree, and a fresh implementer starts there.
+On agreement the card is amended, and the tool first holds the reconciler to its bounds as it does on proceeding ("Reconciler" above): it compares the worktree with what it held when the reconciler was resumed, which is the implementer's uncommitted work, and the card's frontmatter and record with what they were then, and a reconciler that changed any of them has failed, with the change and the work left in place.
+Within bounds, the tool discards the uncommitted work by resetting and cleaning the plan's worktree, removes from the card the `## Account` and `## Review feedback` sections of the discarded work, as a rerun does ("Stopping and answering" below), and a fresh implementer starts there on the amended card without the record of the work it replaces.
 This path is rare and allowed to be expensive; the discovery survives in the amended card, and discarding the work removes the implementer's reason to steer the amendment towards what it had built.
 
 **The implementer's account.**

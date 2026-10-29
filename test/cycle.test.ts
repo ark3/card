@@ -638,6 +638,79 @@ test("an amendment discards the implementer's work back to the cycle's base, and
   expect((await listPlans(deck))[0]!.cycle?.sessions).toEqual({ reconciler: ids[0], implementer: ids[2], reviewer: ids[3] });
 });
 
+test("a reconciler that amends the card having changed its frontmatter or record stops the cycle as failed, naming each and leaving the edit, with no fresh implementer launched", async () => {
+  const { deck, plan, id, tree, base } = await running();
+  const file = await withFrontmatterAndRecord(deck, id);
+  const overstep = `sed -i -e 's/labels: greeting/labels: greeting, urgent/' -e 's/found no greeting/found a greeting/' '${file}'`;
+  const { control, ended } = await drawn(deck, plan, id, tree, [proceed(), amending(overstep)], [blocked("printf 'hel' > hello.txt")], [done()], [approved()]);
+
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reconciler");
+  expect(ended.session).toEqual({ harness: "pi", id: ids[0]!, dir: tree });
+  expect(ended.cause).toContain("frontmatter");
+  expect(ended.cause).toContain("## Gap");
+  expect(ended.cause).toContain("left in place");
+  expect(ended.question).toBeUndefined();
+  const sessions = { reconciler: ids[0], implementer: ids[1] };
+  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions, rounds: 0, exchanges: 1, finding: FINDING });
+  const text = readFileSync(file, "utf8");
+  expect(text).toStartWith("---\nlabels: greeting, urgent\n---\n");
+  expect(text).toContain("## Gap\n\nThe plan's last check found a greeting.\n");
+  expect(readFileSync(path.join(tree, "hello.txt"), "utf8")).toBe("hel");
+  expect(existsSync(path.join(control, ids[2]!, "calls"))).toBe(false);
+});
+
+test("a reconciler that amends the card having changed the worktree stops the cycle as failed, naming each path it changed and leaving it beside the implementer's work, with no fresh implementer launched", async () => {
+  const { deck, plan, id, tree, base } = await running();
+  const partway = "printf 'hel' > hello.txt; printf 'more\\n' >> README.md; git add hello.txt; git commit -qam habit";
+  const overstep = "printf 'stray\\n' > stray.txt; printf 'lo' >> hello.txt";
+  const { control, ended } = await drawn(deck, plan, id, tree, [proceed(), amending(overstep)], [blocked(partway)], [done()], [approved()]);
+
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reconciler");
+  expect(ended.session).toEqual({ harness: "pi", id: ids[0]!, dir: tree });
+  expect(ended.cause).toContain("stray.txt");
+  expect(ended.cause).toContain("hello.txt");
+  expect(ended.cause).not.toContain("README.md");
+  expect(ended.cause).toContain("left in place");
+  expect(ended.plan.cycle).toMatchObject({ role: "reconciler", step: "converse" });
+  expect(await headSha(tree)).toBe(base);
+  expect(readFileSync(path.join(tree, "stray.txt"), "utf8")).toBe("stray\n");
+  expect(readFileSync(path.join(tree, "hello.txt"), "utf8")).toBe("hello");
+  expect(readFileSync(path.join(tree, "README.md"), "utf8")).toEndWith("more\n");
+  expect(existsSync(path.join(control, ids[2]!, "calls"))).toBe(false);
+});
+
+test("the fresh implementer an amendment starts reads the card without the account and feedback of the work the amendment discarded", async () => {
+  const { deck, plan, id, tree } = await running();
+  // The contract alone, since the record of the discarded work names hello.txt too.
+  const amend = `sed -i '1,/^## /s/hello\\.txt/greeting.txt/g' '${path.join(deck.openDir, `${id}.md`)}'`;
+  const amended = CONTRACT.replaceAll("hello.txt", "greeting.txt");
+  const { control, ended } = await drawn(
+    deck,
+    plan,
+    id,
+    tree,
+    [proceed(), amending(amend)],
+    [done(MISSPELT), blocked()],
+    [revision()],
+    [revised("printf 'hello\\n' > greeting.txt")],
+    [approved()],
+  );
+
+  const fresh = calls(control, ids[3]!)[0]!.stdin;
+  expect(fresh).toStartWith("# Implementing one card\n");
+  expect(fresh).toContain(amended);
+  expect(fresh).not.toContain(ACCOUNT);
+  expect(fresh).not.toContain(FEEDBACK);
+  expect(ended.outcome).toBe("landed");
+  expect(cardFile(deck, id)).toBe(
+    `---\nclosed: done\n---\n\n# Add the greeting\n\n${amended}\n## Account\n\n${REVISED}\n\n## Close note\n\n${NOTE}\n`,
+  );
+});
+
 test("an implementer's own commit is undone before the reconciler converses, which sees HEAD at the cycle's base and the change uncommitted", async () => {
   const { deck, plan, id, tree, base } = await running();
   const marks = tempDir();

@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { branchExists, firstListed, git, gitOrThrow, headSha, listWorktrees } from "./git.ts";
 
@@ -81,6 +81,49 @@ export async function changedPaths(tree: string, commit: string): Promise<string
   const tracked = await gitOrThrow(["diff", "--name-only", "--no-renames", "-z", commit], tree);
   const untracked = await gitOrThrow(["ls-files", "-z", "--others", "--exclude-standard"], tree);
   return `${tracked}${untracked}`.split("\0").filter(Boolean);
+}
+
+/** What a worktree path holds: its bytes, `directory` for a repository nested there, or null where it is gone. */
+type Held = Buffer | "directory" | null;
+
+/** The paths at which the worktree differs from a commit, as `changedPaths` names them, each with what it holds. */
+export type Snapshot = Map<string, Held>;
+
+async function held(file: string): Promise<Held> {
+  try {
+    return await readFile(file);
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === "ENOENT") return null;
+    if (code === "EISDIR") return "directory";
+    throw error;
+  }
+}
+
+/** The worktree's `changedPaths` from `commit`, each with what it holds now. */
+export async function snapshot(tree: string, commit: string): Promise<Snapshot> {
+  const paths = await changedPaths(tree, commit);
+  return new Map(await Promise.all(paths.map(async (file) => [file, await held(path.join(tree, file))] as const)));
+}
+
+/**
+ * The paths at which the worktree has changed since `before`, its `snapshot`
+ * from `commit`: each path changed from `commit` that `before` lacks, and each
+ * of `before` that holds otherwise now. Against an empty snapshot, these are
+ * its `changedPaths`.
+ */
+export async function changedSince(tree: string, commit: string, before: Snapshot): Promise<string[]> {
+  const changed: string[] = [];
+  for (const file of new Set([...before.keys(), ...(await changedPaths(tree, commit))])) {
+    const was = before.get(file);
+    if (was === undefined) {
+      changed.push(file);
+      continue;
+    }
+    const is = await held(path.join(tree, file));
+    if (was instanceof Buffer && is instanceof Buffer ? !was.equals(is) : was !== is) changed.push(file);
+  }
+  return changed;
 }
 
 /** The lines the worktree's uncommitted diff adds, new untracked files whole. */

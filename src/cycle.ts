@@ -16,7 +16,7 @@ import { readDocument } from "./document.ts";
 import { headSha } from "./git.ts";
 import { type Check, correct, type Harness, launch, resume, RoleFailure, type Session } from "./harness.ts";
 import { citedIds } from "./id.ts";
-import { addedLines, changedPaths, CommitRefused, discard, land, uncommittedDiff, undoMovedHead } from "./landing.ts";
+import { addedLines, changedSince, CommitRefused, discard, land, snapshot, uncommittedDiff, undoMovedHead } from "./landing.ts";
 import { appendRecord, closeCard, dropUnlanded, fileCard, toolWrittenChanges } from "./operations.ts";
 import { fill } from "./payload.ts";
 import { type Plan, writeRecord } from "./plan.ts";
@@ -433,7 +433,8 @@ export function reconcilerPrompt(card: { path: string; text: string }, document:
  * instead answer that the card cannot be built as written: the reconciler is
  * resumed with its blocking finding, and either replies, and the
  * implementer is resumed with the reply, or amends the card, and the worktree
- * goes back to the cycle's base for a fresh implementer, for up to EXCHANGES
+ * goes back to the cycle's base and the card's record drops the discarded
+ * work's accounts and feedback for a fresh implementer, for up to EXCHANGES
  * exchanges, after which a blocking finding gets the reconciler's stop for
  * disagreement alone. Neither the implementer nor the reviewer is shown the
  * plan document, and the reviewer gets its commit convention alone, except on
@@ -454,11 +455,12 @@ export function reconcilerPrompt(card: { path: string; text: string }, document:
  * replaced by the reviewer's next, which restates the whole report, so the
  * findings filed are those of the answer that lands, filed once its commit is
  * made and before the commit is recorded, and a reviewer that fails at its
- * last return files none. A reconciler that proceeds having changed the
- * worktree, or the card's frontmatter or record, has failed, and the change is
- * left in place. A reconciler that stops, a reviewer asking for a revision
- * past the cap, or a role that fails, ends the cycle stopped, with its cause
- * and session.
+ * last return files none. A reconciler that proceeds, or amends the card after
+ * a blocking finding, having changed the worktree, or the card's frontmatter
+ * or record, has failed, and the change is left in place, the implementer's
+ * work beside it, undiscarded. A reconciler that stops, a reviewer asking for
+ * a revision past the cap, or a role that fails, ends the cycle stopped, with
+ * its cause and session.
  */
 export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, harness: Harness): Promise<CycleEnd> {
   const base = await headSha(tree);
@@ -558,8 +560,18 @@ async function cycleFrom(
       ? fill(finalImplement, { CARD_TEXT: await cardText(deck, id), DOCUMENT_TEXT: await documentText() })
       : fill(implement, { CARD_TEXT: await cardText(deck, id) });
   let { rounds, exchanges } = cycle;
-  // The card as the reconciler is handed it, whose frontmatter and record it may not change.
-  const reconciledFrom = cycle.step === "reconcile" ? await Bun.file(await cardPath(deck, id)).text() : "";
+  /**
+   * The card's file and the worktree as the reconciler is handed them at
+   * `step`, whose frontmatter, record and files it may not change: at the
+   * reconcile step the worktree is the cycle's base, and conversing, it holds
+   * the implementer's uncommitted work, which a cycle resumed conversing takes
+   * as it finds it.
+   */
+  const handed = async (step: Step) => ({
+    card: await Bun.file(await cardPath(deck, id)).text(),
+    tree: step === "converse" ? await snapshot(tree, base) : new Map(),
+  });
+  let reconciledFrom = await handed(cycle.step);
   /** Records the cycle at `role`'s `step`, with the counts, under a fresh session where `fresh`, before the role is called. */
   const enter = async (role: Role, step: Step, fresh = false) => {
     const sessions = fresh ? { ...cycle.sessions, [role]: crypto.randomUUID() } : cycle.sessions;
@@ -613,40 +625,41 @@ async function cycleFrom(
       return { ...stopped, gap };
     }
 
-    if (step === "reconcile") {
-      const paths = await changedPaths(tree, base);
-      const parts = toolWrittenChanges(reconciledFrom, await Bun.file(await cardPath(deck, id)).text());
+    if (step === "converse" && answer.outcome === "reply") {
+      await enter("implementer", "implement");
+      prompt = fill(reply, { REPLY: (answer.reply as string).trimEnd() });
+      // A reply resumes the implementer on the work as it left it.
+      answering = resume;
+    } else if (step === "reconcile" || step === "converse") {
+      // Every fresh implementer within a cycle starts here, after a reconciler's proceed or its amendment alike.
+      const did = step === "reconcile" ? "proceeded" : "amended the card";
+      const paths = await changedSince(tree, base, reconciledFrom.tree);
+      const parts = toolWrittenChanges(reconciledFrom.card, await Bun.file(await cardPath(deck, id)).text());
       if (paths.length > 0 || parts.length > 0) {
         const changed = [
           ...(paths.length > 0 ? [`${paths.join(", ")} in the worktree`] : []),
           ...(parts.length > 0 ? [`the card's ${parts.join(", ")}`] : []),
         ];
         // Left in place, since a reconciler that changes these is a bug in it or its prompt for the owner to find.
-        const cause = `the reconciler proceeded having changed ${changed.join(" and ")}, which a reconciler may not change; the change is left in place for the owner to look at`;
+        const cause = `the reconciler ${did} having changed ${changed.join(" and ")}, which a reconciler may not change; the change is left in place for the owner to look at`;
         return { plan, outcome: "stopped", role, session: session(role), cause };
       }
       // The run's log, where the owner reads what the reconciler changed.
-      console.log(`${id}: the reconciler proceeded: ${answer.amended}`);
+      console.log(`${id}: the reconciler ${did}: ${answer.amended}`);
+      // Discarded, so an amendment owes nothing to the work it replaces, and
+      // that work's account and feedback dropped with it, as a rerun drops
+      // them; after a proceed there is neither.
+      await discard(tree, base);
+      await dropUnlanded(deck, id);
       await enter("implementer", "implement", true);
       // Read after the reconciler has ended, so its amendments reach the implementer.
-      prompt = await implementing();
-      answering = launch;
-    } else if (step === "converse" && answer.outcome === "reply") {
-      await enter("implementer", "implement");
-      prompt = fill(reply, { REPLY: (answer.reply as string).trimEnd() });
-      // A reply resumes the implementer on the work as it left it.
-      answering = resume;
-    } else if (step === "converse") {
-      console.log(`${id}: the reconciler amended the card: ${answer.amended}`);
-      // Discarded, so the amendment owes nothing to the work it replaces.
-      await discard(tree, base);
-      await enter("implementer", "implement", true);
       prompt = await implementing();
       answering = launch;
     } else if (step === "implement" && answer.outcome === "blocked") {
       exchanges++;
       // Before the reconciler converses, so HEAD is the branch it amends the card to and the work is uncommitted.
       await undoMovedHead(base, tree);
+      reconciledFrom = await handed("converse");
       cycle = { ...cycle, finding: answer.finding as string };
       await enter("reconciler", "converse");
       prompt = fill(converse, {
