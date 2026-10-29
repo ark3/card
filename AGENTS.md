@@ -52,4 +52,4 @@ The rewrite of 2026-08-22 (`reference/payload-rewrite/`) removed them class by c
 - **Address prose by quoted phrase and section, never by line number.**
   Line numbers go stale silently and still resolve, to the wrong text.
 
-When a payload change lands, check the sentence you touched against these rules, and check what else in the three files states or depends on the same rule — the files deliberately restate a few rules in their own vocabulary, and only a change of rule, not of wording, needs propagating.
+When a payload change lands, check the sentence you touched against these rules, and check what else in `payload/` states or depends on the same rule, above all every other prompt for a role the rule binds, such as a role's final-card, revise and resume prompts — the files deliberately restate a few rules in their own vocabulary, and only a change of rule, not of wording, needs propagating.
