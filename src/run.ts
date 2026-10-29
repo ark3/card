@@ -26,9 +26,10 @@ for (const id of plan.cards) {
   const ended = await runCard(deck, plan, id, tree, plan.harness!);
   plan = ended.plan;
   if (ended.outcome === "stopped") {
-    const { role, session, cause } = ended;
-    await writeRecord(plan, { state: "Bounced", bounce: { role, session, cause } });
+    const { role, session, cause, question } = ended;
+    await writeRecord(plan, { state: "Bounced", bounce: { role, session, cause, question } });
     console.log(`The run bounced at ${id}: the ${role} stopped it: ${cause}`);
+    if (question !== undefined) console.log(`It asks the owner: ${question}`);
     process.exit(0);
   }
   plan = await writeRecord(plan, { landed: [...plan.landed, { card: id, commit: ended.sha }] });

@@ -8,7 +8,7 @@ import { ensureBranch, holdWorktree, land } from "../src/landing.ts";
 import { appendRecord, closeCard, fileCard } from "../src/operations.ts";
 import { forOwner } from "../src/owner.ts";
 import { listPlans, type PlanRecord, startPlan, writeRecord } from "../src/plan.ts";
-import { clearCardRoot, queue, type Reply, removeTempDirs, stand, tempRepo } from "./helpers.ts";
+import { calls, clearCardRoot, queue, type Reply, removeTempDirs, stand, tempRepo } from "./helpers.ts";
 
 const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
 const OUTER_PATH = process.env.PATH;
@@ -43,11 +43,14 @@ async function inCheck(startPoint = "main") {
     cards: [first, final],
     final,
   });
-  await Bun.write(plan.document, `---\nbranch: plan/greeting\nstart-point: ${startPoint}\n---\n\n# Greet\n`);
+  await Bun.write(plan.document, `---\nbranch: plan/greeting\nstart-point: ${startPoint}\n---\n\n# Greet\n\n${DOCUMENT_BODY}\n`);
   const base = (await gitOrThrow(["rev-parse", "main"], repo)).trim();
   return { repo, deck, plan, first, final, base };
 }
 
+// Text only the plan document's body holds, which only the reconciler reads.
+const DOCUMENT_BODY = "The plan's intent, which only the reconciler reads.";
+const proceed = (run?: string): Reply => ({ stdout: JSON.stringify({ outcome: "proceed", amended: "Nothing needed changing." }), run });
 const done = (run?: string): Reply => ({ stdout: JSON.stringify({ outcome: "done", account: "Did the work." }), run });
 const approved = (subject: string): Reply => ({
   stdout: JSON.stringify({ outcome: "approved", subject, close_note: "Landed it." }),
@@ -74,8 +77,9 @@ async function until(what: string, check: () => boolean): Promise<void> {
 }
 
 /** What bare `card` reports for the owner in Bounced, with the card `inCheck` filed first. */
-function bouncedReport(id: string, role: string, cause: string, resume: string): string {
-  return `The plan \`greeting\`'s run bounced at this card, where the ${role} stopped it:\n\n${id}  Add the greeting\n\nThe cause recorded for it:\n\n${cause}\n\nTo resume the ${role}'s session at a terminal, run this from the plan's worktree:\n\n  ${resume}\n`;
+function bouncedReport(id: string, role: string, cause: string, resume: string, question?: string): string {
+  const asks = question === undefined ? "" : `The question it asks:\n\n${question}\n\n`;
+  return `The plan \`greeting\`'s run bounced at this card, where the ${role} stopped it:\n\n${id}  Add the greeting\n\nThe cause recorded for it:\n\n${cause}\n\n${asks}To resume the ${role}'s session at a terminal, run this from the plan's worktree:\n\n  ${resume}\n`;
 }
 
 /** What bare `card` reports for the owner in Ended, with `inCheck`'s final card closed under `note`. */
@@ -93,9 +97,15 @@ test(
   async () => {
     const { repo, deck, plan, first, final, base } = await inCheck();
     const control = stand(["pi"]);
-    queue(control, [done(`${hold(control, "first")}; printf 'hello\\n' > hello.txt`)], [approved("Add the greeting")], [done()], [
-      approved("Check the plan"),
-    ]);
+    queue(
+      control,
+      [proceed()],
+      [done(`${hold(control, "first")}; printf 'hello\\n' > hello.txt`)],
+      [approved("Add the greeting")],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
 
     const approving = await card(["approve"], repo);
     expect(approving.stderr).toBe("");
@@ -125,14 +135,20 @@ test(
 );
 
 test(
-  "the state records the first card closed before the second card's first role launches, and the run's pid and boot id",
+  "the state records the first card closed before the second card's reconciler launches, and the run's pid and boot id",
   async () => {
     const { repo, plan, first, final, base } = await inCheck();
     const control = stand(["pi"]);
     const snapshot = path.join(control, "at-second-launch.json");
-    queue(control, [done()], [approved("Add the greeting")], [done(`cp '${path.join(plan.dir, "state.json")}' '${snapshot}'`)], [
-      approved("Check the plan"),
-    ]);
+    queue(
+      control,
+      [proceed()],
+      [done()],
+      [approved("Add the greeting")],
+      [proceed(`cp '${path.join(plan.dir, "state.json")}' '${snapshot}'`)],
+      [done()],
+      [approved("Check the plan")],
+    );
 
     expect((await card(["approve"], repo)).code).toBe(0);
     await until("the plan to end", () => record(plan.dir).state === "Ended");
@@ -141,7 +157,7 @@ test(
     const at: PlanRecord = JSON.parse(readFileSync(snapshot, "utf8"));
     expect(at.landed).toEqual([{ card: first, commit: landed! }]);
     expect(at.cycle?.card).toBe(final);
-    expect(at.cycle?.step).toBe("implement");
+    expect(at.cycle?.step).toBe("reconcile");
     expect(at.run?.pid).toBeNumber();
     expect(at.run?.boot).toBe(readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim());
     expect(record(plan.dir).run).toEqual(at.run);
@@ -156,7 +172,7 @@ test(
     const control = stand(["pi"]);
     // The stand-in is the role, and the shell running this is its child.
     const groups = `ps -o pgid= -p $PPID > '${path.join(control, "role")}'; ps -o pgid= -p $$ > '${path.join(control, "child")}'`;
-    queue(control, [done(groups)], [approved("Add the greeting")], [done()], [approved("Check the plan")]);
+    queue(control, [proceed()], [done(groups)], [approved("Add the greeting")], [proceed()], [done()], [approved("Check the plan")]);
 
     expect((await card(["approve"], repo)).code).toBe(0);
     await until("the plan to end", () => record(plan.dir).state === "Ended");
@@ -173,7 +189,7 @@ test(
   async () => {
     const { repo, deck, plan, first, base } = await inCheck();
     const control = stand(["pi"]);
-    queue(control, [{ stderr: "usage limit reached\n", exit: 1 }]);
+    queue(control, [proceed()], [{ stderr: "usage limit reached\n", exit: 1 }]);
 
     expect((await card(["approve"], repo)).code).toBe(0);
     await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
@@ -186,6 +202,33 @@ test(
     expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
     const report = bouncedReport(first, "implementer", bounce!.cause, `cd ${bounce!.session.dir} && pi --session-id ${bounce!.session.id}`);
     expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
+  },
+  SLOW,
+);
+
+test(
+  "a reconciler that stops bounces the plan with its cause and question in the report, and launches no implementer",
+  async () => {
+    const { repo, deck, plan, first, base } = await inCheck();
+    const control = stand(["pi"]);
+    const question = "The card calls `greet()`, which nothing in the worktree defines; which card should build it?";
+    // The implementer's answers, which no session may take.
+    queue(control, [{ stdout: JSON.stringify({ outcome: "stop", cause: "order", question }) }], [done()]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+
+    const { bounce, cycle } = record(plan.dir);
+    const cause = "the card depends on work no earlier card has landed, a problem of order for authoring to fix";
+    expect(bounce).toEqual({ role: "reconciler", session: bounce!.session, cause, question });
+    expect(bounce!.session.id).toBe(cycle!.sessions.reconciler!);
+    expect(cycle).toEqual({ card: first, base, role: "reconciler", step: "reconcile", sessions: { reconciler: bounce!.session.id } });
+    expect(existsSync(path.join(control, "queue", "2", "answers"))).toBe(true);
+    expect(await subjects(repo, base)).toEqual([]);
+    expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);
+    const report = bouncedReport(first, "reconciler", cause, `cd ${bounce!.session.dir} && pi --session-id ${bounce!.session.id}`, question);
+    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
+    expect(readFileSync(path.join(plan.dir, "run.log"), "utf8")).toContain(`It asks the owner: ${question}`);
   },
   SLOW,
 );
@@ -286,8 +329,8 @@ for (const row of ROWS) {
       await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: await deadPid(), boot: BOOT }, cycle, landed });
 
       const control = stand(["pi"]);
-      const rerun = recorded ? [] : [[done("printf 'hello\\n' > hello.txt")], [approved("Add the greeting")]];
-      queue(control, ...rerun, [done()], [approved("Check the plan")]);
+      const rerun = recorded ? [] : [[proceed()], [done("printf 'hello\\n' > hello.txt")], [approved("Add the greeting")]];
+      queue(control, ...rerun, [proceed()], [done()], [approved("Check the plan")]);
       expect(await stateOf(deck)).toBe("Dead");
 
       const carrying = await card([], repo);
@@ -316,7 +359,7 @@ for (const row of ROWS) {
 }
 
 test(
-  "a run killed mid-card reruns that card from the start of its cycle on a clean worktree, and runs no closed card again",
+  "a run killed mid-card reruns that card from a fresh reconciler on a clean worktree, and runs no closed card again",
   async () => {
     const { repo, deck, plan, first, final, base } = await inCheck();
     const control = stand(["pi"]);
@@ -325,10 +368,13 @@ test(
     const partway = `printf 'half\\n' > half.txt; git add half.txt; git commit -q -m half; printf 'more\\n' > more.txt; ${hold(control, "final")}`;
     queue(
       control,
+      [proceed()],
       [done("printf 'hello\\n' > hello.txt")],
       [approved("Add the greeting")],
+      [proceed()],
       [done(partway)],
-      [done(`{ git rev-parse HEAD; git status --porcelain; } > '${seen}'`)],
+      [proceed(`{ git rev-parse HEAD; git status --porcelain; } > '${seen}'`)],
+      [done()],
       [approved("Check the plan")],
     );
 
@@ -351,6 +397,11 @@ test(
     expect(await gitOrThrow(["show", "--name-only", "--format=", "plan/greeting"], repo)).toBe("");
     const closed = readFileSync(path.join(deck.closedDir, `${first}.md`), "utf8");
     expect(closed.match(/^## Account$/gm)).toHaveLength(1);
+    // The rerun's cycle is the last one recorded, and its reconciler was handed the in-flight card and the plan document.
+    const reconciling = calls(control, record(plan.dir).cycle!.sessions.reconciler!)[0]!.stdin;
+    expect(reconciling).toStartWith("# Reconciling one card\n");
+    expect(reconciling).toContain(`<card>\n# Check the plan\n`);
+    expect(reconciling).toContain(DOCUMENT_BODY);
   },
   SLOW,
 );
@@ -374,7 +425,17 @@ test(
     // The stand-in is the role; the sleep is a child of the shell it runs as the session's work.
     const sleeping = `sleep 30 & echo $PPID $! > '${pids}'; ${hold(control, "first")}`;
     const check = `for pid in $(cat '${pids}'); do if ps -o stat= -p $pid | grep -qv Z; then echo $pid; fi; done > '${after}'`;
-    queue(control, [done(sleeping)], [done(check)], [approved("Add the greeting")], [done()], [approved("Check the plan")]);
+    queue(
+      control,
+      [proceed()],
+      [done(sleeping)],
+      [proceed(check)],
+      [done()],
+      [approved("Add the greeting")],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
 
     expect((await card(["approve"], repo)).code).toBe(0);
     await until("the first role to start", () => existsSync(path.join(control, "first.started")) && existsSync(pids));

@@ -53,8 +53,12 @@ export type PlanRecord = {
   run: { pid: number; boot: string } | null;
   /** Every card the run has closed done, with its commit, in the order it closed them. */
   landed: { card: string; commit: string }[];
-  /** The role that stopped the run, its session and the cause, while the plan is Bounced. */
-  bounce: { role: Role; session: Session; cause: string } | null;
+  /**
+   * The role that stopped the run, its session and the cause, while the plan
+   * is Bounced, with the question for the owner of a reconciler that stopped
+   * it; a role that failed asks none.
+   */
+  bounce: { role: Role; session: Session; cause: string; question?: string } | null;
 };
 
 /** What a state file written before a field existed reads as for that field. */

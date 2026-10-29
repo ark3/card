@@ -26,13 +26,14 @@ export async function running({ deck, plan }: Context): Promise<void> {
   );
 }
 
-/** Bare `card` in Bounced: the role that stopped the run, its cause, and how to resume its session. */
+/** Bare `card` in Bounced: the role that stopped the run, its cause and any question, and how to resume its session. */
 export async function bounced({ deck, plan }: Context): Promise<void> {
-  const { role, session, cause } = plan.bounce!;
+  const { role, session, cause, question } = plan.bounce!;
   process.stdout.write(
     forOwner(
       `The plan \`${plan.slug}\`'s run bounced at this card, where the ${role} stopped it:\n\n${await named(deck, plan.cycle!.card)}\n\n` +
         `The cause recorded for it:\n\n${cause}\n\n` +
+        (question === undefined ? "" : `The question it asks:\n\n${question}\n\n`) +
         `To resume the ${role}'s session at a terminal, run this from the plan's worktree:\n\n  ${resumeCommand(session)}\n`,
     ),
   );

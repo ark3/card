@@ -1,4 +1,5 @@
 import implement from "../payload/implement.md" with { type: "text" };
+import reconcile from "../payload/reconcile.md" with { type: "text" };
 import review from "../payload/review.md" with { type: "text" };
 import type { Answer, ObjectSchema } from "./answer.ts";
 import { refuseHeadlines } from "./cardfile.ts";
@@ -12,14 +13,14 @@ import { fill } from "./payload.ts";
 import { type Plan, writeRecord } from "./plan.ts";
 
 /** The roles of one card's cycle. */
-export type Role = "implementer" | "reviewer";
+export type Role = "reconciler" | "implementer" | "reviewer";
 
 /**
- * Where a cycle is: the implementer's turn, the reviewer's, or landing the
- * reviewer's answer, which is under the reviewer because its subject and note
- * are what lands.
+ * Where a cycle is: the reconciler's turn, the implementer's, the reviewer's,
+ * or landing the reviewer's answer, which is under the reviewer because its
+ * subject and note are what lands.
  */
-export type Step = "implement" | "review" | "land";
+export type Step = "reconcile" | "implement" | "review" | "land";
 
 /**
  * A card's cycle as the plan's record holds it, written before each step
@@ -45,11 +46,46 @@ export type Cycle = {
   commit?: string;
 };
 
-/** How a cycle ended, and the plan as it then stands. */
+/**
+ * How a cycle ended, and the plan as it then stands. A reconciler that stops
+ * the run asks the owner `question`; a role that fails asks nothing.
+ */
 export type CycleEnd = { plan: Plan } & (
   | { outcome: "landed"; sha: string }
-  | { outcome: "stopped"; role: Role; session: Session; cause: string }
+  | { outcome: "stopped"; role: Role; session: Session; cause: string; question?: string }
 );
+
+/**
+ * The reconciler's answer. Which fields go with which outcome, a schema of
+ * this subset cannot state, so `reconciled` checks it.
+ */
+export const RECONCILER: ObjectSchema = {
+  type: "object",
+  properties: {
+    outcome: { type: "string", enum: ["proceed", "stop"] },
+    amended: { type: "string" },
+    cause: { type: "string", enum: ["intent", "order"] },
+    question: { type: "string" },
+  },
+  required: ["outcome"],
+};
+
+/** The fields each of the reconciler's outcomes carries. */
+const CARRIES: Record<string, string[]> = { proceed: ["amended"], stop: ["cause", "question"] };
+
+/** Refuses a reconciler's answer that lacks a field its outcome carries. */
+const reconciled: Check = (answer: Answer) => {
+  for (const field of CARRIES[answer.outcome as string]!) {
+    if (field in answer) continue;
+    throw new Error(`answer lacks the field ${JSON.stringify(field)}, which outcome ${JSON.stringify(answer.outcome)} carries`);
+  }
+};
+
+/** Each cause a reconciler stops on, as the owner reads it. */
+const CAUSES: Record<string, string> = {
+  intent: "the card's intent itself is wrong, which only the owner can change",
+  order: "the card depends on work no earlier card has landed, a problem of order for authoring to fix",
+};
 
 const IMPLEMENTER: ObjectSchema = {
   type: "object",
@@ -78,26 +114,67 @@ function noHeadlines(...fields: string[]): Check {
   };
 }
 
-async function cardText(deck: Deck, id: string): Promise<string> {
+async function cardPath(deck: Deck, id: string): Promise<string> {
   const found = await locate(deck, id);
   if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
-  return (await Bun.file(found.path).text()).trimEnd();
+  return found.path;
+}
+
+async function cardText(deck: Deck, id: string): Promise<string> {
+  return (await Bun.file(await cardPath(deck, id)).text()).trimEnd();
+}
+
+/**
+ * The reconciler's prompt, but for the answer's instruction, which `launch`
+ * appends: the card and the plan document, each with the absolute path the
+ * reconciler edits it at, since both live outside the worktree it runs in.
+ */
+export function reconcilerPrompt(card: { path: string; text: string }, document: { path: string; text: string }): string {
+  return fill(reconcile, {
+    CARD_PATH: card.path,
+    CARD_TEXT: card.text,
+    DOCUMENT_PATH: document.path,
+    DOCUMENT_TEXT: document.text.trimEnd(),
+  });
 }
 
 /**
  * Runs the card `id` through one cycle in the plan's worktree `tree`: a fresh
- * implementer, whose account is appended to the card, then a fresh reviewer,
- * whose subject and close note land the worktree as the card's one commit
- * before the card closes done. Neither role is shown the plan document; the
- * reviewer gets its commit convention alone. A role that fails ends the cycle
- * stopped, with its cause and session.
+ * reconciler, which reads the plan document and may amend it and the card in
+ * place or stop the run, then a fresh implementer, whose account is appended
+ * to the card, then a fresh reviewer, whose subject and close note land the
+ * worktree as the card's one commit before the card closes done. Neither the
+ * implementer nor the reviewer is shown the plan document; the reviewer gets
+ * its commit convention alone. A reconciler that stops, or a role that fails,
+ * ends the cycle stopped, with its cause and session.
  */
 export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, harness: Harness): Promise<CycleEnd> {
   const base = await headSha(tree);
-  const implementer: Session = { harness, id: crypto.randomUUID(), dir: tree };
-  let cycle: Cycle = { card: id, base, role: "implementer", step: "implement", sessions: { implementer: implementer.id } };
+  const reconciler: Session = { harness, id: crypto.randomUUID(), dir: tree };
+  let cycle: Cycle = { card: id, base, role: "reconciler", step: "reconcile", sessions: { reconciler: reconciler.id } };
   plan = await writeRecord(plan, { cycle });
 
+  const card = { path: await cardPath(deck, id), text: await cardText(deck, id) };
+  const reconciling = reconcilerPrompt(card, { path: plan.document, text: await Bun.file(plan.document).text() });
+  let verdict: Answer;
+  try {
+    verdict = await launch(reconciler, reconciling, RECONCILER, reconciled);
+  } catch (error) {
+    if (!(error instanceof RoleFailure)) throw error;
+    return { plan, outcome: "stopped", role: "reconciler", session: reconciler, cause: error.message };
+  }
+  if (verdict.outcome === "stop") {
+    const { cause, question } = verdict as { cause: string; question: string };
+    return { plan, outcome: "stopped", role: "reconciler", session: reconciler, cause: CAUSES[cause]!, question };
+  }
+  // The run's log, where the owner reads what the reconciler changed.
+  console.log(`${id}: the reconciler proceeded: ${verdict.amended}`);
+
+  const implementer: Session = { harness, id: crypto.randomUUID(), dir: tree };
+  cycle = { ...cycle, role: "implementer", step: "implement", sessions: { ...cycle.sessions, implementer: implementer.id } };
+  plan = await writeRecord(plan, { cycle });
+
+  // Read after the reconciler has ended, so its amendments reach the implementer.
   const implementing = fill(implement, { CARD_TEXT: await cardText(deck, id) });
   let account: string;
   try {
