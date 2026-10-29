@@ -48,6 +48,16 @@ for (const [program, run] of [
     expect(result.stderr).toContain(`${program}: no such verb as \`frobnicate\``);
     expect(result.stderr).toContain(`usage: ${program} `);
   });
+
+  test(`${program} refuses a name every object inherits as an unknown verb`, async () => {
+    const repo = await tempRepo();
+    for (const name of ["constructor", "toString", "valueOf", "__proto__"]) {
+      const result = await run([name], repo);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain(`${program}: no such verb as \`${name}\``);
+      expect(result.stderr).toContain(`usage: ${program} `);
+    }
+  });
 }
 
 /** The slugs of the plans recorded in `repo`'s deck, sorted. */

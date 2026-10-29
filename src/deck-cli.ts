@@ -24,7 +24,7 @@ const USAGE = `usage: deck <verb> [...]
   ${Object.keys(VERBS).join("  ")}`;
 
 const [name, ...args] = process.argv.slice(2);
-const verb = name === undefined ? undefined : VERBS[name];
+const verb = name !== undefined && Object.hasOwn(VERBS, name) ? VERBS[name] : undefined;
 
 if (verb === undefined) {
   if (name !== undefined) console.error(`deck: no such verb as \`${name}\``);
