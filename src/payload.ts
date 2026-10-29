@@ -13,3 +13,14 @@ export function wrapPayload(command: string, body: string): string {
   const guidance = `Everything below is one block that ends with the matching closing tag alone on the last line, so if you do not see that closing tag, you are holding only part of this block: rerun \`${command}\` bare, with no pipe and no filter, and read the whole block before you act on any of it.`;
   return `<${tag}> ${guidance}\n${body}</${tag}>\n`;
 }
+
+// Payload placeholders are `{{NAME}}`. Every one a payload carries has to be
+// given a value, so a payload that gains a placeholder its printer does not
+// fill fails at its first print rather than going out with `{{` in it.
+export function fill(text: string, values: Record<string, string>): string {
+  return text.replace(/\{\{([A-Z_]+)\}\}/g, (_, name: string) => {
+    const value = values[name];
+    if (value === undefined) throw new Error(`nothing fills {{${name}}} in a payload`);
+    return value;
+  });
+}
