@@ -136,10 +136,10 @@ Done when: `bun run check` is green; tests assert the printout lists the cards w
 
 #### 10. The harness: launch and resume a role on Claude Code or Pi under an id the tool chooses, read its answer against a schema stated in the prompt, and repair at most twice
 
-Delivers: each harness's flags spelled once — `claude -p --output-format json --permission-mode bypassPermissions --session-id <uuid>`, resumed with `--resume <uuid>` in its place; `pi -p --session-id <uuid>` for both — the prompt on stdin, the session run in a named directory a resume repeats, and no model or effort flag; the answer read from Claude Code's `result` field, whose error flag marks a failed session, and from Pi's plain output; a crash, a non-zero exit, the error flag or unreadable output a failure carrying its cause; a schema defined once yielding both the instruction appended to the prompt — the final text exactly one JSON object and nothing else — and the validation; `payload/repair.md` sent by resuming the same session on a malformed answer, with the fence, "The previous report was invalid:" and the error verbatim, and the schema restated, two repairs and then failure; the stand-in harness for tests; a probe of what a failing Pi session prints, recorded in the close note.
+Delivers: each harness's flags spelled once — `claude -p --output-format json --permission-mode bypassPermissions --session-id <uuid>`, resumed with `--resume <uuid>` in its place; `pi -p --session-id <uuid>` for both — the prompt on stdin, the session run in a named directory a resume repeats, and no model or effort flag; the answer read from Claude Code's `result` field, whose error flag marks a failed session, and from Pi's plain output; a crash, a non-zero exit, the error flag or unreadable output a failure carrying its cause; a schema defined once yielding both the instruction appended to the prompt — the final text exactly one JSON object and nothing else — and the validation; `payload/repair.md` sent by resuming the same session on a malformed answer, with the fence, "The previous report was invalid:" and the error verbatim, and the schema restated, two repairs and then failure; the stand-in harness for tests; a probe against the real `claude` and `pi`, outside the suite, of a launch, a resume of the same id and one repair, each answer read by the module, and of what a failing session prints on each, recorded in the close note, so a mismatch between the brief's spelling and either harness surfaces here rather than in the pieces built on it.
 Touches: the harness module from piece 1, a new answer module, `payload/repair.md`, so the card carries `payload`; the stand-in; tests.
 Needs: 2.
-Done when: `bun run check` is green; tests assert the argv for each harness and step equals the brief's spelling with the prompt on stdin; a `result` holding one JSON object parses and one with the error flag fails naming its cause; Pi's plain output parses; an answer with prose around its JSON gets a resume carrying the three parts, never a launch; a third malformed answer fails after two repairs; changing a schema changes both its instruction and its validation; both cold readers, given a repair prompt as built, answer that they correct only the report and touch no file.
+Done when: `bun run check` is green; tests assert the argv for each harness and step equals the brief's spelling with the prompt on stdin; a `result` holding one JSON object parses and one with the error flag fails naming its cause; Pi's plain output parses; an answer with prose around its JSON gets a resume carrying the three parts, never a launch; a third malformed answer fails after two repairs; changing a schema changes both its instruction and its validation; the probe, on each harness, launches, resumes the same id into a session that recalls its first exchange, and repairs a malformed answer into one the module reads, and its close note records what a failing session printed on each; both cold readers, given a repair prompt as built, answer that they correct only the report and touch no file.
 
 #### 11. The git operations a card lands with: the plan's branch and worktree, discard, undo, the composed commit and the lines a diff adds, never touching the main checkout
 
@@ -155,126 +155,133 @@ Touches: a new cycle module; the two new files, so the card carries `payload`; t
 Needs: 10, 11, 3, 9.
 Done when: `bun run check` is green; tests with the stand-in assert one commit whose message is the subject, a blank line and the note; an empty commit for an implementer that changed nothing; an implementer's own commit folded into the card's; the card in `closed/` with its account and note beneath the contract; two distinct recorded session ids; no plan document in either stdin, and the account and the diff in the reviewer's; the main checkout unchanged; both cold readers, given `implement.md` as built, answer that they commit nothing and that a host branch instruction does not apply, and given `review.md`, answer when `fixed` applies and that no second review follows.
 
-#### 13. The detached run: `card approve` starts it, state is written after every card, and bare `card` carries a dead run on
+#### 13. The detached run: `card approve` starts it, and state is written after every card
 
-Delivers: `card approve` in Check chooses the harness by the PATH rule or `--harness claude|pi`, refusing one not on PATH, records it, resolves the start point and refuses one git cannot resolve, ensures the branch and worktree, moves to Running, starts the run detached as the leader of its own process group, which every role and every process a role starts joins, and returns at once; the run runs the cycle for each card in order, records the active card and role before each launch and the landed commit before the close, writes the state after every card, and ends in Ended after the last card or in Bounced with the cause and the session; pid beside the kernel's boot id, and a Running plan whose pid is gone or whose boot id differs read as Dead; bare `card` in Dead first ends the dead run's process group, named by its recorded pid, where anything in it is alive on the same boot, since a runner that crashed alone leaves its role and the role's own processes still writing in the worktree, then starts a new run from the last card closed: a card landed but not closed is closed from its recorded commit, and the in-flight card reruns from the start of its cycle on a worktree reset to the last commit the state records and cleaned, so a commit no record names — the tool's own, made before its record was written, or an implementer's — is discarded with the card's work; while the run lives it alone writes the state.
-Touches: the plan module, a new run module and its entry script; tests with a stand-in whose roles can be held and killed.
+Delivers: `card approve` in Check chooses the harness by the PATH rule or `--harness claude|pi`, refusing one not on PATH, records it, resolves the start point and refuses one git cannot resolve, ensures the branch and worktree, moves to Running, starts the run detached as the leader of its own process group, which every role and every process a role starts joins, and returns at once; the run runs the cycle for each card in order, records the active card and role before each launch and the landed commit before the close, writes the state after every card, and ends in Ended after the last card or in Bounced with the cause and the session; the run's pid recorded beside the kernel's boot id; while the run lives it alone writes the state; the close note states the state file's shape and the order of the writes around each commit and close, which piece 14 recovers from.
+Touches: the plan module, a new run module and its entry script; tests with a stand-in whose roles can be held.
 Needs: 9, 12, 11, 10.
-Done when: `bun run check` is green; tests assert that `card approve` returns while the first role still sleeps and the plan reaches Ended with one commit per card in order; that a named harness absent from PATH and an unresolvable start point refuse before anything launches; that the state records the first card closed before the second launches; that a dead pid and a foreign boot id each read as Dead; that killing the run after the commit and before its record, after the record and before the close, and after the close and before the state write, then running bare `card`, leaves one commit for that card and the card closed once; that killing it mid-card reruns that card on a clean worktree with no closed card run again; and that killing the run alone while a role sleeps with a child of its own, then running bare `card`, ends both before the next role launches.
+Done when: `bun run check` is green; tests assert that `card approve` returns while the first role still sleeps and the plan reaches Ended with one commit per card in order; that a named harness absent from PATH and an unresolvable start point refuse before anything launches; that the state records the first card closed before the second launches; that the state records the run's pid and boot id; and that a role and a child it starts run in the run's process group.
 
-#### 14. Reports in the owner's register: progress while the run lives, what a bounced run waits on, and the end with the final card's guide
+#### 14. Recovery from a dead run: a Running plan whose run is gone reads as Dead, and bare `card` ends what the run left alive and carries it on
+
+Delivers: a Running plan whose recorded pid is gone or whose boot id differs reads as Dead; bare `card` in Dead first ends the dead run's process group, named by its recorded pid, where anything in it is alive on the same boot, since a runner that crashed alone leaves its role and the role's own processes still writing in the worktree, then starts a new run from the last card closed: a card landed but not closed is closed from its recorded commit, and the in-flight card reruns from the start of its cycle on a worktree reset to the last commit the state records and cleaned, so a commit no record names — the tool's own, made before its record was written, or an implementer's — is discarded with the card's work; the card states, for each interruption point its done-condition names, what the durable state holds before and after it, grounded in the state piece 13 landed.
+Touches: the plan module and the run module; tests with a stand-in whose roles can be held and killed.
+Needs: 13.
+Done when: `bun run check` is green; tests assert that a dead pid and a foreign boot id each read as Dead; that killing the run after the commit and before its record, after the record and before the close, and after the close and before the state write, then running bare `card`, leaves one commit for that card and the card closed once; that killing it mid-card reruns that card on a clean worktree with no closed card run again; and that killing the run alone while a role sleeps with a child of its own, then running bare `card`, ends both before the next role launches.
+
+#### 15. Reports in the owner's register: progress while the run lives, what a bounced run waits on, and the end with the final card's guide
 
 Delivers: bare `card` in Running reports the active card and role, how many cards have closed and their headlines; in Bounced, what the stopped role asks and why, the cause for a failed role, and the command that resumes the session at a terminal from the worktree; in Ended, the final card's close note as the guide, the branch and the worktree's path; `approve`'s acknowledgement names the harness; all through piece 5's helper, byte for byte from the record.
 Touches: the Running, Bounced and Ended rows; a reports module; tests.
 Needs: 13, 5.
 Done when: `bun run check` is green; tests assert each report's content inside the marks with the relay sentence beside it, the resume command carrying the recorded uuid and the worktree's path, and the guide byte for byte at Ended.
 
-#### 15. The reconciler: a fresh session before each card's first implementer amends the card and the plan document within the plan's intent, or stops the run
+#### 16. The reconciler: a fresh session before each card's first implementer amends the card and the plan document within the plan's intent, or stops the run
 
 Delivers: the cycle starts with a reconciler under `payload/reconcile.md`, given the card, the plan document and both paths, answering `proceed`, saying what it amended, or `stop` with its cause; it rewrites a done-condition only the owner can judge into evidence an agent can check; it edits the two files in place and nothing else; it runs once per card, and fresh again when a card reruns from the start of its cycle; a stop leaves the plan Bounced with the reconciler resumable.
 Touches: the cycle; the new file, so the card carries `payload`; tests.
-Needs: 12, 13, 14.
+Needs: 12, 13, 14, 15.
 Done when: `bun run check` is green; tests assert that each card's first launch is a reconciler whose stdin carries the plan document and the card; that an amended contract reaches the implementer; that a stop leaves the plan Bounced with the question in the report and no implementer launched; that no implementer or reviewer stdin carries the plan document; and that the carry-on after a death starts with a reconciler; both cold readers, given the prompt as built for a card whose done-condition is the owner trying it, rewrite the condition and proceed, and given a card citing a function no earlier card creates, stop it as a problem of order.
 
-#### 16. The revision route: a reviewer's request resumes the same implementer with the feedback in the record, a fresh reviewer follows, and the cap stops the run
+#### 17. The revision route: a reviewer's request resumes the same implementer with the feedback in the record, a fresh reviewer follows, and the cap stops the run
 
 Delivers: the reviewer's third outcome, `revision` with feedback, appended as `## Review feedback`; the same implementer resumed under `payload/revise.md` on the same uncommitted state, answering `done` with an account of the revision; a fresh reviewer each round, the earlier feedback in the record; three rounds, then the cycle stops with the reviewer as the session to resume and the last feedback in the report; `review.md` gains the outcome and what follows from choosing it.
 Touches: the cycle; `payload/review.md` and the new file, so the card carries `payload`; tests.
-Needs: 12, 14, 3.
+Needs: 12, 15, 3.
 Done when: `bun run check` is green; tests assert the feedback section, a resume of the implementer's uuid carrying it, a fresh reviewer uuid, one commit after approval, and Bounced past the cap with the last feedback; both cold readers, given `review.md`, answer when to request a revision rather than fix a thing themselves.
 
-#### 17. The blocking route: an implementer's blocking finding goes to the reconciler, who converses within a cap and amends the card for a fresh implementer on a clean worktree, or stops
+#### 18. The blocking route: an implementer's blocking finding goes to the reconciler, who converses within a cap and amends the card for a fresh implementer on a clean worktree, or stops
 
 Delivers: the implementer's `blocked` outcome in its first step and when revising; the reconciler resumed under `payload/converse.md`, answering `amended`, a `reply` or `stop`; on a reply the implementer resumed under `payload/reply.md`; on an amendment the worktree reset and cleaned and a fresh implementer started on the amended card with no second reconciling; three exchanges, then the reconciler stops and is the session `card ask` and `card resume` reach; `implement.md` and `revise.md` gain the outcome, and `converse.md` says the implementer's work is discarded on an amendment, so the reconciler never amends towards what was built.
 Touches: the cycle; the two new files and the two amended ones, so the card carries `payload`; tests.
-Needs: 15, 16, 11.
+Needs: 16, 17, 11.
 Done when: `bun run check` is green; tests assert that a `blocked` answer resumes the reconciler's uuid with the finding; that an amendment leaves the worktree without the implementer's untracked file and launches a fresh implementer uuid with the amended card; that a reply resumes the implementer; that the cap leaves the plan Bounced with the reconciler as the session to resume; and that a revision round launches no reconciler; both cold readers, given `implement.md` for a card citing a function the code lacks, raise a blocking finding rather than build around it, and given `converse.md`, decline to amend towards what was built.
 
-#### 18. Findings: one optional field every role's answer shares, each filed by the tool as a waiting card with the role, card and plan on its first line
+#### 19. Findings: one optional field every role's answer shares, each filed by the tool as a waiting card with the role, card and plan on its first line
 
 Delivers: the field in every step's answer, each finding a headline and a body, filed through deck's function in no plan's order with the first line naming the filing role, the card and the plan, and recorded in the plan's state for the end; every role's prompt says what a finding is — something outside the card's contract the role must not act on — names the role's own outcome for a problem inside the contract, and says a finding is written so the role can put it down, never that it would otherwise be lost.
 Touches: the answer schemas and the cycle; every role prompt so far, so the card carries `payload`; tests.
-Needs: 17, 3.
+Needs: 18, 3.
 Done when: `bun run check` is green; tests assert a reviewer approving with two findings leaves two cards in `open/` with the first line as specified, in no plan's order, while the card lands and the run goes on, and the same for the other roles; both cold readers, given `review.md` with a diff missing the done-condition and a stale comment elsewhere, request a revision for the first and report the second as a finding without editing it.
 
-#### 19. The id check on the subject, the close note and the lines the diff adds, the reviewer repairing each at most twice before the run stops
+#### 20. The id check on the subject, the close note and the lines the diff adds, the reviewer repairing each at most twice before the run stops
 
 Delivers: before committing, deck's id check on the subject and the note, a failure returned to the reviewer by the repair prompt scoped to the message, and on the added lines, a failure returned under `payload/strip-ids.md` with the offending lines quoted, to remove the id as a small fix; two returns each, then the run stops as a role that failed, the cause quoting the lines; nothing committed until both pass, on every deck.
 Touches: the cycle; the new file, so the card carries `payload`; tests.
-Needs: 12, 10, 14, 3.
+Needs: 12, 10, 15, 3.
 Done when: `bun run check` is green; tests assert that a note citing a deck id goes back once and a clean second note lands; that a diff line citing one goes back with the line quoted and lands once the id is gone; that a third failure leaves the plan Bounced with no commit; and that an id under another prefix passes; both cold readers, given `strip-ids.md`, remove the id from the quoted lines and change nothing else.
 
-#### 20. Answer a bounced run: `card ask` relays a question to the session whose answer stopped it, and `card resume` carries the owner's answer or retries a failed role
+#### 21. Answer a bounced run: `card ask` relays a question to the session whose answer stopped it, and `card resume` carries the owner's answer or retries a failed role
 
 Delivers: `card ask`, the question on stdin, resumes the stopped session by its recorded id and harness from the directory it ran in, under `payload/ask.md`, prints the answer in the register and leaves the plan Bounced; `card resume`, the answer on stdin or nothing, resumes the same session under `payload/resume.md` with the answer and the step's schema, or with the instruction to give its final answer, reads it against that step's schema and carries the run on from that step; for a role that failed, it retries by resuming it; the count restarts after an owner's answer; neither prompt leans on "your last answer".
 Touches: a relay module, the Bounced row, the run's continuation from a recorded step; the two new files, so the card carries `payload`; tests.
-Needs: 14, 15, 16, 17, 13, 10.
+Needs: 15, 16, 17, 18, 13, 10.
 Done when: `bun run check` is green; tests assert that `ask` resumes the recorded uuid with the question, prints the reply in the register and changes no state or file; that `resume` with an answer resumes the same uuid with the answer and the schema, and a `proceed` carries the run to Ended; that `resume` with nothing after a failed role resumes that role; that after each cap `resume` reaches the session the report named; and that `ask` in Running refuses; both cold readers, given `ask.md` with a leading question, answer it without resuming the work or editing a file.
 
-#### 21. The final card: its roles read the plan document, its reviewer's close note is the owner's guide, and a gap it finds stops the run
+#### 22. The final card: its roles read the plan document, its reviewer's close note is the owner's guide, and a gap it finds stops the run
 
 Delivers: the last card runs with `payload/final-implement.md` and `payload/final-review.md`, each carrying the plan document beside the card; the implementer verifies the acceptance criteria end to end and raises a gap as a blocking finding, a reviewer that finds one requests a revision, and the reconciler stops the run rather than close the gap, the tool appending the finding to the card's record; the guide as close note, how to see the plan working and what only the owner can check, which the final reviewer builds from the draft guide the final card carries, updated with what the run found, rather than reconstructing it from the diff; no other card's implementer or reviewer sees the plan document.
 Touches: the cycle; the two new files and the final card's case in `converse.md`, so the card carries `payload`; tests.
-Needs: 17, 16, 18, 14.
+Needs: 18, 17, 19, 15.
 Done when: `bun run check` is green; tests assert that only the last card's implementer and reviewer stdin carries the plan document; that a final implementer's `blocked` leads to a stop with the gap in the report and in the record and the card still open; and that an approving final reviewer's note prints at Ended as the guide; both cold readers, given `final-review.md`, answer what the note must hold, that it starts from the card's draft guide, and that a criterion not met gets a revision.
 
-#### 22. `card stop`: end the run and its role session now, discard the in-flight work, and leave the card to rerun from its reconciler
+#### 23. `card stop`: end the run and its role session now, discard the in-flight work, and leave the card to rerun from its reconciler
 
-Delivers: `card stop` in Running ends the run's process group, the run, the active role and every process the role started, resets and cleans the worktree, leaves the card open and moves to Stopped; in Dead the same, ending the dead run's process group where anything in it is alive, as piece 13 does; bare `card` in Stopped reports the card in the register; `card resume` in Stopped with nothing on stdin carries the run on, the card rerunning from a fresh reconciler; once `stop` returns, no process writes the state.
+Delivers: `card stop` in Running ends the run's process group, the run, the active role and every process the role started, resets and cleans the worktree, leaves the card open and moves to Stopped; in Dead the same, ending the dead run's process group where anything in it is alive, as piece 14 does; bare `card` in Stopped reports the card in the register; `card resume` in Stopped with nothing on stdin carries the run on, the card rerunning from a fresh reconciler; once `stop` returns, no process writes the state.
 Touches: the run module, the Running, Dead and Stopped rows, the relay's resume; tests.
-Needs: 13, 20, 14, 11.
+Needs: 13, 14, 21, 15, 11.
 Done when: `bun run check` is green; tests assert with a stand-in sleeping beside a child of its own that `stop` returns with the run, the role and the child gone, the worktree clean, the card open and the plan Stopped; that bare `card` names the card; that `resume` reruns it from a fresh reconciler; that `stop` in Dead moves to Stopped; and that `ask` in Stopped refuses.
 
-#### 23. `card amend` from a bounce or a stop: back to the Cards stage, and the run carried on from the first card not yet closed done
+#### 24. `card amend` from a bounce or a stop: back to the Cards stage, and the run carried on from the first card not yet closed done
 
 Delivers: `card amend` in Bounced or Stopped discards the in-flight work, moves to Cards and prints the Cards prompt listing the plan's cards in order, the closed ones as landed; `card done` takes new files in ahead of the first card not yet closed done; after Check, `card approve` carries the run on from that card, closed cards never rerunning, the bounced session left behind, and the stopped card's reconciler seeing the amendments on a clean worktree.
 Touches: the Cards printout and take-in, approve's carry-on, the Bounced and Stopped rows; tests.
-Needs: 22, 14, 8, 9, 13.
+Needs: 23, 15, 8, 9, 13.
 Done when: `bun run check` is green; tests assert that a plan bounced at the second of three cards, amended with one new file, taken in and approved launches no role for the first card, runs the new card, then the second from a reconciler carrying the amended card, then the final card, with one commit per card; and that `amend` in Running refuses.
 
-#### 24. The settling prompt as a payload file
+#### 25. The settling prompt as a payload file
 
 Delivers: `payload/settle.md`, read by the interactive session at a plan's end: the owner settles each finding one decision at a time, each its own invocation; what `join`, `later`, `decline` and `promote` each mean and take on stdin; that a promotion draft is public-safe and checked before the owner posts it; that `finish` ends the plan after the owner has tried it at the worktree's path; its placeholders named.
 Touches: the new file, so the card carries `payload`.
 Needs: 5.
 Done when: both cold readers, given the file, choose `later` for a finding sound but outside what the plan set out to do, and `join` for one within it.
 
-#### 25. The end: the Ended report lists the findings with the role that filed each, `card later` and `card decline` settle them, and `card finish` ends the plan once none is unsettled
+#### 26. The end: the Ended report lists the findings with the role that filed each, `card later` and `card decline` settle them, and `card finish` ends the plan once none is unsettled
 
-Delivers: bare `card` in Ended adds to piece 14's report the findings the run filed, by id and headline with the filing role and each one's commands filled in, then the settling prompt; `card later <id>` records the decision and leaves the card waiting; `card decline <id>`, the reason on stdin, closes a waiting card declined, in every state and with no plan in progress; `card finish` refuses while a finding of the plan is unsettled, naming each, and otherwise removes the worktree, keeps the branch and ends the plan.
+Delivers: bare `card` in Ended adds to piece 15's report the findings the run filed, by id and headline with the filing role and each one's commands filled in, then the settling prompt; `card later <id>` records the decision and leaves the card waiting; `card decline <id>`, the reason on stdin, closes a waiting card declined, in every state and with no plan in progress; `card finish` refuses while a finding of the plan is unsettled, naming each, and otherwise removes the worktree, keeps the branch and ends the plan.
 Touches: a settling module, the Ended row and the starting list; `payload/settle.md` imported; tests.
-Needs: 24, 18, 14, 11, 3.
+Needs: 25, 19, 15, 11, 3.
 Done when: `bun run check` is green; tests assert that a run filing two findings ends with both listed in the register with their roles and commands; that `finish` refuses naming both; that after `later` on one and `decline` on the other, `finish` removes the worktree, keeps the branch, and the next bare `card` starts a new plan; and that `decline` on a waiting card during a run leaves the run unaffected and on a plan card refuses; both cold readers, given the Ended printout, relay the marked text and wait for the owner's decisions.
 
-#### 26. `card promote` in two invocations: the public-safe draft checked for ids and printed for the owner, then the owner's key recorded
+#### 27. `card promote` in two invocations: the public-safe draft checked for ids and printed for the owner, then the owner's key recorded
 
 Delivers: `card promote <id>...`, the draft on stdin, runs the id check, refusing and naming each id cited, prints the draft in the register, and appends `## Promotion` with the draft to each card's record; `card promote <id>... --key <KEY>` closes each promoted with the key in its note; a finding awaiting its key counts as settled for `finish`, and bare `card` keeps listing it with the second form filled in until the key is recorded; both forms open in every state for a waiting card.
 Touches: the settling module; tests.
-Needs: 25.
+Needs: 26.
 Done when: `bun run check` is green; tests assert that a draft citing a deck id refuses and marks nothing; that a clean draft for two findings prints byte for byte and appends the section to both; that `finish` then succeeds; that the next bare `card` lists both with the second form; and that `--key` closes both promoted with the key in each note and they leave the listing.
 
-#### 27. `card join` at a plan's end: the final card reopened in place, the finding rewritten in the Cards stage, and the joined cards run before the final card again
+#### 28. `card join` at a plan's end: the final card reopened in place, the finding rewritten in the Cards stage, and the joined cards run before the final card again
 
 Delivers: `card join <id>` at Ended reopens the final card in place, as `BRIEF.md` "The final card checks the whole plan" says, so the ordinary rule puts the finding ahead of the first card not yet closed done, which is the final card, and moves to Cards, whose prompt names the finding's file to rewrite as a card for a fresh implementer and says to update the plan document if the finding changes what the plan is; after Check, `card approve` runs the joined cards, then the final card again; a joined card's `blocked-by` entries bind at take-in.
 Touches: the settling module, the Cards printout, approve's carry-on; tests.
-Needs: 25, 23, 8, 3.
+Needs: 26, 24, 8, 3.
 Done when: `bun run check` is green; tests assert that `join` moves the final card to `open/` without its `closed:` field and moves to Cards naming the finding's path; that a run killed during the joined card, then carried on by bare `card`, runs the final card again; that after `done` and `approve` the joined card runs from its reconciler, then the final card's reconciler stdin carries its earlier close note in the record; and that the plan ends with the final card in `closed/` holding one `closed: done` and two close notes, the branch one commit richer per card run.
 
-#### 28. `card drop`: give the plan up from any state, closing declined, with one note, every card of the plan not yet closed done
+#### 29. `card drop`: give the plan up from any state, closing declined, with one note, every card of the plan not yet closed done
 
 Delivers: `card drop` in every state ends a live run and its role as `stop` does, removes the worktree where one exists, keeps the branch, closes declined, with one note naming the plan, every card of the plan not closed done, the in-flight and joined cards included, and ends the plan; waiting cards and done cards are untouched.
 Touches: the plan module, the stop shared with the run module, the landing's removal; tests.
-Needs: 22, 25, 11, 3.
+Needs: 23, 26, 11, 3.
 Done when: `bun run check` is green; tests assert that `drop` in Document ends the plan and the next bare `card` starts afresh; and that during a run it leaves no process and no worktree, the branch at its tip, every not-done plan card closed declined with the same note, done cards untouched, the run's findings waiting, and the plan unlisted.
 
-#### 29. The walk through every state: one test takes a plan through the table and asserts each row, and `card approve` refuses while another plan's run is live
+#### 30. The walk through every state: one test takes a plan through the table and asserts each row, and `card approve` refuses while another plan's run is live
 
 Delivers: a test walking one plan through every state and asserting that bare `card` does what its row says and that every verb not open there refuses, naming the state and printing the open commands; a second plan started with `card --plan <slug>` while the first is in Check, both listed with their commands; `card approve` refusing while another plan is Running or Dead, naming it.
 Touches: approve's row; the new tests.
-Needs: 28.
+Needs: 29.
 Done when: `bun run check` is green with both tests passing.
 
-#### 30. Check every acceptance criterion and migration check on the finished branch, then delete this file and the four chapters
+#### 31. Check every acceptance criterion and migration check on the finished branch, then delete this file and the four chapters
 
 Delivers: each criterion and check verified by the test that pins it, by commands run in a scratch repository, or by the cold reads the criteria name; a two-card plan run end to end in a scratch repository under `--harness claude` and under `--harness pi`, driven as an interactive session would drive it, with what the session's sandbox cannot run listed for the owner; delivery checked by installing the repository into a temporary install root, never the global that is executing the series, with the GitHub install listed for the owner; "Exit" below run: nothing permanent left only here, then this file deleted, and with it `payload/author.md`, `execute.md`, `status.md` and `workflow.md`; the close note pairing each criterion and check with its evidence and listing what only the owner can check; a check that fails is a card filed for the fix, and this card stays open.
 Touches: this file and the four chapters, deleted, so the card carries `payload`; `BRIEF.md` only if a reason that outlives the migration needs a home; scratch repositories.
