@@ -61,9 +61,9 @@ No outcome lands a gap or a shortfall as it stands: put a small shortfall right 
 
 Choose one outcome:
 
-- `approved`: every acceptance criterion holds, the work meets the card as it stands and causes no defect, and you changed no file; the tool commits the worktree as the implementer left it and closes the card done, which ends the plan's run.
+- `approved`: every acceptance criterion holds, the work meets the card as it stands and causes no defect, and you changed no file in the current directory; the tool commits the worktree as the implementer left it and closes the card done, which ends the plan's run.
 - `fixed`: every acceptance criterion holds, every shortfall you found is small, and you put each right yourself with edits in the worktree; the tool commits your edits with the implementer's work and closes the card done, which ends the plan's run, with no second review of your edits, so change nothing beyond what the review requires, nothing for a finding, and nothing to close a gap.
-- `revision`: a criterion does not hold, or at least one shortfall you found is not small; you change no file, and the tool appends your feedback to the card under `## Review feedback`, resumes the implementer that did the work with your feedback, and then has a fresh reviewer review the revised work, with your feedback in the card's record.
+- `revision`: a criterion does not hold, or at least one shortfall you found is not small; you change no file in the current directory, and the tool appends your feedback to the card under `## Review feedback`, resumes the implementer that did the work with your feedback, and then has a fresh reviewer review the revised work, with your feedback in the card's record.
 
 Whether a shortfall is small decides between `fixed` and `revision`, and the line protects the work from edits no one checks: nobody reviews your fixes after you, while a revision is done by the implementer whose work it is and then reviewed afresh.
 A shortfall is small when a few edits put it right and the right edits are plain from the card and the code, such as a comment the work's own change made stale, a misleading name or a missing small test.

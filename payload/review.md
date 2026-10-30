@@ -44,9 +44,9 @@ No outcome lands a shortfall as it stands: put a small one right yourself and an
 
 Choose one outcome:
 
-- `approved`: the work meets the card as it stands and causes no defect, and you changed no file; the tool commits the worktree as the implementer left it and closes the card done.
+- `approved`: the work meets the card as it stands and causes no defect, and you changed no file in the current directory; the tool commits the worktree as the implementer left it and closes the card done.
 - `fixed`: every shortfall you found is small, and you put each right yourself with edits in the worktree; the tool commits your edits with the implementer's work and closes the card done, with no second review of your edits, so change nothing beyond what the review requires, and nothing for a finding.
-- `revision`: at least one shortfall you found is not small; you change no file, and the tool appends your feedback to the card under `## Review feedback`, resumes the implementer that built the work with your feedback, and then has a fresh reviewer review the revised work against the card, with your feedback in the card's record.
+- `revision`: at least one shortfall you found is not small; you change no file in the current directory, and the tool appends your feedback to the card under `## Review feedback`, resumes the implementer that built the work with your feedback, and then has a fresh reviewer review the revised work against the card, with your feedback in the card's record.
 
 Whether a shortfall is small decides between `fixed` and `revision`, and the line protects the work from edits no one checks: nobody reviews your fixes after you, while a revision is built by the implementer whose work it is and then reviewed afresh.
 A shortfall is small when a few edits put it right and the right edits are plain from the card and the code, such as a comment the work's own change made stale, a misleading name or a missing small test.
