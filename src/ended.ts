@@ -125,8 +125,9 @@ export async function finish({ deck, plan, command, args }: Context): Promise<vo
 
 /**
  * `card drop`, in any state: the owner gives the plan up. A live run ends,
- * its role and every process the role started with it, as `card stop` ends
- * one, and a card the run left in flight is settled, its work discarded.
+ * with its role and every process the role started that still runs, as
+ * `card stop` ends one, and a card the run left in flight is settled, its
+ * work discarded.
  * Then the worktree goes and the branch stays, with the plan's landed
  * commits; every card of the plan not closed, a joined card not yet taken
  * in among them, closes declined under one note; and the plan's directory

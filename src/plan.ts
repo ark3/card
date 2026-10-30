@@ -217,6 +217,19 @@ export async function bootId(): Promise<string> {
   return (await Bun.file("/proc/sys/kernel/random/boot_id").text()).trim();
 }
 
+/**
+ * The environment variable the run sets, before it starts anything, to the
+ * value `runMark` makes of the run it records, so every process a role
+ * starts carries it whatever session or parent it comes to have, and the run
+ * can be ended whole from its record.
+ */
+export const RUN_MARK = "CARD_RUN";
+
+/** The value of RUN_MARK for `run`, which no other live run shares, by its pid within its boot. */
+export function runMark({ pid, boot }: { pid: number; boot: string }): string {
+  return `${boot}:${pid}`;
+}
+
 /** Moves the plan, everything in its directory with it, to `slug`. */
 export async function renamePlan(deck: Deck, from: Plan, slug: string): Promise<Plan> {
   const moved = plan(deck, slug, from);

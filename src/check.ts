@@ -37,8 +37,8 @@ export async function amend(context: Context): Promise<void> {
 /**
  * `card approve` in the Check stage: the owner's approval, which starts the
  * run. Everything that can refuse is checked before the run starts. The run
- * is detached, the leader of its own process group, which every role and
- * everything a role starts joins, and this returns at once while it goes on.
+ * is detached, the leader of its own process group, and this returns at once
+ * while it goes on.
  */
 export async function approve({ deck, plan, command, args }: Context): Promise<void> {
   const usage = `usage: ${command} approve [--harness claude|pi]`;

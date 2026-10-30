@@ -698,6 +698,19 @@ test(
   SLOW,
 );
 
+/**
+ * Shell, as a role's work, that starts a process in a session of its own, as
+ * both harnesses start every command a role runs, from a subshell that exits
+ * at once, so the process is orphaned before anything ends the run. It writes
+ * into the worktree for thirty seconds; once it has started, `$escaped` holds
+ * its pid.
+ */
+function escaping(control: string): string {
+  const file = path.join(control, "escaped");
+  const writer = 'echo $$ > "$0.writing"; mv "$0.writing" "$0"; i=0; while [ $i -lt 600 ]; do date > stray.txt; sleep 0.05; i=$((i + 1)); done';
+  return `(setsid sh -c '${writer}' '${file}' &); while [ ! -e '${file}' ]; do sleep 0.01; done; escaped=$(cat '${file}'); `;
+}
+
 /** Whether `pid` names a process still running: a zombie has ended, and only waits to be reaped. */
 function running(pid: number): boolean {
   try {
@@ -708,14 +721,14 @@ function running(pid: number): boolean {
 }
 
 test(
-  "bare card in Dead ends the role a run killed alone left running, and the role's child, before the next role launches",
+  "bare card in Dead ends the role a run killed alone left running, the role's child, and a process the role started in a session of its own, before the next role launches",
   async () => {
     const { repo, deck, plan, first, final } = await inCheck();
     const control = stand(["pi"]);
     const pids = path.join(control, "pids");
     const after = path.join(control, "after");
     // The stand-in is the role; the sleep is a child of the shell it runs as the session's work.
-    const sleeping = `sleep 30 & echo $PPID $! > '${pids}'; ${hold(control, "first")}`;
+    const sleeping = `${escaping(control)}sleep 30 & echo $PPID $! $escaped > '${pids}'; ${hold(control, "first")}`;
     const check = `for pid in $(cat '${pids}'); do if ps -o stat= -p $pid | grep -qv Z; then echo $pid; fi; done > '${after}'`;
     queue(
       control,
@@ -736,13 +749,13 @@ test(
       if (Date.now() > deadline) throw new Error("timed out waiting for the run to read as Dead");
     }
     const left = readFileSync(pids, "utf8").trim().split(" ").map(Number);
-    expect(left.map(running)).toEqual([true, true]);
+    expect(left.map(running)).toEqual([true, true, true]);
 
     expect((await card([], repo)).code).toBe(0);
+    expect(left.map(running)).toEqual([false, false, false]);
     await until("the plan to end", () => record(plan.dir).state === "Ended");
 
     expect(readFileSync(after, "utf8")).toBe("");
-    expect(left.map(running)).toEqual([false, false]);
     expect(record(plan.dir).landed.map(({ card }) => card)).toEqual([first, final]);
   },
   SLOW,
@@ -1381,13 +1394,18 @@ function stoppedReport(id: string): string {
   return `The plan \`greeting\`'s run is stopped at this card, which reruns from a fresh reconciler when the run is resumed:\n\n${id}  Add the greeting\n${openList("Stopped")}`;
 }
 
-/** Shell, as a role's work, that commits part of it, leaves the rest uncommitted, and starts a child that sleeps, writing the role's pid and the child's to `pids`. */
+/**
+ * Shell, as a role's work, that commits part of it, leaves the rest
+ * uncommitted, starts a process in a session of its own, as `escaping` does,
+ * and starts a child that sleeps, writing the role's pid, the child's and the
+ * escaped process's to `pids`.
+ */
 function sleeping(control: string, pids: string): string {
-  return `printf 'half\\n' > half.txt; git add half.txt; git commit -q -m half; printf 'more\\n' > more.txt; sleep 30 & echo $PPID $! > '${pids}'; ${hold(control, "first")}`;
+  return `printf 'half\\n' > half.txt; git add half.txt; git commit -q -m half; printf 'more\\n' > more.txt; ${escaping(control)}sleep 30 & echo $PPID $! $escaped > '${pids}'; ${hold(control, "first")}`;
 }
 
 test(
-  "card stop in Running returns with the run, the role and the role's child gone, the worktree clean, the card open and the plan Stopped; bare card names the card, and card resume reruns it from a fresh reconciler",
+  "card stop in Running returns with the run, the role, the role's child and a process the role started in a session of its own gone, the worktree clean, the card open and the plan Stopped; bare card names the card, and card resume reruns it from a fresh reconciler",
   async () => {
     const { repo, deck, plan, first, final, base } = await inCheck();
     const control = stand(["pi"]);
@@ -1407,11 +1425,11 @@ test(
     expect((await card(["approve"], repo)).code).toBe(0);
     await until("the first role to start", () => existsSync(path.join(control, "first.started")) && existsSync(pids));
     const processes = [record(plan.dir).run!.pid, ...readFileSync(pids, "utf8").trim().split(" ").map(Number)];
-    expect(processes.map(running)).toEqual([true, true, true]);
+    expect(processes.map(running)).toEqual([true, true, true, true]);
 
     const stopping = await card(["stop"], repo);
     expect(stopping).toEqual({ code: 0, stdout: forOwner(stoppedReport(first)), stderr: "" });
-    expect(processes.map(running)).toEqual([false, false, false]);
+    expect(processes.map(running)).toEqual([false, false, false, false]);
     const tree = path.join(repo, ".worktrees", "greeting");
     expect((await gitOrThrow(["rev-parse", "HEAD"], tree)).trim()).toBe(base);
     expect(await gitOrThrow(["status", "--porcelain", "--untracked-files=all"], tree)).toBe("");
@@ -1446,7 +1464,7 @@ test(
 );
 
 test(
-  "card stop in Dead ends the role the dead run left running, and the role's child, and leaves the worktree clean, the card open and the plan Stopped",
+  "card stop in Dead ends the role the dead run left running, the role's child, and a process the role started in a session of its own, and leaves the worktree clean, the card open and the plan Stopped",
   async () => {
     const { repo, deck, plan, first, base } = await inCheck();
     const control = stand(["pi"]);
@@ -1459,11 +1477,11 @@ test(
       if (Date.now() > deadline) throw new Error("timed out waiting for the run to read as Dead");
     }
     const left = readFileSync(pids, "utf8").trim().split(" ").map(Number);
-    expect(left.map(running)).toEqual([true, true]);
+    expect(left.map(running)).toEqual([true, true, true]);
 
     const stopping = await card(["stop"], repo);
     expect(stopping).toEqual({ code: 0, stdout: forOwner(stoppedReport(first)), stderr: "" });
-    expect(left.map(running)).toEqual([false, false]);
+    expect(left.map(running)).toEqual([false, false, false]);
     const tree = path.join(repo, ".worktrees", "greeting");
     expect((await gitOrThrow(["rev-parse", "HEAD"], tree)).trim()).toBe(base);
     expect(await gitOrThrow(["status", "--porcelain", "--untracked-files=all"], tree)).toBe("");
@@ -1475,7 +1493,7 @@ test(
 );
 
 test(
-  "card drop in Running ends the run, its role and the role's child, removes the worktree, keeps the branch at its tip, closes every card of the plan not done declined under one note, leaves the done card and the run's finding as they were, and ends the plan",
+  "card drop in Running ends the run, its role, the role's child and a process the role started in a session of its own, removes the worktree, keeps the branch at its tip, closes every card of the plan not done declined under one note, leaves the done card and the run's finding as they were, and ends the plan",
   async () => {
     const { repo, deck, plan, first, final } = await inCheck();
     const middle = await fileCard(deck, { labels: [], blockedBy: [], headline: "Hold the greeting", body: "Body.\n" });
@@ -1489,7 +1507,7 @@ test(
     await until("the middle card's implementer to start", () => existsSync(path.join(control, "first.started")) && existsSync(pids));
     const { run, landed, findings: filed } = record(plan.dir);
     const processes = [run!.pid, ...readFileSync(pids, "utf8").trim().split(" ").map(Number)];
-    expect(processes.map(running)).toEqual([true, true, true]);
+    expect(processes.map(running)).toEqual([true, true, true, true]);
     const landedCard = readFileSync(path.join(deck.closedDir, `${first}.md`), "utf8");
 
     const tree = path.join(repo, ".worktrees", "greeting");
@@ -1502,7 +1520,7 @@ test(
       ),
       stderr: "",
     });
-    expect(processes.map(running)).toEqual([false, false, false]);
+    expect(processes.map(running)).toEqual([false, false, false, false]);
     expect(existsSync(tree)).toBe(false);
     expect((await listWorktrees(repo)).map(({ root }) => root)).toEqual([repo]);
     // At the first card's commit: the in-flight card's commit of half its work goes with the rest of that work.

@@ -1,31 +1,64 @@
+import { readdir, readFile } from "node:fs/promises";
 import { startRun } from "./check.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { discard, holdWorktree } from "./landing.ts";
 import { closeCard } from "./operations.ts";
 import { forOwner } from "./owner.ts";
-import { bootId, type Context, listPlans, type Plan, writeRecord } from "./plan.ts";
+import { bootId, type Context, listPlans, type Plan, RUN_MARK, runMark, writeRecord } from "./plan.ts";
+
+/** Sends `signal` to `pid`, a group if negative, and returns whether it named anything. */
+function kill(pid: number, signal: "SIGKILL" | 0): boolean {
+  try {
+    process.kill(pid, signal);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    return false;
+  }
+}
+
+/**
+ * Every process whose environment holds `entry`, but this one, which holds it
+ * when a role ran it. An environment that cannot be read is no match: a
+ * process that has gone, a zombie, which runs nothing, or another user's,
+ * which this process could not kill.
+ */
+async function marked(entry: string): Promise<number[]> {
+  const pids: number[] = [];
+  for (const name of await readdir("/proc")) {
+    const pid = Number(name);
+    if (!Number.isInteger(pid) || pid === process.pid) continue;
+    try {
+      if ((await readFile(`/proc/${pid}/environ`, "utf8")).split("\0").includes(entry)) pids.push(pid);
+    } catch {}
+  }
+  return pids;
+}
 
 /**
  * Ends the plan's run and what is left of it: a run that died alone leaves
- * its role, and the role's own processes, still writing in the worktree, all
- * in the group the run led. Returns once the group is gone, with the plan as
- * its state file then stands, which nothing writes again, since while the run
- * lives it alone writes it. After a reboot the pid names nothing of the run's.
+ * its role, and the role's own processes, still writing in the worktree. The
+ * run and its roles are in the group the run led, but both harnesses start
+ * each command a role runs in a session of its own, and a command can leave
+ * what it starts orphaned at once, so neither the group nor the run's
+ * descendants hold those processes; their environment holds RUN_MARK.
+ * Returns once the group is gone and no marked process still runs, with the
+ * plan as its state file then stands, which nothing writes again, since while
+ * the run lives it alone writes it. After a reboot the pid names nothing of
+ * the run's.
  */
 export async function endRun(deck: Deck, plan: Plan): Promise<Plan> {
   const { pid, boot } = plan.run!;
   if (boot === (await bootId())) {
-    try {
-      process.kill(-pid, "SIGKILL");
-      // The signal is sent, not yet acted on, so a process can still finish a
-      // write; the group is gone once its last process has been reaped.
-      for (;;) {
-        await Bun.sleep(10);
-        process.kill(-pid, 0);
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    kill(-pid, "SIGKILL");
+    // A signal is sent, not yet acted on, so a process can still finish a
+    // write, or start another, which inherits the mark; the group is gone once
+    // its last process has been reaped.
+    const entry = `${RUN_MARK}=${runMark(plan.run!)}`;
+    for (let left = await marked(entry); left.length > 0 || kill(-pid, 0); left = await marked(entry)) {
+      for (const each of left) kill(each, "SIGKILL");
+      await Bun.sleep(10);
     }
   }
   return (await listPlans(deck)).find(({ slug }) => slug === plan.slug)!;

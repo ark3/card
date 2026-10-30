@@ -10,7 +10,7 @@
  */
 import { type CycleEnd, resumeCard, runCard } from "./cycle.ts";
 import { locate, requireDeck } from "./deck.ts";
-import { listPlans, writeRecord } from "./plan.ts";
+import { listPlans, RUN_MARK, runMark, writeRecord } from "./plan.ts";
 
 const [slug, tree, flag] = process.argv.slice(2) as [string, string, string?];
 // The verb that starts the run closes stdin once its record names this
@@ -23,6 +23,9 @@ if (plan.run?.pid !== process.pid) {
   console.error(`card: the plan \`${slug}\` records no run as process ${process.pid}, so this one starts nothing`);
   process.exit(1);
 }
+// Before anything starts, since every role launches with this process's
+// environment, and `endRun` ends what a role starts by finding it there.
+process.env[RUN_MARK] = runMark(plan.run);
 
 for (const id of plan.cards) {
   // A card closed done has landed, and one closed any other way left the order.
