@@ -142,8 +142,10 @@ async function bare(slug: string | null, cwd: string): Promise<void> {
   if (plans.length === 0) return start(deck, null, false);
   if (!many) return TABLE[plans[0]!.state].bare({ deck, plan: plans[0]!, command: "card", args: [], openCommands });
 
-  const listing = plans.map((plan) => `${plan.slug}  ${plan.state}\n${openCommands(plan, commandFor(plan, true))}`);
-  process.stdout.write(`More than one plan is in progress, so every command names its plan:\n\n${listing.join("\n")}`);
+  // Where things stand is the owner's; the commands are the session's menu.
+  const states = plans.map((plan) => `${plan.slug}  ${plan.state}\n`).join("");
+  const commands = plans.map((plan) => openCommands(plan, commandFor(plan, true))).join("\n");
+  process.stdout.write(`${forOwner(`More than one plan is in progress:\n\n${states}`)}\nThe commands open in each plan, every one naming its plan:\n\n${commands}`);
 }
 
 /** The plan a verb other than bare `card` means, which must already be in progress. */

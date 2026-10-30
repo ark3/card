@@ -2168,7 +2168,7 @@ test(
   4 * SLOW,
 );
 
-test("a second plan started with --plan while the first is in Check: bare card lists both with their states, every command with its --plan right after the word card", async () => {
+test("a second plan started with --plan while the first is in Check: bare card lists both with their states for the owner, then every command with its --plan right after the word card", async () => {
   const { repo, deck } = await inCheck();
   const starting = await card(["--plan", "second"], repo);
   expect(starting.code).toBe(0);
@@ -2177,16 +2177,12 @@ test("a second plan started with --plan while the first is in Check: bare card l
 
   const listing = await card([], repo);
   expect(listing.code).toBe(0);
-  const [head, ...blocks] = listing.stdout.split("\n\n");
-  expect(head).toBe("More than one plan is in progress, so every command names its plan:");
-  const listed = blocks.map((block) => {
-    const [title, ...lines] = block.trimEnd().split("\n");
-    return { title, commands: lines.map((line) => line.trim()).sort() };
-  });
-  expect(listed).toEqual([
-    { title: "greeting  Check", commands: opened("card --plan greeting", "Check") },
-    { title: "second  Document", commands: opened("card --plan second", "Document") },
-  ]);
+  const marked = forOwner("More than one plan is in progress:\n\ngreeting  Check\nsecond  Document\n");
+  expect(listing.stdout.startsWith(marked)).toBe(true);
+  const [head, ...blocks] = listing.stdout.slice(marked.length).split("\n\n");
+  expect(head).toBe("\nThe commands open in each plan, every one naming its plan:");
+  const commands = blocks.map((block) => block.trimEnd().split("\n").map((line) => line.trim()).sort());
+  expect(commands).toEqual([opened("card --plan greeting", "Check"), opened("card --plan second", "Document")]);
 
   // A verb not open in the plan it names is refused with that plan's commands, under its --plan.
   const refused = await card(["--plan", "greeting", "done"], repo);
