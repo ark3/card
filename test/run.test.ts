@@ -781,6 +781,58 @@ test(
   SLOW,
 );
 
+/**
+ * Shell, as a role's work, that starts two processes in sessions of their
+ * own, as `escaping` does, and waits until both have written their pids, to
+ * `<control>/trapping` and `<control>/ignoring`: the first, sent SIGTERM,
+ * writes `<control>/cleaned` and exits, as a server shutting down cleanly
+ * would, and the second ignores SIGTERM. Each runs thirty seconds at most.
+ */
+function outlasting(control: string): string {
+  const loop = 'echo $$ > "$0.writing"; mv "$0.writing" "$0"; i=0; while [ $i -lt 600 ]; do sleep 0.05; i=$((i + 1)); done';
+  const [trapping, ignoring, cleaned] = ["trapping", "ignoring", "cleaned"].map((name) => path.join(control, name));
+  return `(setsid sh -c 'trap "touch ${cleaned}; exit 0" TERM; ${loop}' '${trapping}' &); (setsid sh -c 'trap "" TERM; ${loop}' '${ignoring}' &); while [ ! -e '${trapping}' ] || [ ! -e '${ignoring}' ]; do sleep 0.01; done; `;
+}
+
+/** The pids `outlasting` wrote. */
+function outlasted(control: string): number[] {
+  return ["trapping", "ignoring"].map((name) => Number(readFileSync(path.join(control, name), "utf8")));
+}
+
+test(
+  "card amend after a bounce returns with what a role left running sent SIGTERM when its turn ended, so a process that traps it cleaned up, and SIGKILL for one that ignores it",
+  async () => {
+    const { repo, plan } = await inCheck();
+    const control = stand(["pi"]);
+    queue(control, [proceed()], [done(outlasting(control))], [{ stderr: "usage limit reached", exit: 1 }]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+
+    expect((await card(["amend"], repo)).code).toBe(0);
+    expect(existsSync(path.join(control, "cleaned"))).toBe(true);
+    expect(outlasted(control).map(running)).toEqual([false, false]);
+  },
+  SLOW,
+);
+
+test(
+  "card stop in Running returns with what the role left running sent SIGTERM, so a process that traps it cleaned up, and SIGKILL for one that ignores it",
+  async () => {
+    const { repo, plan } = await inCheck();
+    const control = stand(["pi"]);
+    queue(control, [proceed()], [done(`${outlasting(control)}${hold(control, "first")}`)]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the first role to start", () => existsSync(path.join(control, "first.started")));
+    expect(outlasted(control).map(running)).toEqual([true, true]);
+
+    expect((await card(["stop"], repo)).code).toBe(0);
+    expect(existsSync(path.join(control, "cleaned"))).toBe(true);
+    expect(outlasted(control).map(running)).toEqual([false, false]);
+    expect(record(plan.dir).state).toBe("Stopped");
+  },
+  SLOW,
+);
+
 test(
   "card finish after the run ends returns with no process left running that the last role, whose session ended normally, started in a session of its own, and the worktree removed",
   async () => {

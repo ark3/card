@@ -8,11 +8,14 @@
 # numbered from 1 per id. Call <n> records its argv (the name it ran as first,
 # one per line), its stdin and its working directory under
 # <control>/<id>/calls/<n>/, then answers from <control>/<id>/answers/<n>/:
-# `run`, if present, is run with sh in the working directory first, as a
-# session's work, its output on stderr; `answer`, if present, is then copied
-# to the answer file; `stderr` and `stdout` are printed as they are, and
-# `exit` holds the status, 0 if absent. The answer file is the path the
-# answer instruction in stdin names, and `run` finds it in $ANSWER.
+# `trap`, if present, is run with sh when the stand-in is sent SIGTERM, before
+# it exits, as a harness's own shutdown; `run`, if present, is run with sh in
+# the working directory first, as a session's work, its output on stderr, and
+# waited on in the background, so a trap need not wait for it to end;
+# `answer`, if present, is then copied to the answer file; `stderr` and
+# `stdout` are printed as they are, and `exit` holds the status, 0 if absent.
+# The answer file is the path the answer instruction in stdin names, and `run`
+# finds it in $ANSWER.
 #
 # An id with nothing under <control>/<id>/ when its first call comes takes the
 # answers of the lowest-numbered session queued under <control>/queue/<k>/
@@ -55,7 +58,8 @@ ANSWER=$(sed -n 's/^Write your report, .*, to `\([^`]*\)`, then respond with `do
 export ANSWER
 
 reply="$HARNESS_STUB/$id/answers/$n"
-if [ -f "$reply/run" ]; then sh "$reply/run" >&2; fi
+if [ -f "$reply/trap" ]; then trap 'sh "$reply/trap"; exit 143' TERM; fi
+if [ -f "$reply/run" ]; then sh "$reply/run" >&2 & wait $!; fi
 if [ -f "$reply/answer" ]; then cat "$reply/answer" > "$ANSWER"; fi
 if [ -f "$reply/stderr" ]; then cat "$reply/stderr" >&2; fi
 if [ -f "$reply/stdout" ]; then cat "$reply/stdout"; fi

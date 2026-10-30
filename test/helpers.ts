@@ -56,10 +56,10 @@ const STUB = path.join(import.meta.dir, "harness-stub.sh");
 export type Call = { argv: string[]; stdin: string; cwd: string };
 /**
  * One call's reply; `run` is shell the stand-in runs in its working directory
- * first, as the session's work, and `answer` what it then writes to the
- * answer file.
+ * first, as the session's work, `answer` what it then writes to the answer
+ * file, and `trap` shell it runs when sent SIGTERM, before it exits.
  */
-export type Reply = { answer?: string; stdout?: string; stderr?: string; exit?: number; run?: string };
+export type Reply = { answer?: string; stdout?: string; stderr?: string; exit?: number; run?: string; trap?: string };
 
 /**
  * The stand-in linked onto a PATH as each of `names`, and a control directory
@@ -102,6 +102,7 @@ function answers(root: string, replies: Reply[]): void {
     if (reply.stderr !== undefined) writeFileSync(path.join(dir, "stderr"), reply.stderr);
     if (reply.exit !== undefined) writeFileSync(path.join(dir, "exit"), String(reply.exit));
     if (reply.run !== undefined) writeFileSync(path.join(dir, "run"), reply.run);
+    if (reply.trap !== undefined) writeFileSync(path.join(dir, "trap"), reply.trap);
   });
 }
 

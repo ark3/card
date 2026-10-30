@@ -3,7 +3,7 @@ import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { discard, holdWorktree } from "./landing.ts";
 import { closeCard } from "./operations.ts";
-import { bootId, type Context, kill, listPlans, marked, type Plan, RUN_MARK, runMark, writeRecord } from "./plan.ts";
+import { bootId, type Context, end, kill, listPlans, marked, type Plan, RUN_MARK, runMark, writeRecord } from "./plan.ts";
 import { report } from "./reports.ts";
 
 /**
@@ -21,15 +21,11 @@ import { report } from "./reports.ts";
 export async function endRun(deck: Deck, plan: Plan): Promise<Plan> {
   const { pid, boot } = plan.run!;
   if (boot === (await bootId())) {
-    kill(-pid, "SIGKILL");
-    // A signal is sent, not yet acted on, so a process can still finish a
-    // write, or start another, which inherits the mark; the group is gone once
-    // its last process has been reaped.
+    // The run handles no signal, so SIGTERM ends it at once, as SIGKILL
+    // would, and it writes no state in the grace period; the group is gone
+    // once its last process has been reaped.
     const entry = `${RUN_MARK}=${runMark(plan.run!)}`;
-    for (let left = await marked(entry); left.length > 0 || kill(-pid, 0); left = await marked(entry)) {
-      for (const each of left) kill(each, "SIGKILL");
-      await Bun.sleep(10);
-    }
+    await end(async () => [...(kill(-pid, 0) ? [-pid] : []), ...(await marked(entry))]);
   }
   return (await listPlans(deck)).find(({ slug }) => slug === plan.slug)!;
 }

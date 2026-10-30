@@ -260,7 +260,7 @@ export function runMark({ pid, boot }: { pid: number; boot: string }): string {
 }
 
 /** Sends `signal` to `pid`, a group if negative, and returns whether it named anything. */
-export function kill(pid: number, signal: "SIGKILL" | 0): boolean {
+export function kill(pid: number, signal: "SIGTERM" | "SIGKILL" | 0): boolean {
   try {
     process.kill(pid, signal);
     return true;
@@ -289,13 +289,29 @@ export async function marked(entry: string): Promise<number[]> {
 }
 
 /**
- * Ends every process but this one whose environment holds `entry`, returning
- * once none still runs. A signal is sent, not yet acted on, so a process can
- * still start another, which inherits the mark.
+ * How long what `end` ends has between SIGTERM and SIGKILL. Claude Code, sent
+ * SIGTERM, was seen to save its session's last steps and exit within half a
+ * second, where SIGKILL lost them; three seconds leaves room for a longer
+ * session or a server's shutdown, and keeps `card stop` prompt, since it
+ * waits the whole grace period out whenever a process ignores SIGTERM.
  */
-export async function endMarked(entry: string): Promise<void> {
-  for (let left = await marked(entry); left.length > 0; left = await marked(entry)) {
-    for (const each of left) kill(each, "SIGKILL");
+export const GRACE_SECONDS = 3;
+
+/**
+ * Ends every process `running` names, a group where negative, returning once
+ * it names none. What it names first is sent SIGTERM, so each can shut down
+ * cleanly, and whatever it names from GRACE_SECONDS on is sent SIGKILL, which
+ * no process can catch. What starts in between gets no SIGTERM of its own, so
+ * a process that starts another to shut down does not have it ended at once.
+ * A signal is sent, not yet acted on, so a process can still finish a write,
+ * or start another, which `running` then names, until SIGKILL reaches it.
+ */
+export async function end(running: () => Promise<number[]>): Promise<void> {
+  const deadline = Date.now() + GRACE_SECONDS * 1000;
+  let left = await running();
+  for (const each of left) kill(each, "SIGTERM");
+  for (; left.length > 0; left = await running()) {
+    if (Date.now() >= deadline) for (const each of left) kill(each, "SIGKILL");
     await Bun.sleep(10);
   }
 }

@@ -1,3 +1,5 @@
+import { GRACE_SECONDS } from "./plan.ts";
+
 /**
  * The form of a role's answer, as a subset of JSON Schema: the same object is
  * stated in the prompt as the instruction and checked against as the
@@ -14,11 +16,11 @@ export type Answer = Record<string, unknown>;
 /**
  * The instruction appended to a role's prompt and to the repair prompt,
  * naming `file`, the answer file, and restating `schema` whole. It states the
- * signal the turn's sweep sends (`endMarked` in plan.ts), so a change to that
- * signal changes this sentence too.
+ * signals the turn's sweep sends (`end` in plan.ts), so a change to them
+ * changes this sentence too.
  */
 export function answerInstruction(schema: ObjectSchema, file: string): string {
-  return `Write your report, one JSON object matching this JSON Schema, to \`${file}\`, then respond with \`done\`. The tool takes your answer from that file as soon as it holds complete JSON, and once it has taken your answer it stops every process your commands started that is still running, with SIGKILL, which no process can catch, so nothing it stops gets to clean up.\n${JSON.stringify(schema)}`;
+  return `Write your report, one JSON object matching this JSON Schema, to \`${file}\`, then respond with \`done\`. The tool takes your answer from that file as soon as it holds complete JSON, and once it has taken your answer it stops every process your commands started that is still running: it sends each one SIGTERM, which lets a process shut down cleanly, and ${GRACE_SECONDS} seconds later SIGKILL, which no process can catch, to whatever is still running.\n${JSON.stringify(schema)}`;
 }
 
 /**

@@ -2,7 +2,7 @@ import { rm } from "node:fs/promises";
 import repair from "../payload/repair.md" with { type: "text" };
 import { type Answer, answerInstruction, type ObjectSchema, readAnswer } from "./answer.ts";
 import { fill } from "./payload.ts";
-import { bootId, endMarked, RUN_MARK, runMark } from "./plan.ts";
+import { bootId, end, marked, RUN_MARK, runMark } from "./plan.ts";
 
 /** The harnesses card knows how to start a session in. */
 export type Harness = "claude" | "pi";
@@ -66,18 +66,24 @@ export function resumeCommand({ harness, id, dir }: Session): string {
 }
 
 /**
- * Ends what a role's turn left running, where this process is the run: both
- * harnesses start each command a role runs in a session of its own, and a
- * command can leave what it starts orphaned at once, so a turn can end, its
- * harness gone, with a process of the role's still writing in the worktree
- * that the run goes on to commit, discard or hand back. Such a process holds
- * the run's mark, which names the run's pid, so only the run ends them: a
- * turn run outside a run, or by a process the run started, such as a test a
- * role runs, ends nothing.
+ * Ends `harness` where it still runs, and what a role's turn left running,
+ * where this process is the run: both harnesses start each command a role
+ * runs in a session of its own, and a command can leave what it starts
+ * orphaned at once, so a turn can end, its harness gone, with a process of
+ * the role's still writing in the worktree that the run goes on to commit,
+ * discard or hand back. Such a process holds the run's mark, which names the
+ * run's pid, so only the run ends them: a turn run outside a run, or by a
+ * process the run started, such as a test a role runs, ends nothing but its
+ * harness. The harness is ended with them, so each gets the whole grace
+ * period, the harness to save its session in.
  */
-async function endLeftovers(): Promise<void> {
+async function endLeftovers(harness: Bun.Subprocess | null): Promise<void> {
   const mark = runMark({ pid: process.pid, boot: await bootId() });
-  if (process.env[RUN_MARK] === mark) await endMarked(`${RUN_MARK}=${mark}`);
+  const entry = process.env[RUN_MARK] === mark ? `${RUN_MARK}=${mark}` : null;
+  await end(async () => [
+    ...(harness !== null && harness.exitCode === null && harness.signalCode === null ? [harness.pid] : []),
+    ...(entry === null ? [] : await marked(entry)),
+  ]);
 }
 
 /** How often a turn looks at its answer file while the harness runs. */
@@ -110,7 +116,7 @@ function start(session: Session, resuming: boolean, prompt: string) {
  */
 async function finish(session: Session, { proc, reading }: ReturnType<typeof start>): Promise<string> {
   const status = await proc.exited;
-  await endLeftovers();
+  await endLeftovers(null);
   const [stdout, stderr] = await reading;
   if (status !== 0) {
     const ended = proc.signalCode !== null ? `was killed by ${proc.signalCode}` : `exited with status ${status}`;
@@ -171,8 +177,7 @@ async function turn(session: Answering, resuming: boolean, prompt: string): Prom
   const started = start(session, resuming, prompt);
   const taken = await written(session.answer, started.proc.exited);
   if (taken !== null) {
-    started.proc.kill("SIGKILL");
-    await endLeftovers();
+    await endLeftovers(started.proc);
     return taken;
   }
   await finish(session, started);

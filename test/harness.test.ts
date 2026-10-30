@@ -1,5 +1,5 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { answerInstruction, type ObjectSchema, readAnswer } from "../src/answer.ts";
 import { chooseHarness, type Harness, launch, REPAIR_PROMPTS, resume, resumeCommand, RoleFailure } from "../src/harness.ts";
@@ -229,6 +229,28 @@ test("a role that writes its answer and keeps running has the answer taken and i
   expect(await launch(session("claude"), "go", SCHEMA)).toEqual(GOOD);
   expect(Date.now() - started).toBeLessThan(10_000);
   expect(running(Number(readFileSync(left, "utf8")))).toBe(false);
+});
+
+test("a role that writes its answer and keeps running has its harness sent SIGTERM when the answer is taken, so the harness can save its session before it ends", async () => {
+  const control = stand();
+  const left = `${tempDir()}/left`;
+  const saved = `${tempDir()}/saved`;
+  script(control, ID, { ...claudeJson("done"), run: lingering(JSON.stringify(GOOD), left), trap: `touch '${saved}'` });
+  // Outside a run, so the harness alone is sent the signal, not the work it waits on.
+  try {
+    expect(await launch(session("claude"), "go", SCHEMA)).toEqual(GOOD);
+    expect(existsSync(saved)).toBe(true);
+  } finally {
+    process.kill(Number(readFileSync(left, "utf8")), "SIGKILL");
+  }
+});
+
+test("the instruction tells the role that what its commands left running is sent SIGTERM, and SIGKILL once a grace period in seconds is out", () => {
+  const instruction = answerInstruction(SCHEMA, "/a");
+  expect(instruction).toContain("SIGTERM");
+  expect(instruction).toMatch(/\b\d+ seconds\b/);
+  expect(instruction).toContain("SIGKILL");
+  expect(instruction).not.toContain("nothing it stops gets to clean up");
 });
 
 test("an answer the tool took and ended the harness for gets a repair when it fails its schema, rather than counting as a failure", async () => {
