@@ -1,5 +1,6 @@
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { fences } from "./cardfile.ts";
 import { wrote } from "./dying.ts";
 import { branchExists, firstListed, git, gitOrThrow, headSha, listWorktrees } from "./git.ts";
 
@@ -171,7 +172,9 @@ const HEADING = /^#{1,6}\s/;
  * refilled. A line beginning with a list marker (`-`, `*`, `+`, `1.` or `1)`)
  * starts an item filled on its own, keeping its indent, its continuation
  * lines indented to sit under its text. A heading stays as it is, and a word
- * longer than the width, such as a URL, stays whole on a line of its own.
+ * longer than the width, such as a URL, stays whole on a line of its own. A
+ * fenced code block, by the rule `fences` gives every reader of a card, passes
+ * through as written, its fence lines and blank lines included.
  */
 export function commitMessage(subject: string, body: string): string {
   const out: string[] = [];
@@ -182,9 +185,14 @@ export function commitMessage(subject: string, body: string): string {
     if (words.length > 0) out.push(fill(words, first, rest));
     words = [];
   };
-  for (const line of body.trim().split("\n")) {
+  const text = body.trim();
+  const { fenced } = fences(text);
+  for (const [index, line] of text.split("\n").entries()) {
     const item = ITEM.exec(line);
-    if (line.trim() === "") {
+    if (fenced[index]) {
+      flush();
+      out.push(line);
+    } else if (line.trim() === "") {
       flush();
       if (out.at(-1) !== "") out.push("");
     } else if (HEADING.test(line)) {

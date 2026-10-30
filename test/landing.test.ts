@@ -262,6 +262,30 @@ test("landing commits everything in the worktree under the message, byte for byt
   expect(await mainState(repo)).toEqual(before);
 });
 
+test("landing a close note passes its fenced block into the commit body as written", async () => {
+  const { repo, tree } = await held();
+  const long = "bun run greet --loud --name 'someone with a name long enough to pass the width'";
+  const block = ["```sh", long, "echo one", "echo two", "", "", "# a shell comment", "```"];
+  const body = ["Try it, on a paragraph long enough that filling it has to wrap it onto a second line:", "", ...block, "", "Then stop."].join("\n");
+
+  const sha = await land("Land a fenced block", body, tree);
+
+  const raw = await git(["cat-file", "commit", sha], repo);
+  expect(raw.stdout.slice(raw.stdout.indexOf("\n\n") + 2)).toBe(
+    [
+      "Land a fenced block",
+      "",
+      "Try it, on a paragraph long enough that filling it has to wrap it onto a",
+      "second line:",
+      "",
+      ...block,
+      "",
+      "Then stop.",
+      "",
+    ].join("\n"),
+  );
+});
+
 test("landing with nothing changed makes an empty commit and returns its sha", async () => {
   const { repo, tree, before } = await held();
   const parent = await out(["rev-parse", "HEAD"], tree);
