@@ -28,7 +28,7 @@ A card printed with `{{CARD}} promote <id> --key <KEY>` alone is one the owner a
 ## Joined findings
 
 A role wrote its finding in whatever words it had, so rewrite each finding joined into this plan as a card for a fresh implementer, editing its file at `{{DECK}}/open/<id>.md` in place; it keeps its id and its place in the order.
-A finding names the case its writer came across, and a card that covers that case alone leaves the other cases the same rule governs to surface later, each as separate work, so where a finding reports a rule, check or guarantee that fails or is missing, find which other callers, states, steps, answers or prompts the same rule governs, and either cover each in the rewritten card or name it there as out of scope, with the reason.
+Give the rewritten card every requirement that "Drafting the cards" below lists under "Each card carries", as you would a card you draft there, because a finding most often lacks them: it seldom gives grounding, intent or an observable done-condition, and it names only the case its writer came across, so where it reports a rule, check or guarantee that fails or is missing, the rewritten card covers each other case the same rule governs or names it as out of scope, with the reason.
 If a joined finding changes what the plan is, update the plan document to match.
 Rewrite each finding listed below, which joined before this session, and each card the owner joins during it.
 
@@ -55,7 +55,7 @@ A card joined from outside the plan may carry `blocked-by:` entries, and those b
 Order the cards so that each relies only on work landed by cards ahead of it.
 
 Size each card for one fresh session, and write it for an implementer who reads that card and nothing else, neither this conversation nor the plan document; a fresh reviewer then checks the result against the card's own done-condition.
-Each card carries:
+Each card carries, whether you draft it here or rewrite it from a joined finding:
 
 - **Grounding**: file paths, symbol names, and the command that shows the problem as the project runs it. Address prose by a quoted phrase and the section that holds it, never by line number, because lines move and a stale line number still resolves, to the wrong text.
 - **Intent**: what done looks like, what the card serves, and which specifics are load-bearing rather than incidental.

@@ -15,6 +15,8 @@ These are the plan's cards, in the order the run takes them; a card marked lande
 Read the plan document, then each card not yet landed, and check:
 
 - that each card stands alone for an implementer who reads that card and nothing else, neither the plan document nor the authoring conversation, with its grounding, its intent, and a done-condition a reviewer can observe;
+- that each card that adds or fixes a rule, check or guarantee either covers every case the same rule governs or names each case it leaves out as out of scope, with the reason: look in the code for the other callers, states, steps, answers or prompts the rule governs, because an implementer builds exactly the card, and a case the card leaves unnamed surfaces later as separate work;
+- that each conditional in a card is phrased over the decision it gates, not over the outcome its writer expected: "If X turns out false, record it" never fires when X comes back true, where "Whatever the answer, record what it means for the parser" fires either way;
 - that each card relies only on work landed by cards ahead of it in the order;
 - that the cards together carry out the plan document's acceptance criteria;
 - that the final card verifies those criteria end to end on the finished branch, citing the plan document for them, and carries a draft of the owner's guide: how to see the plan working, and what only the owner can check;
