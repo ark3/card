@@ -14,7 +14,7 @@ Card ids name the tool's private records, and the card's commit goes public, so 
 ## The card
 
 The card is between the tags below.
-Its contract is everything above its first `## Account`, `## Review feedback`, `## Gap`, `## Close note` or `## Promotion` heading, if it has one; below that heading is the card's record, which the tool writes.
+Its contract is everything above its first `## Account`, `## Review feedback`, `## Gap`, `## Close note` or `## Promotion` heading that stands outside a fenced code block, if it has one, since such a line inside one, as in a pasted shell transcript, is part of the contract; below that heading is the card's record, which the tool writes.
 A record already there is left from an earlier run of this card; read it as what that run found.
 A `## Gap` in it is a gap in the plan that an earlier run found and the owner has since answered, usually with cards that have landed ahead of this one, so verify the criterion it names afresh.
 

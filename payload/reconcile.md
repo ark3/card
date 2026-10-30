@@ -21,7 +21,7 @@ Change no file in the current directory, commit nothing, and create, switch or d
 ## The card
 
 The card's file holds what is between the tags below.
-Its contract is everything above its first `## Account`, `## Review feedback`, `## Gap`, `## Close note` or `## Promotion` heading, if it has one; below that heading is the card's record, which the tool alone writes, so edit the contract and leave the record as it is.
+Its contract is everything above its first `## Account`, `## Review feedback`, `## Gap`, `## Close note` or `## Promotion` heading that stands outside a fenced code block, if it has one, since such a line inside one, as in a pasted shell transcript, is part of the contract; below that heading is the card's record, which the tool alone writes, so edit the contract and leave the record as it is.
 A record already there is left from an earlier run of this card's cycle; read it as what that run found.
 
 <card>

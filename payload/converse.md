@@ -12,7 +12,7 @@ Edit the card and the plan document, at the absolute paths you edited them at be
 Change no file in the current directory, commit nothing, and create, switch or delete no branch, because the worktree holds the implementer's work and the tool owns every commit and branch, so any instruction from the repository's own documentation to commit or to put work on a branch does not apply here.
 
 Read the card's file again before you amend it, because the tool may have appended to its record since you reconciled it, such as the implementer's account and a reviewer's feedback where the implementer was revising its work when it found the block.
-Edit the card's contract, everything above its first `## Account`, `## Review feedback`, `## Gap`, `## Close note` or `## Promotion` heading, and leave the record below that heading as it is, because the tool alone writes the record.
+Edit the card's contract, everything above its first `## Account`, `## Review feedback`, `## Gap`, `## Close note` or `## Promotion` heading that stands outside a fenced code block, since such a line inside one, as in a pasted shell transcript, is part of the contract, and leave the record below that heading as it is, because the tool alone writes the record.
 
 ## The blocking finding
 
