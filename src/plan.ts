@@ -1,8 +1,10 @@
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import { mkdir, readdir, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Card } from "./cardfile.ts";
 import type { Cycle, Role } from "./cycle.ts";
 import type { Deck } from "./deck.ts";
+import { wrote } from "./dying.ts";
 import type { Harness, Session } from "./harness.ts";
 import { drawId } from "./id.ts";
 import { type Listed, listCards } from "./operations.ts";
@@ -68,7 +70,29 @@ export type PlanRecord = {
    * that failed asks none.
    */
   bounce: { role: Role; session: Session; cause: string; question?: string; feedback?: string; gap?: string } | null;
+  /**
+   * A verb that writes more than once, recorded before its first other write
+   * with what finishing it needs, until it finishes. Every step after the
+   * record is safe to run again, so one that died partway is finished from
+   * here before anything else acts on the plan.
+   */
+  pending: Pending | null;
 };
+
+/** The verbs that record themselves before they write, each with what finishing it needs. */
+export type Pending =
+  /**
+   * `card done` in the Cards stage: each drafted file by name, with the card
+   * it held when the owner agreed it and the id drawn for it, and the order
+   * and final card it records.
+   */
+  | { verb: "done"; drafts: { name: string; id: string; card: Omit<Card, "closed"> }[]; cards: string[]; final: string }
+  /** `card join <id>` at Ended. */
+  | { verb: "join"; id: string }
+  /** `card amend` in Bounced or Stopped. */
+  | { verb: "amend" }
+  /** `card drop`, and whether the card in flight is settled before the worktree goes. */
+  | { verb: "drop"; settles: boolean };
 
 /** What a state file written before a field existed reads as for that field. */
 const EMPTY: Omit<PlanRecord, "state" | "placeholder"> = {
@@ -82,6 +106,7 @@ const EMPTY: Omit<PlanRecord, "state" | "placeholder"> = {
   landed: [],
   findings: [],
   bounce: null,
+  pending: null,
 };
 
 export type Plan = PlanRecord & {
@@ -157,8 +182,9 @@ async function died({ pid, boot }: { pid: number; boot: string }): Promise<boole
 /**
  * Every plan in progress, by slug. A plan is a directory under `plans/` with a
  * state file; one without, a start that stopped before its record was
- * written, is not a plan. A Running plan whose run has died reads as Dead,
- * which is never written.
+ * written, is not a plan, and neither is a hidden one, which `removePlan`
+ * left. A Running plan whose run has died reads as Dead, which is never
+ * written.
  */
 export async function listPlans(deck: Deck): Promise<Plan[]> {
   let names: string[];
@@ -170,6 +196,7 @@ export async function listPlans(deck: Deck): Promise<Plan[]> {
   }
   const plans: Plan[] = [];
   for (const slug of names) {
+    if (slug.startsWith(".")) continue;
     const file = Bun.file(path.join(plansDir(deck), slug, STATE_FILE));
     if (!(await file.exists())) continue;
     const record: PlanRecord = { ...EMPTY, ...((await file.json()) as PlanRecord) };
@@ -185,11 +212,12 @@ export async function listPlans(deck: Deck): Promise<Plan[]> {
  * records, staged and renamed so no reader sees half of one.
  */
 export async function writeRecord(target: Plan, changes: Partial<PlanRecord>): Promise<Plan> {
-  const { state, placeholder, cards, final, joins, later, cycle, harness, run, landed, findings, bounce } = { ...target, ...changes };
-  const record: PlanRecord = { state, placeholder, cards, final, joins, later, cycle, harness, run, landed, findings, bounce };
+  const { state, placeholder, cards, final, joins, later, cycle, harness, run, landed, findings, bounce, pending } = { ...target, ...changes };
+  const record: PlanRecord = { state, placeholder, cards, final, joins, later, cycle, harness, run, landed, findings, bounce, pending };
   const staging = path.join(target.dir, `.${STATE_FILE}.writing`);
   await writeFile(staging, `${JSON.stringify(record)}\n`);
   await rename(staging, path.join(target.dir, STATE_FILE));
+  wrote();
   return { ...target, ...record };
 }
 
@@ -343,4 +371,58 @@ export function awaitingKey(card: Card): boolean {
 export function listWaiting(listed: (Listed & Standing)[], command: string): string {
   const lines = listed.map(({ id, card, commands }) => `${id}  ${card.headline}\n${commands.map((words) => `  ${command} ${words}\n`).join("")}`);
   return `Cards waiting in no plan, which no run picks up:\n\n${lines.join("\n")}`;
+}
+
+/**
+ * Removes the plan's directory, its record with it, so no listing finds the
+ * plan and its slug is free. It is first renamed out of the plans directory,
+ * in one act, under a hidden name no slug can take, so a removal that dies
+ * partway leaves no half of a plan: what is left is a directory no listing
+ * reads and no slug meets, which `sweepRemoved` removes on a later run of
+ * `card`.
+ */
+export async function removePlan(deck: Deck, target: Plan): Promise<void> {
+  const leftover = path.join(plansDir(deck), `.${target.slug}${REMOVING}`);
+  await rename(target.dir, leftover);
+  wrote();
+  await removeTree(leftover);
+}
+
+/** What `removePlan` appends to the hidden name it renames a plan's directory to. */
+const REMOVING = ".removing";
+
+/**
+ * Removes what a `removePlan` that died after its rename left: a directory
+ * named as it renames one, and nothing else hidden there, which is not the
+ * tool's.
+ */
+export async function sweepRemoved(deck: Deck): Promise<void> {
+  let entries: Dirent[];
+  try {
+    entries = await readdir(plansDir(deck), { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  for (const entry of entries) {
+    const slug = entry.name.startsWith(".") && entry.name.endsWith(REMOVING) ? entry.name.slice(1, -REMOVING.length) : "";
+    if (entry.isDirectory() && SLUG.test(slug)) await removeTree(path.join(plansDir(deck), entry.name));
+  }
+}
+
+/**
+ * Removes `dir` and everything in it one entry at a time, rather than in one
+ * recursive call, so a test can make the removal die partway.
+ */
+async function removeTree(dir: string): Promise<void> {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const at = path.join(dir, entry.name);
+    if (entry.isDirectory()) await removeTree(at);
+    else {
+      await unlink(at);
+      wrote();
+    }
+  }
+  await rmdir(dir);
+  wrote();
 }

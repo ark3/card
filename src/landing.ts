@@ -1,5 +1,6 @@
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { wrote } from "./dying.ts";
 import { branchExists, firstListed, git, gitOrThrow, headSha, listWorktrees } from "./git.ts";
 
 /**
@@ -15,6 +16,14 @@ export async function ensureBranch(branch: string, startPoint: string, cwd: stri
   await gitOrThrow(["branch", "--no-track", branch, startPoint], cwd);
 }
 
+/** The plan's worktree, `.worktrees/<slug>` at the repository root, where it holds `branch`, and otherwise null. */
+export async function worktreeOf(slug: string, branch: string, cwd: string): Promise<string | null> {
+  const { root } = await firstListed(cwd);
+  const tree = path.join(root, ".worktrees", slug);
+  const holding = await listWorktrees(cwd);
+  return holding.some((listed) => listed.root === tree && listed.branch === `refs/heads/${branch}`) ? tree : null;
+}
+
 /**
  * Holds `branch` checked out in the plan's worktree, `.worktrees/<slug>` at the
  * repository root, and returns its path; a worktree already holding it there,
@@ -22,17 +31,18 @@ export async function ensureBranch(branch: string, startPoint: string, cwd: stri
  * git itself refuses to check the branch out anywhere else.
  */
 export async function holdWorktree(slug: string, branch: string, cwd: string): Promise<string> {
+  const held = await worktreeOf(slug, branch, cwd);
+  if (held !== null) return held;
+
   const { root } = await firstListed(cwd);
   const trees = path.join(root, ".worktrees");
   const tree = path.join(trees, slug);
-  const holding = await listWorktrees(cwd);
-  if (holding.some((listed) => listed.root === tree && listed.branch === `refs/heads/${branch}`)) return tree;
-
   await mkdir(trees, { recursive: true });
   // `*` hides the trees, and this file, from git status, so the tool depends on
   // nothing machine-level to keep them out of the repository.
   await Bun.write(path.join(trees, ".gitignore"), "*\n");
   await gitOrThrow(["worktree", "add", "-q", tree, branch], root);
+  wrote();
   return tree;
 }
 
@@ -43,7 +53,9 @@ export async function holdWorktree(slug: string, branch: string, cwd: string): P
  */
 export async function discard(tree: string, commit = "HEAD"): Promise<void> {
   await gitOrThrow(["reset", "-q", "--hard", commit], tree);
+  wrote();
   await gitOrThrow(["clean", "-q", "-f", "-d"], tree);
+  wrote();
 }
 
 /**
@@ -229,9 +241,19 @@ export async function land(subject: string, body: string, tree: string): Promise
   return headSha(tree);
 }
 
+/**
+ * The work `removeWorktree` would refuse to remove the worktree over, one
+ * line per path, as `git worktree remove` itself checks for it: modified and
+ * untracked files. Empty where there is none.
+ */
+export async function unremovable(tree: string): Promise<string> {
+  return gitOrThrow(["status", "--porcelain", "--ignore-submodules=none"], tree);
+}
+
 /** Removes the plan's worktree, keeping its branch. */
 export async function removeWorktree(tree: string): Promise<void> {
   // Run from the repository root, not from inside the tree being removed.
   const { root } = await firstListed(tree);
   await gitOrThrow(["worktree", "remove", tree], root);
+  wrote();
 }

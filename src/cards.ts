@@ -1,13 +1,14 @@
 import { readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import prompt from "../payload/cards.md" with { type: "text" };
-import { type Card, readCard } from "./cardfile.ts";
+import { type Card, demoteHeadlines, formatCard, readCard } from "./cardfile.ts";
 import { type Deck, locate } from "./deck.ts";
+import { wrote } from "./dying.ts";
 import { citedIds } from "./id.ts";
-import { appendRecord, closeCard, fileCard } from "./operations.ts";
+import { appendRecord, closeCard, drawIds, fileCardAs } from "./operations.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
-import { awaitingKey, type Context, listPlans, listWaiting, type Plan, waitingCards, writeRecord } from "./plan.ts";
+import { awaitingKey, type Context, listPlans, listWaiting, type Pending, type Plan, waitingCards, writeRecord } from "./plan.ts";
 
 type Member = { id: string; path: string; landed: boolean; card: Card };
 
@@ -69,7 +70,9 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
 /**
  * `card done` in the Cards stage: the owner has agreed the cards, so the
  * drafted files are filed, the order recorded, and the plan moves to Check.
- * Everything that can refuse is checked before the first card is filed.
+ * Everything that can refuse is checked before anything is written, and the
+ * ids are drawn and recorded with the order before the first card is filed,
+ * so `finishDone` can finish a `card done` that died partway.
  */
 export async function done({ deck, plan, command, args }: Context): Promise<void> {
   if (args.length > 0) throw new Error(`usage: ${command} done`);
@@ -85,6 +88,13 @@ export async function done({ deck, plan, command, args }: Context): Promise<void
       throw new Error(`${file}: a drafted card carries no blocked-by, since the run takes the plan's cards in the order this stage sets`);
     }
     if (card.closed !== undefined) throw new Error(`${file}: a drafted card carries no closed:, which only \`deck close\` writes`);
+    // Filed from the record once it is written, so a card the filing would
+    // refuse is refused here, while the draft can still be fixed.
+    try {
+      formatCard(card);
+    } catch (error) {
+      throw new Error(`${file}: ${(error as Error).message}`);
+    }
     drafted.push({ file, card });
   }
 
@@ -125,17 +135,39 @@ export async function done({ deck, plan, command, args }: Context): Promise<void
     }
   }
 
-  const ids: string[] = [];
-  for (const { card } of drafted) ids.push(await fileCard(deck, card));
+  const ids = await drawIds(deck, drafted.length);
   const cards = order.map((slot) => (typeof slot === "number" ? ids[slot]! : slot));
-  const final = keepsFinal ? plan.final : ids.at(-1)!;
-  const moved = await writeRecord(plan, { state: "Check", cards, final, joins: [] });
-  // Each file is a card in the deck now, and the next pass through this stage
-  // takes in whatever this directory holds, so none stays behind.
-  for (const { file } of drafted) await unlink(file);
+  const final = keepsFinal ? plan.final! : ids.at(-1)!;
+  const drafts = drafted.map(({ file, card }, index) => ({ name: path.basename(file), id: ids[index]!, card }));
+  const pending: Pending = { verb: "done", drafts, cards, final };
+  const moved = await finishDone(deck, await writeRecord(plan, { pending }), pending);
   console.log(
     `Took in ${drafted.length} drafted and ${plan.joins.length} joined cards; the Cards stage is done, and the plan \`${moved.slug}\` is in the Check stage.`,
   );
+}
+
+/**
+ * Finishes `card done` in the Cards stage from what its record holds: each
+ * drafted card is filed under the id drawn for it, from the record rather
+ * than its file, which a session may change or remove after a death, and
+ * its file removed; last the order is recorded, moving the plan to Check.
+ * A card already filed and a file already gone are passed over, so every
+ * step is safe to run again.
+ */
+export async function finishDone(deck: Deck, plan: Plan, { drafts, cards, final }: Extract<Pending, { verb: "done" }>): Promise<Plan> {
+  for (const { name, id, card } of drafts) {
+    await fileCardAs(deck, id, card);
+    // The next pass through this stage takes in whatever this directory
+    // holds, so no file stays behind once its card is filed.
+    try {
+      await unlink(path.join(plan.cardsDir, name));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      continue;
+    }
+    wrote();
+  }
+  return writeRecord(plan, { state: "Check", cards, final, joins: [], pending: null });
 }
 
 /**
@@ -187,11 +219,18 @@ export async function later(context: Context): Promise<void> {
   console.log(`${id} stays waiting, outside the plan \`${plan.slug}\`, for a later plan to take up: ${card.headline}`);
 }
 
-/** The waiting card `decline` or `promote` names: an open card in no plan's order and joined to none. */
-async function waitingCard(deck: Deck, id: string): Promise<Card> {
+/**
+ * The waiting card `decline` or `promote` names: an open card in no plan's
+ * order and joined to none, or, where `closedAs` is given, the card already
+ * closed with that text, which a run that died after closing it left.
+ */
+async function waitingCard(deck: Deck, id: string, closedAs?: string): Promise<Card> {
   const found = await locate(deck, id);
   if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
-  if (found.closed) throw new Error(`${id} is closed, so it is not waiting`);
+  if (found.closed) {
+    if (closedAs !== undefined && (await Bun.file(found.path).text()).endsWith(closedAs)) return readCard(found.path);
+    throw new Error(`${id} is closed, so it is not waiting`);
+  }
   for (const plan of await listPlans(deck)) {
     if (plan.cards.includes(id)) throw new Error(`${id} is one of the plan \`${plan.slug}\`'s cards, so it is not waiting`);
     if (plan.joins.includes(id)) throw new Error(`${id} has joined the plan \`${plan.slug}\`, so it is not waiting`);
@@ -225,17 +264,21 @@ const PROMOTE_USAGE = "usage: card promote <id>..., with the session's draft on 
  * `card promote <id>... --key <KEY>`: the owner posted it, and each card
  * closes promoted, the key in its close note. Like `decline`, it needs no
  * plan and writes no plan's record, and it refuses before marking any card.
+ * Having no record to finish from, it is safe to run again instead: a card
+ * an earlier run of the same invocation already closed under the key, or
+ * marked with the same draft, is passed over, and the rest are done.
  */
 export async function promote(deck: Deck, args: string[]): Promise<void> {
   const at = args.indexOf("--key");
   const key = at === -1 ? null : args[at + 1];
   const ids = at === -1 ? args : [...args.slice(0, at), ...args.slice(at + 2)];
   if (ids.length === 0 || key === undefined || ids.includes("--key")) throw new Error(PROMOTE_USAGE);
-  const cards = await Promise.all(ids.map((id) => waitingCard(deck, id)));
+  const note = `Promoted to ${key}.`;
+  const cards = await Promise.all(ids.map((id) => waitingCard(deck, id, key === null ? undefined : `\n## Close note\n\n${note}\n`)));
 
   if (key !== null) {
     for (const [index, id] of ids.entries()) {
-      await closeCard(deck, id, "promoted", `Promoted to ${key}.`);
+      if (cards[index]!.closed === undefined) await closeCard(deck, id, "promoted", note);
       console.log(`${id} is closed promoted, as ${key}: ${cards[index]!.headline}`);
     }
     return;
@@ -246,7 +289,10 @@ export async function promote(deck: Deck, args: string[]): Promise<void> {
   }
   const cited = citedIds(draft, deck.prefix);
   if (cited.length > 0) throw new Error(`the draft must cite no card id, and it cites ${cited.join(", ")}`);
-  for (const id of ids) await appendRecord(deck, id, "Promotion", draft);
+  const section = `\n## Promotion\n\n${demoteHeadlines(draft).replace(/\n*$/, "\n")}`;
+  for (const id of ids) {
+    if (!(await Bun.file((await locate(deck, id))!.path).text()).endsWith(section)) await appendRecord(deck, id, "Promotion", draft);
+  }
   process.stdout.write(forOwner(draft));
   console.log(
     `Marked awaiting the ticket's key: ${ids.join(", ")}. Once the owner posts the draft and gives back its key, run \`card promote ${ids.join(" ")} --key <KEY>\`.`,

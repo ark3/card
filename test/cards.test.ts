@@ -2,7 +2,7 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createDeck, type Deck } from "../src/deck.ts";
-import { closeCard, fileCard } from "../src/operations.ts";
+import { appendRecord, closeCard, fileCard } from "../src/operations.ts";
 import { listPlans, type Plan, startPlan, waitingCards, writeRecord } from "../src/plan.ts";
 import { clearCardRoot, removeTempDirs, tempRepo } from "./helpers.ts";
 
@@ -293,4 +293,42 @@ test("card join and card later in Cards refuse a waiting card awaiting its key, 
     });
   }
   expect(readFileSync(path.join(plan.dir, "state.json"), "utf8")).toBe(before);
+});
+
+test("card promote --key over two cards, retried after it closed the first and died, closes the second and leaves each closed promoted once with one close note", async () => {
+  const repo = await tempRepo();
+  const deck = await createDeck(repo, "proj");
+  const first = await fileCard(deck, finding("Nothing says goodbye"));
+  const second = await fileCard(deck, finding("Nothing says hello"));
+  // As the first run left it when it died after its first close.
+  await closeCard(deck, first, "promoted", "Promoted to GREET-42.");
+
+  const result = await card(["promote", first, second, "--key", "GREET-42"], repo);
+  expect(result.stderr).toBe("");
+  expect(result.code).toBe(0);
+  expect(openIds(deck)).toEqual([]);
+  for (const id of [first, second]) {
+    const text = await Bun.file(path.join(deck.closedDir, `${id}.md`)).text();
+    expect(text.match(/^closed: promoted$/gm)).toHaveLength(1);
+    expect(text.match(/^## Close note$/gm)).toHaveLength(1);
+    expect(text).toEndWith("## Close note\n\nPromoted to GREET-42.\n");
+  }
+});
+
+test("card promote over two cards, retried with the same draft after it marked the first and died, leaves each card with one promotion section", async () => {
+  const repo = await tempRepo();
+  const deck = await createDeck(repo, "proj");
+  const first = await fileCard(deck, finding("Nothing says goodbye"));
+  const second = await fileCard(deck, finding("Nothing says hello"));
+  const draft = "Neither greeting has a farewell.\n";
+  // As the first run left it when it died after marking the first card.
+  await appendRecord(deck, first, "Promotion", draft);
+
+  const result = await card(["promote", first, second], repo, draft);
+  expect(result.code).toBe(0);
+  for (const id of [first, second]) {
+    const text = await Bun.file(path.join(deck.openDir, `${id}.md`)).text();
+    expect(text.match(/^## Promotion$/gm)).toHaveLength(1);
+    expect(text).toEndWith(`## Promotion\n\n${draft}`);
+  }
 });

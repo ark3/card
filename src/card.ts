@@ -1,14 +1,13 @@
 #!/usr/bin/env bun
 import * as bounced from "./bounced.ts";
-import { createDeck, type Deck, DEFAULT_PREFIX, locate, requireDeck, resolveDeck } from "./deck.ts";
+import { createDeck, type Deck, DEFAULT_PREFIX, requireDeck, resolveDeck } from "./deck.ts";
 import * as cards from "./cards.ts";
 import * as check from "./check.ts";
 import * as dead from "./dead.ts";
 import * as document from "./document.ts";
 import * as ended from "./ended.ts";
-import { undoReopen } from "./operations.ts";
 import { forOwner } from "./owner.ts";
-import { type Context, listPlans, listWaiting, type Plan, refuseSlug, startPlan, type State, waitingCards } from "./plan.ts";
+import { type Context, listPlans, listWaiting, type Pending, type Plan, refuseSlug, startPlan, type State, sweepRemoved, waitingCards } from "./plan.ts";
 import * as reports from "./reports.ts";
 import * as stopped from "./stopped.ts";
 
@@ -97,24 +96,64 @@ async function printWaiting(deck: Deck, command: string): Promise<void> {
 }
 
 /**
- * Every plan in progress, each put back first to a state its record holds,
- * where a verb that writes more than once died between its writes. A plan's
- * record is the commit point of the owner's decision, so what a verb did
- * ahead of a record it never wrote was not decided, and is undone here, once,
- * before any verb or bare `card` acts on the plan. Done here rather than in
- * `listPlans`, which reads, so that no read path writes, and no run of
- * another plan, which lists the plans too, undoes a verb still in flight.
+ * Every plan in progress, each with any verb its record holds pending
+ * finished first. A verb that writes more than once records what it is
+ * doing, with what finishing it needs, before its first other write, and
+ * every step after is safe to run again, so one that died partway is
+ * finished here, once, before any verb or bare `card` acts on the plan, and
+ * the invocation goes on from where the verb would have left it; a plan the
+ * finished verb removed is not in the list. What a plan removal left is
+ * removed first. Done here rather than in `listPlans`, which reads, so that
+ * no read path writes, and no run of another plan, which lists the plans
+ * too, finishes a verb still in flight.
  *
- * An Ended plan has every card closed, so a final card found open in one is
- * one a `card join` reopened before its record moved the plan to Cards; it
- * goes back closed done, and the finding is unsettled again.
+ * A step can refuse as well as die, as git refuses to remove a locked
+ * worktree, and then the verb stays recorded and its plan is listed still
+ * holding it, which `held` refuses every verb on, so one plan's refusal
+ * stops no other plan and no verb that needs none.
  */
 async function plansIn(deck: Deck): Promise<Plan[]> {
-  const plans = await listPlans(deck);
-  for (const { state, final } of plans) {
-    if (state === "Ended" && !(await locate(deck, final!))!.closed) await undoReopen(deck, final!, "done");
+  await sweepRemoved(deck);
+  const plans: Plan[] = [];
+  for (const plan of await listPlans(deck)) {
+    if (plan.pending === null) {
+      plans.push(plan);
+      continue;
+    }
+    const recorded = `\`card ${plan.pending.verb}\` on the plan \`${plan.slug}\` is recorded but did not finish`;
+    let finished: Plan | null;
+    try {
+      finished = await finish(deck, plan, plan.pending);
+    } catch (error) {
+      console.error(`card: ${recorded}, and finishing it failed: ${error instanceof Error ? error.message : String(error)}`);
+      plans.push(plan);
+      continue;
+    }
+    console.error(`card: ${recorded}, and is finished now, before anything else runs`);
+    if (finished !== null) plans.push(finished);
   }
   return plans;
+}
+
+/** Refuses to act on `plan` while it holds a recorded verb that could not finish, which the next run of `card` tries again. */
+function held(plan: Plan): void {
+  if (plan.pending === null) return;
+  throw new Error(`the plan \`${plan.slug}\` is held until its recorded \`card ${plan.pending.verb}\` finishes, which the next run of card tries again once what stopped it, above, is put right`);
+}
+
+/** Finishes the verb `pending` records on `plan`, returning the plan as the verb leaves it, or null where it removed the plan. */
+async function finish(deck: Deck, plan: Plan, pending: Pending): Promise<Plan | null> {
+  switch (pending.verb) {
+    case "done":
+      return cards.finishDone(deck, plan, pending);
+    case "join":
+      return ended.finishJoin(deck, plan, pending.id);
+    case "amend":
+      return stopped.finishAmend(deck, plan);
+    case "drop":
+      await ended.finishDrop(deck, plan, pending.settles);
+      return null;
+  }
 }
 
 /** Starts a plan, under `slug` or a placeholder, and prints what a start prints. */
@@ -134,17 +173,29 @@ async function bare(slug: string | null, cwd: string): Promise<void> {
 
   if (slug !== null) {
     const named = plans.find((plan) => plan.slug === slug);
-    if (named !== undefined) return TABLE[named.state].bare({ deck, plan: named, command: commandFor(named, many), args: [], openCommands });
+    if (named !== undefined) {
+      held(named);
+      return TABLE[named.state].bare({ deck, plan: named, command: commandFor(named, many), args: [], openCommands });
+    }
     // The one place a slug no plan has starts something.
     refuseSlug(slug);
     return start(deck, slug, plans.length > 0);
   }
   if (plans.length === 0) return start(deck, null, false);
-  if (!many) return TABLE[plans[0]!.state].bare({ deck, plan: plans[0]!, command: "card", args: [], openCommands });
+  if (!many) {
+    held(plans[0]!);
+    return TABLE[plans[0]!.state].bare({ deck, plan: plans[0]!, command: "card", args: [], openCommands });
+  }
 
-  // Where things stand is the owner's; the commands are the session's menu.
-  const states = plans.map((plan) => `${plan.slug}  ${plan.state}\n`).join("");
-  const commands = plans.map((plan) => openCommands(plan, commandFor(plan, true))).join("\n");
+  // Where things stand is the owner's; the commands are the session's menu,
+  // and a held plan has none open.
+  const states = plans
+    .map((plan) => `${plan.slug}  ${plan.state}${plan.pending === null ? "" : `, held until its recorded \`card ${plan.pending.verb}\` finishes`}\n`)
+    .join("");
+  const commands = plans
+    .filter((plan) => plan.pending === null)
+    .map((plan) => openCommands(plan, commandFor(plan, true)))
+    .join("\n");
   process.stdout.write(`${forOwner(`More than one plan is in progress:\n\n${states}`)}\nThe commands open in each plan, every one naming its plan:\n\n${commands}`);
 }
 
@@ -160,7 +211,10 @@ function pick(plans: Plan[], slug: string | null, verb: string): Plan {
   }
   if (plans.length === 0) throw new Error("no plan is in progress; bare `card` starts one");
   if (plans.length > 1) {
-    const commands = plans.map((plan) => `  card --plan ${plan.slug} ${verb}\n`).join("");
+    const commands = plans
+      .filter((plan) => plan.pending === null)
+      .map((plan) => `  card --plan ${plan.slug} ${verb}\n`)
+      .join("");
     throw new Error(`more than one plan is in progress, so name the one you mean:\n${commands.trimEnd()}`);
   }
   return plans[0]!;
@@ -196,6 +250,7 @@ async function main(argv: string[], cwd: string): Promise<void> {
     return cards[name](deck, args);
   }
   const plan = pick(plans, slug, name);
+  held(plan);
   const command = commandFor(plan, plans.length > 1);
   const verb = TABLE[plan.state].open[name as VerbName];
   if (verb === undefined) {

@@ -1,4 +1,3 @@
-import { rm } from "node:fs/promises";
 import prompt from "../payload/settle.md" with { type: "text" };
 import { readCard } from "./cardfile.ts";
 import { settling } from "./cards.ts";
@@ -6,11 +5,11 @@ import type { Role } from "./cycle.ts";
 import { endRun, settle } from "./dead.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
-import { holdWorktree, removeWorktree } from "./landing.ts";
+import { holdWorktree, removeWorktree, unremovable, worktreeOf } from "./landing.ts";
 import { closeCard, reopenCard } from "./operations.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
-import { type Context, listPlans, type Plan, type Standing, standing, writeRecord } from "./plan.ts";
+import { type Context, listPlans, type Plan, removePlan, type Standing, standing, writeRecord } from "./plan.ts";
 import { named } from "./reports.ts";
 
 // What `closeCard` writes above a close note.
@@ -82,17 +81,21 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
 export async function join(context: Context): Promise<void> {
   const { deck, plan, command } = context;
   const { id, card } = await settling(context, "join");
-  const final = plan.final!;
-  // Reopened first and recorded second, so a death between the two leaves
-  // the plan in Ended with its final card open, which every verb's dispatch
-  // puts back closed done before it acts, a retried join among them.
-  // Recorded first instead, a death would leave the plan in Cards with its
-  // final card closed, and the next take-in would place the finding after it.
-  await reopenCard(deck, final);
-  await writeRecord(plan, { state: "Cards", joins: [...plan.joins, id], later: plan.later.filter((other) => other !== id) });
+  await finishJoin(deck, await writeRecord(plan, { pending: { verb: "join", id } }), id);
   console.log(
     `${id} has joined the plan \`${plan.slug}\`, whose final card is reopened; the plan is back in the Cards stage, which a fresh session takes up by running \`${command}\`: ${card.headline}`,
   );
+}
+
+/**
+ * Finishes `card join <id>` at Ended from what its record holds: the final
+ * card is reopened, then the plan is recorded in Cards with the finding
+ * joined. Recorded last, so the plan is never in Cards with its final card
+ * closed, where the next take-in would place the finding after it.
+ */
+export async function finishJoin(deck: Deck, plan: Plan, id: string): Promise<Plan> {
+  await reopenCard(deck, plan.final!);
+  return writeRecord(plan, { state: "Cards", joins: [...plan.joins, id], later: plan.later.filter((other) => other !== id), pending: null });
 }
 
 /**
@@ -117,7 +120,7 @@ export async function finish({ deck, plan, command, args }: Context): Promise<vo
   } catch (error) {
     throw new Error(`the plan is not finished, since git would not remove its worktree: ${(error as Error).message}`);
   }
-  await rm(plan.dir, { recursive: true });
+  await removePlan(deck, plan);
   process.stdout.write(
     forOwner(`The plan \`${plan.slug}\` is finished: its worktree ${tree} is removed, and its branch \`${branch}\` is kept, for the owner to land.\n`),
   );
@@ -132,37 +135,78 @@ export async function finish({ deck, plan, command, args }: Context): Promise<vo
  * commits; every card of the plan not closed, a joined card not yet taken
  * in among them, closes declined under one note; and the plan's directory
  * goes, as `card finish` removes it. Waiting cards, the run's findings
- * among them, stay waiting.
+ * among them, stay waiting. The drop is recorded once the run is gone, which
+ * alone writes the record while it lives, and before anything else is
+ * written, so `finishDrop` can finish a drop that died partway.
  */
 export async function drop({ deck, plan, command, args }: Context): Promise<void> {
   if (args.length > 0) throw new Error(`usage: ${command} drop`);
   const live = plan.state === "Running" || plan.state === "Dead";
-  // Dead is read, never written, so a record the settling writes says Stopped, as the run now is.
-  let dropped: Plan = live ? { ...(await endRun(deck, plan)), state: "Stopped" } : plan;
-  let gone = "";
+  // Dead is read, never written, so the record says Stopped, as the run now is.
+  const dropped: Plan = live ? { ...(await endRun(deck, plan)), state: "Stopped" } : plan;
+  const settles = live || plan.state === "Bounced";
+  // What can refuse is met here, before anything is written. A settling
+  // needs the worktree, which git can refuse to give back, so it is held
+  // now. One not settled goes as it stands, not forced, as `card finish`
+  // does not force it, so work the owner left in it, which is theirs to
+  // settle, refuses the drop.
+  if (dropped.run !== null) {
+    const branch = await branchOf(plan);
+    const tree = settles ? await holdWorktree(plan.slug, branch, process.cwd()) : await worktreeOf(plan.slug, branch, process.cwd());
+    const lost = tree === null || settles ? "" : await unremovable(tree);
+    if (lost !== "") {
+      throw new Error(`the plan is not dropped, since git would not remove its worktree: it holds modified or untracked files:\n${lost.trimEnd()}`);
+    }
+  }
+  const { removed, closed } = await finishDrop(deck, await writeRecord(dropped, { pending: { verb: "drop", settles } }), settles);
+  const gone = removed === null ? "" : `: its worktree ${removed.tree} is removed, and its branch \`${removed.branch}\` is kept`;
+  const cards =
+    closed.length > 0
+      ? `These cards of the plan are closed declined:\n\n${(await Promise.all(closed.map(async (id) => `${await named(deck, id)}\n`))).join("")}`
+      : "No card of the plan was left open to close.\n";
+  process.stdout.write(forOwner(`The plan \`${plan.slug}\` is dropped${gone}.\n\n${cards}`));
+}
+
+/**
+ * Finishes `card drop` from what its record holds: the card in flight is
+ * settled where `settles` says, its work discarded, the worktree removed,
+ * every card of the plan not closed closed declined, and last the plan's
+ * directory removed, its record with it. Each step is safe to run again: a
+ * worktree a settling needs is held again where it is gone, so the
+ * settling always has a tree to run in, one not settled is removed only
+ * where it stands, and a card already closed is passed over. Returns the
+ * worktree removed, if there was one, and the cards closed.
+ */
+export async function finishDrop(
+  deck: Deck,
+  plan: Plan,
+  settles: boolean,
+): Promise<{ removed: { tree: string; branch: string } | null; closed: string[] }> {
+  let dropped = plan;
+  let removed = null;
   // The first `card approve` made the branch and the worktree, and nothing before it does.
   if (dropped.run !== null) {
-    if (live || plan.state === "Bounced") dropped = (await settle(deck, dropped)).plan;
     const branch = await branchOf(dropped);
-    const tree = await holdWorktree(dropped.slug, branch, process.cwd());
-    // Not forced, as `card finish` does not force it: the run's work is
-    // discarded above, so what git would lose is work the owner left in the
-    // tree, which is theirs to settle.
-    try {
-      await removeWorktree(tree);
-    } catch (error) {
-      throw new Error(`the plan is not dropped, since git would not remove its worktree: ${(error as Error).message}`);
+    const tree = settles ? await holdWorktree(dropped.slug, branch, process.cwd()) : await worktreeOf(dropped.slug, branch, process.cwd());
+    if (tree !== null) {
+      if (settles) dropped = (await settle(deck, dropped)).plan;
+      try {
+        await removeWorktree(tree);
+      } catch (error) {
+        throw new Error(
+          `the drop of the plan \`${plan.slug}\` is recorded, but git would not remove its worktree: ${(error as Error).message}\nOnce git can remove it, the next run of card finishes the drop.`,
+        );
+      }
+      removed = { tree, branch };
     }
-    gone = `: its worktree ${tree} is removed, and its branch \`${branch}\` is kept`;
   }
   const note = `Dropped with the plan \`${plan.slug}\`, which the owner gave up.`;
   const closed: string[] = [];
   for (const id of [...dropped.cards, ...dropped.joins]) {
     if ((await locate(deck, id))!.closed) continue;
     await closeCard(deck, id, "declined", note);
-    closed.push(`${await named(deck, id)}\n`);
+    closed.push(id);
   }
-  await rm(plan.dir, { recursive: true });
-  const cards = closed.length > 0 ? `These cards of the plan are closed declined:\n\n${closed.join("")}` : "No card of the plan was left open to close.\n";
-  process.stdout.write(forOwner(`The plan \`${plan.slug}\` is dropped${gone}.\n\n${cards}`));
+  await removePlan(deck, plan);
+  return { removed, closed };
 }

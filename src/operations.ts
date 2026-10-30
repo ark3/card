@@ -1,8 +1,9 @@
 import { readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Card, Outcome } from "./cardfile.ts";
-import { createCard, demoteHeadlines, readCard } from "./cardfile.ts";
+import { createCard, demoteHeadlines, formatCard, readCard } from "./cardfile.ts";
 import { type Deck, locate, stagedId, stagingName } from "./deck.ts";
+import { wrote } from "./dying.ts";
 import { citedIds, drawId } from "./id.ts";
 
 // Ninety ids per syllable cubed. Ten collisions in a row is not a deck that
@@ -39,10 +40,48 @@ export async function fileCard(deck: Deck, card: Omit<Card, "closed">): Promise<
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       continue;
     }
+    wrote();
     return id;
   }
 
   throw new Error(`drew ${DRAWS} ids and every one was taken; look at the deck at ${deck.deckDir}`);
+}
+
+/**
+ * Draws `count` ids, distinct, that no card in the deck has, for cards
+ * `fileCardAs` files once the ids are recorded.
+ */
+export async function drawIds(deck: Deck, count: number): Promise<string[]> {
+  const ids: string[] = [];
+  for (let taken = 0; ids.length < count; ) {
+    const id = drawId(deck.prefix);
+    if (!ids.includes(id) && (await locate(deck, id)) === null) {
+      ids.push(id);
+      taken = 0;
+    } else if (++taken === DRAWS) {
+      throw new Error(`drew ${DRAWS} ids in a row and every one was taken; look at the deck at ${deck.deckDir}`);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Files `card` in `open/` under `id`, which `drawIds` drew. A card already
+ * in `open/` under it with the same text is this filing, made before, and
+ * counts, as does one in `closed/`, which is this filing closed since; so a
+ * filing is safe to run again.
+ */
+export async function fileCardAs(deck: Deck, id: string, card: Omit<Card, "closed">): Promise<void> {
+  if (await Bun.file(path.join(deck.closedDir, `${id}.md`)).exists()) return;
+  const file = path.join(deck.openDir, `${id}.md`);
+  try {
+    await createCard(file, card);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    if ((await Bun.file(file).text()) === formatCard(card)) return;
+    throw new Error(`${id} was drawn for a card, and another card took it before it was filed; look at the deck at ${deck.deckDir}`);
+  }
+  wrote();
 }
 
 export type Listing = "open" | "ready" | "closed";
@@ -216,6 +255,7 @@ export async function appendRecord(deck: Deck, id: string, heading: RecordHeadin
   const staging = path.join(path.dirname(found.path), `.${id}.md.appending`);
   await writeFile(staging, appended);
   await rename(staging, found.path);
+  wrote();
 }
 
 /**
@@ -264,41 +304,34 @@ function removeOutcome(id: string, text: string): string {
 
 /**
  * Moves the closed card `id` back to `open/` and removes its `closed:` line,
- * keeping its close notes and everything else below its frontmatter.
+ * keeping its close notes and everything else below its frontmatter. A card
+ * already in `open/` is taken to be reopened before, by a reopen that may
+ * have died before its unlink, so only a copy left in `closed/` goes, and a
+ * reopen is safe to run again. A close that died before its unlink leaves
+ * the same two copies, with the newer in `closed/`, so a caller never
+ * reopens a card a close may still be moving.
  */
 export async function reopenCard(deck: Deck, id: string): Promise<void> {
-  const found = await locate(deck, id);
-  if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
-  if (!found.closed) throw new Error(`${id} is already open`);
-
-  const staging = path.join(deck.openDir, `.${id}.md.reopening`);
-  await writeFile(staging, removeOutcome(id, await Bun.file(found.path).text()));
-  // Into `open/` in one rename, and only then out of `closed/`, so no
-  // interruption loses the card or leaves it half-written. One between the
-  // two leaves it whole in both, where `locate` finds it open, and its next
-  // close renames over the copy left in `closed/`. A staged copy left behind
-  // is invisible to every listing and holds nothing the closed card lacks.
-  await rename(staging, path.join(deck.openDir, `${id}.md`));
-  await unlink(found.path);
-}
-
-/**
- * Puts the card `id`, which `reopenCard` moved to `open/`, back in `closed/`
- * with `outcome` as its `closed:` line, the inverse of the reopen. A copy
- * still in `closed/`, from a reopen interrupted before its unlink, is the
- * card exactly as it closed, and is kept; otherwise the open copy is the
- * closed card less its `closed:` line, which goes back where `close` put it.
- * In the same order as the reopen, so no interruption loses the card.
- */
-export async function undoReopen(deck: Deck, id: string, outcome: Outcome): Promise<void> {
   const open = path.join(deck.openDir, `${id}.md`);
   const closed = path.join(deck.closedDir, `${id}.md`);
-  if (!(await Bun.file(closed).exists())) {
-    const staging = path.join(deck.closedDir, `.${id}.md.restoring`);
-    await writeFile(staging, recordOutcome(id, await Bun.file(open).text(), outcome));
-    await rename(staging, closed);
+  if (!(await Bun.file(open).exists())) {
+    if (!(await Bun.file(closed).exists())) throw new Error(`no card ${id} in ${deck.deckDir}`);
+    const staging = path.join(deck.openDir, `.${id}.md.reopening`);
+    await writeFile(staging, removeOutcome(id, await Bun.file(closed).text()));
+    // Into `open/` in one rename, and only then out of `closed/`, so no
+    // interruption loses the card or leaves it half-written. A staged copy
+    // left behind is invisible to every listing and holds nothing the closed
+    // card lacks.
+    await rename(staging, open);
+    wrote();
   }
-  await unlink(open);
+  try {
+    await unlink(closed);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return;
+  }
+  wrote();
 }
 
 export type Dependent = { id: string; headline: string };
@@ -343,7 +376,9 @@ export async function closeCard(deck: Deck, id: string, outcome: Outcome, note: 
   // interruption leaves a closed card without its explanation or an
   // explanation on a card still open.
   await rename(staging, path.join(deck.closedDir, `${id}.md`));
+  wrote();
   await unlink(found.path);
+  wrote();
 
   const report: CloseReport = { dependents: [], heldShut: [], warnings: [] };
   const entries = (await readdir(deck.openDir)).sort();

@@ -1,10 +1,11 @@
 import * as cards from "./cards.ts";
 import { startRun } from "./check.ts";
 import { endRun, settle } from "./dead.ts";
+import type { Deck } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { holdWorktree } from "./landing.ts";
 import { forOwner } from "./owner.ts";
-import { type Context, writeRecord } from "./plan.ts";
+import { type Context, type Plan, writeRecord } from "./plan.ts";
 import * as reports from "./reports.ts";
 
 /**
@@ -50,11 +51,26 @@ export async function resume({ plan, command, args }: Context): Promise<void> {
  * to be amended, its cards kept. The in-flight card's work is discarded back
  * to what the state records, as a stop discards it, so the card reruns from a
  * fresh reconciler on a clean worktree once `card approve` carries the run
- * on, and the bounced session, if any, is left behind.
+ * on, and the bounced session, if any, is left behind. The amend is
+ * recorded before the discard, so `finishAmend` can finish one that died
+ * partway, and the worktree the discard needs, which git can refuse to give
+ * back, is held before the record.
  */
 export async function amend(context: Context): Promise<void> {
   const { deck, plan, command, args } = context;
   if (args.length > 0) throw new Error(`usage: ${command} amend`);
+  await holdWorktree(plan.slug, readDocument(await Bun.file(plan.document).text()).fields.get("branch")!, process.cwd());
+  await cards.printPrompt({ ...context, plan: await finishAmend(deck, await writeRecord(plan, { pending: { verb: "amend" } })) });
+}
+
+/**
+ * Finishes `card amend` in Bounced or Stopped from what its record holds: the
+ * card in flight is settled, its work discarded, and the plan recorded in
+ * Cards. Since the amend was recorded first, a death after the discard never
+ * leaves a Bounced plan whose session `card resume` would resume on a tree it
+ * did not leave.
+ */
+export async function finishAmend(deck: Deck, plan: Plan): Promise<Plan> {
   const { plan: settled } = await settle(deck, plan);
-  await cards.printPrompt({ ...context, plan: await writeRecord(settled, { state: "Cards", bounce: null }) });
+  return writeRecord(settled, { state: "Cards", bounce: null, pending: null });
 }

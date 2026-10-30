@@ -4,7 +4,7 @@ import path from "node:path";
 import { readCard } from "../src/cardfile.ts";
 import { createDeck, locate } from "../src/deck.ts";
 import { citedIds } from "../src/id.ts";
-import { appendRecord, closeCard, fileCard, listCards, reopenCard } from "../src/operations.ts";
+import { appendRecord, closeCard, fileCard, fileCardAs, listCards, reopenCard } from "../src/operations.ts";
 import { clearCardRoot, removeTempDirs, tempRepo } from "./helpers.ts";
 
 beforeEach(clearCardRoot);
@@ -159,11 +159,21 @@ test("reopening drops the frontmatter close opened, once removing closed: leaves
   );
 });
 
-test("reopening refuses a card that is open, and one that is nowhere", async () => {
+test("reopening a card already open leaves it as it is, removes a copy a reopen left in closed/, and refuses a card that is nowhere", async () => {
   const deck = await createDeck(await tempRepo(), "proj");
-  await Bun.write(path.join(deck.openDir, "proj-behilo.md"), "# Open\n\nBody.\n");
+  const open = path.join(deck.openDir, "proj-behilo.md");
+  const closed = path.join(deck.closedDir, "proj-behilo.md");
+  await Bun.write(open, "# Open\n\nBody.\n");
 
-  await expect(reopenCard(deck, "proj-behilo")).rejects.toThrow(/proj-behilo is already open/);
+  await reopenCard(deck, "proj-behilo");
+  expect(await Bun.file(open).text()).toBe("# Open\n\nBody.\n");
+
+  // Whole in both, as a reopen that died before its unlink leaves it.
+  await Bun.write(closed, "---\nclosed: done\n---\n\n# Open\n\nBody.\n");
+  await reopenCard(deck, "proj-behilo");
+  expect(await Bun.file(open).text()).toBe("# Open\n\nBody.\n");
+  expect(await Bun.file(closed).exists()).toBe(false);
+
   await expect(reopenCard(deck, "proj-nosuch")).rejects.toThrow(/no card proj-nosuch/);
 });
 
@@ -222,4 +232,15 @@ test("a record section's `# ` line is appended as a `## ` line", async () => {
   await appendRecord(deck, "proj-behilo", "Account", "Did it.\n# Not a headline\n");
 
   expect(await Bun.file(file).text()).toBe("# The card\n\nBody.\n\n## Account\n\nDid it.\n## Not a headline\n");
+});
+
+test("filing under a drawn id a card already holds in closed/ counts as filed, and files no second copy in open/", async () => {
+  const deck = await createDeck(await tempRepo(), "proj");
+  const card = { labels: [], blockedBy: [], headline: "Drafted", body: "Body.\n" };
+  await fileCardAs(deck, "proj-behilo", card);
+  await closeCard(deck, "proj-behilo", "declined", "Not now.");
+
+  await fileCardAs(deck, "proj-behilo", card);
+  expect(await Bun.file(path.join(deck.openDir, "proj-behilo.md")).exists()).toBe(false);
+  expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toContain("closed: declined\n");
 });
