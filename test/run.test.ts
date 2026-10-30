@@ -1680,6 +1680,37 @@ test(
   SLOW,
 );
 
+test(
+  "a finding a reviewer gave with its revision takes in no later approval's finding under its headline: the card lands and both are filed, each once, the second with its new text",
+  async () => {
+    const { repo, deck, plan, first, base } = await inCheck();
+    const control = stand(["pi"]);
+    const restated = { ...GOODBYE, body: "The greeting has no farewell, and the README promises one." };
+    const revision: Reply = { answer: JSON.stringify({ outcome: "revision", feedback: "Not yet.", findings: [GOODBYE] }) };
+    queue(
+      control,
+      [proceed()],
+      [done("printf 'hello\\n' > hello.txt"), done()],
+      [revision],
+      [landing("approved", [restated])],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the run to end", () => !running(record(plan.dir).run!.pid));
+
+    expect(record(plan.dir).state).toBe("Ended");
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan"]);
+    expect(record(plan.dir).findings.map(({ role, card }) => ({ role, card }))).toEqual([
+      { role: "reviewer", card: first },
+      { role: "reviewer", card: first },
+    ]);
+    expect(openHeaded(deck, GOODBYE.headline).sort()).toEqual([filedFinding(first, GOODBYE), filedFinding(first, restated)].sort());
+  },
+  SLOW,
+);
+
 // Every step a cycle can record, with the role that answers it, so a step
 // added without a role to resume fails the type check, and one added without
 // a resume path fails the test below.

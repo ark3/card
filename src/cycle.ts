@@ -19,7 +19,7 @@ import { headSha } from "./git.ts";
 import { type Answering, type Check, correct, type Harness, launch, resume, RoleFailure, type Session } from "./harness.ts";
 import { citedIds } from "./id.ts";
 import { addedLines, changedSince, CommitRefused, discard, land, snapshot, uncommittedDiff, undoMovedHead } from "./landing.ts";
-import { appendRecord, closeCard, drawIds, dropUnlanded, fileCard, fileCardAs, toolWrittenChanges } from "./operations.ts";
+import { appendRecord, closeCard, drawIds, dropUnlanded, fileCardAs, toolWrittenChanges } from "./operations.ts";
 import { fill } from "./payload.ts";
 import { type Plan, writeRecord } from "./plan.ts";
 
@@ -69,13 +69,17 @@ export type Cycle = {
   subject?: string;
   note?: string;
   /**
-   * The findings of the reviewer's `approved` and `fixed` answers, recorded
-   * as each is read and merged by headline, so a cycle that never lands
-   * still has them to file where `settle` abandons it. Each takes the id of
-   * its card, drawn and recorded before the card is written, once filing
-   * begins; one whose id the plan's `findings` holds is filed.
+   * Every finding of the cycle's answers, each with the role that gave it,
+   * so a filing that dies partway is finished by `settle` under the same
+   * ids. A finding takes the id of its card, drawn and recorded before the
+   * card is written, once its filing begins: at once for every answer but
+   * a reviewer's `approved` or `fixed`, whose findings are recorded as each
+   * is read and merged by headline until the landing or `settle` files
+   * them, so a cycle that never lands still has them to file. One whose id
+   * the plan's `findings` holds is filed. A finding recorded before the role
+   * was is the reviewer's.
    */
-  held?: (Finding & { id?: string })[];
+  held?: (Finding & { role?: Role; id?: string })[];
   /** The card's commit, recorded once it lands and before the card closes. */
   commit?: string;
   /**
@@ -396,15 +400,22 @@ async function referenceChecked(
 
 /**
  * The findings `held` with `findings` merged in by exact headline: a held
- * finding takes the body of a later one under its headline, a finding under
- * a new headline is added, and a held one `findings` omits stays.
+ * finding not yet numbered takes the body of a later one under its headline,
+ * a finding under any other headline is added, and a held one `findings`
+ * omits stays. A numbered one, whose filing has begun, takes nothing in, so
+ * a later finding under its headline is filed as a card of its own.
  */
-function merged(held: Finding[], findings: Finding[]): Finding[] {
+function merged(held: NonNullable<Cycle["held"]>, findings: Finding[]): NonNullable<Cycle["held"]> {
+  const open = held.filter(({ id }) => id === undefined);
   const kept = held.map((finding) => {
+    if (finding.id !== undefined) return finding;
     const later = findings.findLast(({ headline }) => headline === finding.headline);
     return later === undefined ? finding : { ...finding, body: later.body };
   });
-  return [...kept, ...findings.filter(({ headline }) => !held.some((finding) => finding.headline === headline))];
+  const added = findings
+    .filter(({ headline }) => !open.some((finding) => finding.headline === headline))
+    .map(({ headline, body }) => ({ headline, body, role: "reviewer" as const }));
+  return [...kept, ...added];
 }
 
 /**
@@ -418,26 +429,44 @@ function findingCard(plan: Plan, role: Role, card: string, { headline, body }: F
 }
 
 /**
- * Files each finding in `answer`, from the role `role` working the card
- * `card`, through deck's filing function into `open/`, as `findingCard`
- * makes it, so it waits and no run picks it up. Each is recorded in the
- * plan's state as it is filed, for the end of the plan.
+ * Files each finding in `answer`, from the role `role` working the plan's
+ * cycle's card, into `open/`, as `findingCard` makes it, so it waits and no
+ * run picks it up. The ids are drawn and recorded in the cycle's `held`
+ * before any card is written, and the cards are filed as `fileNumbered`
+ * files them, so a filing that died partway is finished by `settle`.
  */
-async function fileFindings(deck: Deck, plan: Plan, role: Role, card: string, answer: Answer): Promise<Plan> {
-  for (const finding of (answer.findings ?? []) as Finding[]) {
-    const id = await fileCard(deck, findingCard(plan, role, card, finding));
-    plan = await writeRecord(plan, { findings: [...plan.findings, { id, role, card }] });
+async function fileFindings(deck: Deck, plan: Plan, role: Role, answer: Answer): Promise<Plan> {
+  const findings = (answer.findings ?? []) as Finding[];
+  if (findings.length === 0) return plan;
+  const ids = await drawIds(deck, findings.length);
+  const cycle = plan.cycle!;
+  const numbered = findings.map(({ headline, body }, index) => ({ headline, body, role, id: ids[index]! }));
+  plan = await writeRecord(plan, { cycle: { ...cycle, held: [...(cycle.held ?? []), ...numbered] } });
+  return fileNumbered(deck, plan);
+}
+
+/**
+ * Files each finding the plan's cycle holds that is numbered and not filed
+ * yet, and returns the plan with each recorded in its `findings`. A card
+ * already under its id is passed over, so a filing that died partway files
+ * under the same ids when run again, and nothing is filed twice.
+ */
+async function fileNumbered(deck: Deck, plan: Plan): Promise<Plan> {
+  const cycle = plan.cycle!;
+  for (const { id, role = "reviewer", ...finding } of cycle.held ?? []) {
+    if (id === undefined || plan.findings.some((filed) => filed.id === id)) continue;
+    await fileCardAs(deck, id, findingCard(plan, role, cycle.card, finding));
+    plan = await writeRecord(plan, { findings: [...plan.findings, { id, role, card: cycle.card }] });
   }
   return plan;
 }
 
 /**
- * Files each finding the plan's cycle holds from its reviewer that is not
- * filed yet, as `fileFindings` files one, and returns the plan with each
- * recorded in its `findings`. The ids are drawn and recorded in the cycle
- * before any card is written, and a card already under its id is passed
- * over, so a filing that died partway files under the same ids when run
- * again, and nothing is filed twice.
+ * Files every finding the plan's cycle holds that is not filed yet, those of
+ * its reviewer's landing answers included, as `fileFindings` files one, and
+ * returns the plan with each recorded in its `findings`. The ids of those
+ * not yet numbered are drawn and recorded in the cycle before any card is
+ * written, then `fileNumbered` files them.
  */
 export async function fileHeld(deck: Deck, plan: Plan): Promise<Plan> {
   const cycle = plan.cycle;
@@ -448,13 +477,7 @@ export async function fileHeld(deck: Deck, plan: Plan): Promise<Plan> {
     const held = cycle.held.map((finding) => (finding.id === undefined ? { ...finding, id: ids.shift()! } : finding));
     plan = await writeRecord(plan, { cycle: { ...cycle, held } });
   }
-  for (const finding of plan.cycle!.held!) {
-    const id = finding.id!;
-    if (plan.findings.some((filed) => filed.id === id)) continue;
-    await fileCardAs(deck, id, findingCard(plan, "reviewer", cycle.card, finding));
-    plan = await writeRecord(plan, { findings: [...plan.findings, { id, role: "reviewer", card: cycle.card }] });
-  }
-  return plan;
+  return fileNumbered(deck, plan);
 }
 
 async function cardPath(deck: Deck, id: string): Promise<string> {
@@ -685,14 +708,14 @@ async function cycleFrom(
       return { plan, outcome: "stopped", role, session: session(role), cause: error.message };
     }
     if (sha === "") {
-      plan = await fileFindings(deck, plan, role, id, answer);
+      plan = await fileFindings(deck, plan, role, answer);
     } else {
       // The reviewer's, merged from every answer the cycle held, and before
       // its commit is recorded, so a run dying between the two is carried on
       // through `settle`, which finds them filed.
       plan = await fileHeld(deck, plan);
-      cycle = plan.cycle!;
     }
+    cycle = plan.cycle!;
 
     // On every answer the reconciler gives, before any outcome's branch acts on it.
     if (step === "reconcile" || step === "converse") {

@@ -35,9 +35,10 @@ export async function endRun(deck: Deck, plan: Plan): Promise<Plan> {
  * Settles the card that was in flight when the run ended, from what the state
  * records, and returns the plan, with any record written under the state it
  * holds, and the worktree it holds. Every abandoned cycle is discarded here,
- * so the findings its reviewer's landing answers left recorded and not yet
- * filed are filed here, as the landing would have filed them, and none the
- * landing or an earlier settling filed is filed again.
+ * so the findings it left recorded and not yet filed are filed here: those
+ * of its reviewer's landing answers, as the landing would have filed them,
+ * and those of any role whose filing died partway, under the ids recorded
+ * for them; none the cycle or an earlier settling filed is filed again.
  */
 export async function settle(deck: Deck, plan: Plan): Promise<{ plan: Plan; tree: string }> {
   // `card approve` made the branch and the worktree, which is returned as it stands.

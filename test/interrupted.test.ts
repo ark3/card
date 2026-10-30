@@ -6,7 +6,7 @@ import { type Cycle, fileHeld } from "../src/cycle.ts";
 import { createDeck, type Deck } from "../src/deck.ts";
 import { gitOrThrow } from "../src/git.ts";
 import { ensureBranch, holdWorktree, land } from "../src/landing.ts";
-import { closeCard, fileCard } from "../src/operations.ts";
+import { closeCard, drawIds, fileCard, fileCardAs } from "../src/operations.ts";
 import { startPlan, writeRecord } from "../src/plan.ts";
 import { clearCardRoot, queue, removeTempDirs, stand, tempRepo } from "./helpers.ts";
 
@@ -471,6 +471,100 @@ test("a run that died after its landing filed the reviewer's findings and before
     "open - Nothing says goodbye, 0 close notes, 0 promotions",
   ]);
 }, 30_000);
+
+// A finding an implementer gave with its account.
+const FAREWELL = { headline: "Nothing says farewell", body: "The greeting has no farewell." };
+
+/**
+ * The plan Running with a dead run, as a run dies partway through filing an
+ * implementer's finding: its id drawn and recorded in the cycle, and its card
+ * not yet written, or written where `written` and not yet in the plan's
+ * findings.
+ */
+async function diedFiling(written: boolean) {
+  const { repo, deck, plan, file } = await greeting();
+  const first = await file("Add the greeting");
+  const final = await file("Check the plan");
+  await ensureBranch("plan/greeting", "main", repo);
+  const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+  writeFileSync(path.join(tree, "hello.txt"), "hello\n");
+  const base = (await gitOrThrow(["rev-parse", "main"], repo)).trim();
+  const [id] = (await drawIds(deck, 1)) as [string];
+  const cycle: Cycle = {
+    card: first,
+    base,
+    role: "implementer",
+    step: "implement",
+    sessions: { reconciler: crypto.randomUUID(), implementer: crypto.randomUUID() },
+    rounds: 0,
+    exchanges: 0,
+    held: [{ ...FAREWELL, role: "implementer", id }],
+  };
+  if (written) {
+    const body = `Filed by the implementer of ${first}, in the plan ${plan.slug}.\n\n${FAREWELL.body}`;
+    await fileCardAs(deck, id, { labels: [], blockedBy: [], headline: FAREWELL.headline, body });
+  }
+  await writeRecord(plan, { state: "Running", placeholder: false, cards: [first, final], final, harness: "pi", run: await deadRun(), cycle });
+  return { repo, deck, plan, first, id };
+}
+
+for (const written of [false, true]) {
+  const death = written ? "after writing its card and before listing it" : "after recording its id and before writing its card";
+
+  test(`a run that died filing an implementer's finding ${death} is carried on by bare card, which lists the finding once under its recorded id, one card carrying it`, async () => {
+    const { repo, deck, plan, first, id } = await diedFiling(written);
+
+    // The carried-on run's reconciler stops it, so it writes nothing more once it bounces.
+    const outer = process.env.PATH;
+    try {
+      const control = stand(["pi"]);
+      queue(control, [{ answer: JSON.stringify({ outcome: "stop", cause: "intent", question: "Is a greeting wanted?" }) }]);
+      const carried = await card([], repo);
+      expect(carried.stderr).toBe("");
+      expect(carried.code).toBe(0);
+      const state = path.join(plan.dir, "state.json");
+      for (const deadline = Date.now() + 20_000; JSON.parse(readFileSync(state, "utf8")).state !== "Bounced"; await Bun.sleep(50)) {
+        if (Date.now() > deadline) throw new Error("timed out waiting for the carried-on run to bounce");
+      }
+    } finally {
+      process.env.PATH = outer;
+    }
+
+    const record = JSON.parse(readFileSync(path.join(plan.dir, "state.json"), "utf8"));
+    expect(record.findings).toEqual([{ id, role: "implementer", card: first }]);
+    expect((await snapshot({ repo, deck, args: [] })).cards.filter((line) => line.includes(FAREWELL.headline))).toEqual([
+      "open - Nothing says farewell, 0 close notes, 0 promotions",
+    ]);
+  }, 30_000);
+
+  test(`a run that died filing an implementer's finding ${death} is stopped by card stop, which lists the finding once under its recorded id, one card carrying it`, async () => {
+    const { repo, deck, plan, first, id } = await diedFiling(written);
+
+    const stopping = await card(["stop"], repo);
+    expect(stopping.stderr).toBe("");
+    expect(stopping.code).toBe(0);
+
+    const record = JSON.parse(readFileSync(path.join(plan.dir, "state.json"), "utf8"));
+    expect(record.state).toBe("Stopped");
+    expect(record.findings).toEqual([{ id, role: "implementer", card: first }]);
+    expect((await snapshot({ repo, deck, args: [] })).cards.filter((line) => line.includes(FAREWELL.headline))).toEqual([
+      "open - Nothing says farewell, 0 close notes, 0 promotions",
+    ]);
+  });
+
+  test(`a run that died filing an implementer's finding ${death} is dropped by card drop, which leaves the finding one waiting card under its recorded id`, async () => {
+    const { repo, deck, first, id } = await diedFiling(written);
+
+    const dropping = await card(["drop"], repo);
+    expect(dropping.stderr).toBe("");
+    expect(dropping.code).toBe(0);
+
+    const { plans, cards } = await snapshot({ repo, deck, args: [] });
+    expect(plans).toEqual([]);
+    expect(cards.filter((line) => line.includes(FAREWELL.headline))).toEqual(["open - Nothing says farewell, 0 close notes, 0 promotions"]);
+    expect(readFileSync(path.join(deck.openDir, `${id}.md`), "utf8")).toContain(`Filed by the implementer of ${first}, in the plan greeting.`);
+  });
+}
 
 test("card done refuses a drafted card it could not write before it writes anything, so fixing the draft and running card done again files every card once", async () => {
   const fixture = await drafted();
