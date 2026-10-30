@@ -190,8 +190,12 @@ export async function finishDrop(
     const tree = settles ? await holdWorktree(dropped.slug, branch, process.cwd()) : await worktreeOf(dropped.slug, branch, process.cwd());
     if (tree !== null) {
       if (settles) dropped = (await settle(deck, dropped)).plan;
+      // Forced: work the owner left in the tree refused the drop before it
+      // was recorded, so what the tree holds now was written after the
+      // owner decided, and goes with the plan. A lock, the owner's own
+      // explicit act, still refuses.
       try {
-        await removeWorktree(tree);
+        await removeWorktree(tree, { force: true });
       } catch (error) {
         throw new Error(
           `the drop of the plan \`${plan.slug}\` is recorded, but git would not remove its worktree: ${(error as Error).message}\nOnce git can remove it, the next run of card finishes the drop.`,

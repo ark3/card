@@ -250,10 +250,14 @@ export async function unremovable(tree: string): Promise<string> {
   return gitOrThrow(["status", "--porcelain", "--ignore-submodules=none"], tree);
 }
 
-/** Removes the plan's worktree, keeping its branch. */
-export async function removeWorktree(tree: string): Promise<void> {
+/**
+ * Removes the plan's worktree, keeping its branch. With `force`, modified
+ * and untracked files in it go too, but a worktree locked with `git worktree
+ * lock` still refuses, since a lock is its owner's explicit act.
+ */
+export async function removeWorktree(tree: string, { force = false } = {}): Promise<void> {
   // Run from the repository root, not from inside the tree being removed.
   const { root } = await firstListed(tree);
-  await gitOrThrow(["worktree", "remove", tree], root);
+  await gitOrThrow(["worktree", "remove", ...(force ? ["--force"] : []), tree], root);
   wrote();
 }

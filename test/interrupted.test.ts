@@ -252,6 +252,21 @@ test("a card done that died once recorded, its drafts then deleted, is finished 
   expect(plan!.record).toMatchObject({ state: "Check", cards: ["Add the greeting", "Add a farewell", "Check the plan"], pending: false });
 });
 
+test("a drop that died once recorded, an untracked file then written into its worktree, is finished all the same: bare card finds the plan gone, its cards closed declined once, and no plan held", async () => {
+  const fixture = await afterRun("Stopped");
+  expect((await card(fixture.args, fixture.repo, 1)).code).toBe(137);
+  const tree = path.join(fixture.repo, ".worktrees", "greeting");
+  writeFileSync(path.join(tree, "scratch.txt"), "written after the death\n");
+
+  const bare = await card([], fixture.repo);
+  expect(bare.stderr).not.toContain("finishing it failed");
+  expect(bare.code).toBe(0);
+  const { plans, cards } = await snapshot(fixture);
+  expect(plans).toEqual([]);
+  expect(cards).toEqual(["closed declined Add the greeting, 1 close notes, 0 promotions", "closed declined Check the plan, 1 close notes, 0 promotions"]);
+  expect(existsSync(tree)).toBe(false);
+});
+
 test("a drop git refuses once recorded holds that plan alone: another plan and decline go on, and the drop finishes on the first card run once git can remove the worktree", async () => {
   const fixture = await afterRun("Stopped");
   const { repo, deck } = fixture;
