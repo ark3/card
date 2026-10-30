@@ -225,17 +225,50 @@ export async function renamePlan(deck: Deck, from: Plan, slug: string): Promise<
 }
 
 /**
- * The waiting cards: every card in `open/` that no plan's order lists and no
- * plan has joined, since a join is the owner's decision already made, and
- * listing its card as waiting would offer it to a second plan. Cards in
- * `except` are left out as well. Prints the deck's disrepair to stderr.
+ * The waiting cards `plan` asks after, or with no plan bare `card` lists:
+ * every card in `open/` whose standing leaves a command open on it, with
+ * those commands. Prints the deck's disrepair to stderr.
  */
-export async function waitingCards(deck: Deck, except: string[] = []): Promise<Listed[]> {
+export async function waitingCards(deck: Deck, plan: Plan | null = null): Promise<(Listed & Standing)[]> {
   const { listed, warnings } = await listCards(deck, "open", []);
   for (const warning of warnings) console.error(`card: ${warning}`);
-  const taken = new Set(except);
-  for (const other of await listPlans(deck)) for (const id of [...other.cards, ...other.joins]) taken.add(id);
-  return listed.filter(({ id }) => !taken.has(id));
+  const plans = await listPlans(deck);
+  return listed.map((each) => ({ ...each, ...standing(each.id, each.card, plans, plan) })).filter(({ commands }) => commands.length > 0);
+}
+
+/**
+ * How the owner settled a card, null while it waits, and the commands bare
+ * `card` offers on it, each command's words after `card`.
+ */
+export type Standing = { settled: string | null; commands: string[] };
+
+/**
+ * How a card stands, for `plan` or for no plan at all. In order: closed,
+ * with its outcome; held by a plan, in its order or joined to it, since a
+ * join is the owner's decision already made and listing the card would offer
+ * it to a second plan, and since every settling verb refuses a card a plan
+ * holds, ahead of a draft whose key that refusal would keep from being
+ * recorded; drafted for promotion and awaiting its key, which outranks
+ * `plan`'s later, since `promote` writes no plan's record and the key is
+ * still to be recorded; left for later by `plan`, whose sessions have the
+ * owner's answer already; and otherwise waiting. Every listing of waiting
+ * cards and every settled line reads this, so no two disagree on a card.
+ */
+export function standing(id: string, card: Card, plans: Plan[], plan: Plan | null): Standing {
+  if (card.closed !== undefined) return { settled: `closed ${card.closed}`, commands: [] };
+  const taker = plans.find((other) => other.cards.includes(id) || other.joins.includes(id));
+  if (taker !== undefined) return { settled: `joined the plan \`${taker.slug}\``, commands: [] };
+  if (awaitingKey(card)) return { settled: "drafted for promotion, awaiting its key", commands: [`promote ${id} --key <KEY>`] };
+  if (plan?.later.includes(id)) return { settled: "left for later", commands: [] };
+  // The Cards stage's prompt offers the two verbs that decide on the plan's
+  // intent; Ended's offers every way to settle a finding.
+  const commands =
+    plan === null
+      ? [`decline ${id}`, `promote ${id}`]
+      : plan.state === "Ended"
+        ? [`join ${id}`, `later ${id}`, `decline ${id}`, `promote ${id}`]
+        : [`join ${id}`, `later ${id}`];
+  return { settled: null, commands };
 }
 
 /**
@@ -250,10 +283,9 @@ export function awaitingKey(card: Card): boolean {
 
 /**
  * The waiting cards for the owner, each with its id and headline and the
- * commands that settle it beside it, `settle` giving each command's words
- * after `command`.
+ * commands open on it beside it.
  */
-export function listWaiting(listed: Listed[], command: string, settle: (id: string, card: Card) => string[]): string {
-  const lines = listed.map(({ id, card }) => `${id}  ${card.headline}\n${settle(id, card).map((words) => `  ${command} ${words}\n`).join("")}`);
+export function listWaiting(listed: (Listed & Standing)[], command: string): string {
+  const lines = listed.map(({ id, card, commands }) => `${id}  ${card.headline}\n${commands.map((words) => `  ${command} ${words}\n`).join("")}`);
   return `Cards waiting in no plan, which no run picks up:\n\n${lines.join("\n")}`;
 }

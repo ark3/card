@@ -10,39 +10,23 @@ import { holdWorktree, removeWorktree } from "./landing.ts";
 import { closeCard, reopenCard } from "./operations.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
-import { awaitingKey, type Context, listPlans, type Plan, writeRecord } from "./plan.ts";
+import { type Context, listPlans, type Plan, type Standing, standing, writeRecord } from "./plan.ts";
 import { named } from "./reports.ts";
 
 // What `closeCard` writes above a close note.
 const CLOSE_NOTE = "\n## Close note\n\n";
 
 /**
- * Each finding the run filed, with its headline and how the owner settled it:
- * closed with its outcome, joined to another plan, drafted for promotion and
- * awaiting its key, or left for later; null while it is unsettled. A join to
- * another plan is the owner's decision already made, and every settling verb
- * refuses a card another plan holds, so it settles the finding here, ahead of
- * a draft whose key that refusal would keep from being recorded. `awaiting`
- * is the third.
+ * Each finding the run filed, with its headline, how the owner settled it,
+ * null while it is unsettled, and the commands open on it, as `standing`
+ * has them for this plan.
  */
-async function findings(deck: Deck, plan: Plan): Promise<{ id: string; role: Role; headline: string; settled: string | null; awaiting: boolean }[]> {
-  const others = (await listPlans(deck)).filter((other) => other.slug !== plan.slug);
+async function findings(deck: Deck, plan: Plan): Promise<({ id: string; role: Role; headline: string } & Standing)[]> {
+  const plans = await listPlans(deck);
   return Promise.all(
     plan.findings.map(async ({ id, role }) => {
-      const found = (await locate(deck, id))!;
-      const card = await readCard(found.path);
-      const taker = found.closed ? undefined : others.find((other) => other.cards.includes(id) || other.joins.includes(id));
-      const awaiting = !found.closed && taker === undefined && awaitingKey(card);
-      const settled = found.closed
-        ? `closed ${card.closed}`
-        : taker !== undefined
-          ? `joined the plan \`${taker.slug}\``
-          : awaiting
-            ? "drafted for promotion, awaiting its key"
-            : plan.later.includes(id)
-              ? "left for later"
-              : null;
-      return { id, role, headline: card.headline, settled, awaiting };
+      const card = await readCard((await locate(deck, id))!.path);
+      return { id, role, headline: card.headline, ...standing(id, card, plans, plan) };
     }),
   );
 }
@@ -68,10 +52,9 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
   const branch = await branchOf(plan);
   // `card approve` made the worktree, which is returned as it stands.
   const tree = await holdWorktree(plan.slug, branch, process.cwd());
-  const listed = (await findings(deck, plan)).map(({ id, role, headline, settled, awaiting }) =>
-    settled === null
-      ? `${id}  ${headline}\n  filed by the ${role}\n  ${command} join ${id}\n  ${command} later ${id}\n  ${command} decline ${id}\n  ${command} promote ${id}\n`
-      : `${id}  ${headline}\n  filed by the ${role}, ${settled}\n${awaiting ? `  ${command} promote ${id} --key <KEY>\n` : ""}`,
+  const listed = (await findings(deck, plan)).map(
+    ({ id, role, headline, settled, commands }) =>
+      `${id}  ${headline}\n  filed by the ${role}${settled === null ? "" : `, ${settled}`}\n${commands.map((words) => `  ${command} ${words}\n`).join("")}`,
   );
   const filed =
     listed.length > 0

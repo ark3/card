@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 import * as bounced from "./bounced.ts";
-import type { Card } from "./cardfile.ts";
 import { createDeck, type Deck, DEFAULT_PREFIX, locate, requireDeck, resolveDeck } from "./deck.ts";
 import * as cards from "./cards.ts";
 import * as check from "./check.ts";
@@ -9,7 +8,7 @@ import * as document from "./document.ts";
 import * as ended from "./ended.ts";
 import { undoReopen } from "./operations.ts";
 import { forOwner } from "./owner.ts";
-import { awaitingKey, type Context, listPlans, listWaiting, type Plan, refuseSlug, startPlan, type State, waitingCards } from "./plan.ts";
+import { type Context, listPlans, listWaiting, type Plan, refuseSlug, startPlan, type State, waitingCards } from "./plan.ts";
 import * as reports from "./reports.ts";
 import * as stopped from "./stopped.ts";
 
@@ -94,8 +93,7 @@ function openCommands(plan: Plan, command: string): string {
 async function printWaiting(deck: Deck, command: string): Promise<void> {
   const listed = await waitingCards(deck);
   if (listed.length === 0) return;
-  const settle = (id: string, card: Card) => (awaitingKey(card) ? [`promote ${id} --key <KEY>`] : [`decline ${id}`, `promote ${id}`]);
-  process.stdout.write(forOwner(listWaiting(listed, command, settle)));
+  process.stdout.write(forOwner(listWaiting(listed, command)));
 }
 
 /**

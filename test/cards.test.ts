@@ -266,6 +266,18 @@ test("bare card in Cards lists a waiting card awaiting its key with the --key fo
   expect(owner).not.toContain(`card later ${id}`);
 });
 
+test("bare card in Cards lists a card left for later and then drafted for promotion with the --key form", async () => {
+  const { repo, deck } = await inCards();
+  const id = await fileCard(deck, finding("A finding left for later, then promoted"));
+  expect((await card(["later", id], repo)).code).toBe(0);
+  expect((await card(["promote", id], repo, "A clean draft.\n")).code).toBe(0);
+
+  const result = await card([], repo);
+  expect(result.code).toBe(0);
+  const owner = result.stdout.slice(result.stdout.indexOf("<for_owner>\n"), result.stdout.indexOf("</for_owner>\n"));
+  expect(owner).toContain(`${id}  A finding left for later, then promoted\n  card promote ${id} --key <KEY>\n`);
+});
+
 test("card join and card later in Cards refuse a waiting card awaiting its key, naming the --key form, and leave the plan's record as it was", async () => {
   const { repo, deck, plan } = await inCards();
   const id = await fileCard(deck, finding("A finding drafted for promotion"));

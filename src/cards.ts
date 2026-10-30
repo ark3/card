@@ -40,8 +40,8 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
   // A card the owner put off for later is still waiting, for every other
   // plan, but this plan's sessions have the owner's answer already. One the
   // owner drafted for promotion is settled too, and lists only the command
-  // that records its key.
-  const waiting = await waitingCards(deck, plan.later);
+  // that records its key, even if this plan left it for later first.
+  const waiting = await waitingCards(deck, plan);
   const joined = await Promise.all(
     plan.joins.map(async (id) => {
       const file = path.join(deck.openDir, `${id}.md`);
@@ -57,7 +57,7 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
     DECK: deck.deckDir,
     WAITING_CARDS: forOwner(
       waiting.length > 0
-        ? listWaiting(waiting, command, (id, card) => (awaitingKey(card) ? [`promote ${id} --key <KEY>`] : [`join ${id}`, `later ${id}`]))
+        ? listWaiting(waiting, command)
         : "No waiting card is left for this plan to settle.\n",
     ).trimEnd(),
     JOINED_FINDINGS: joined.length > 0 ? joined.join("").trimEnd() : "No finding has joined this plan.",
