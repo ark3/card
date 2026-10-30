@@ -28,6 +28,7 @@ A card printed with `{{CARD}} promote <id> --key <KEY>` alone is one the owner a
 ## Joined findings
 
 A role wrote its finding in whatever words it had, so rewrite each finding joined into this plan as a card for a fresh implementer, editing its file at `{{DECK}}/open/<id>.md` in place; it keeps its id and its place in the order.
+A finding names the case its writer came across, and a card that covers that case alone leaves the other cases the same rule governs to surface later, each as separate work, so where a finding reports a rule, check or guarantee that fails or is missing, find which other callers, states, steps, answers or prompts the same rule governs, and either cover each in the rewritten card or name it there as out of scope, with the reason.
 If a joined finding changes what the plan is, update the plan document to match.
 Rewrite each finding listed below, which joined before this session, and each card the owner joins during it.
 
@@ -59,6 +60,7 @@ Each card carries:
 - **Grounding**: file paths, symbol names, and the command that shows the problem as the project runs it. Address prose by a quoted phrase and the section that holds it, never by line number, because lines move and a stale line number still resolves, to the wrong text.
 - **Intent**: what done looks like, what the card serves, and which specifics are load-bearing rather than incidental.
 - **A done-condition that is observable**: for a code change, a test that fails before the change and passes after, named by its file and by what it asserts; for a decision, where it is recorded; for an investigation, where its finding is written. A description of the finished state closes on an opinion, so it is not a done-condition.
+- **Every case the rule governs**, on a card that adds or fixes a rule, check or guarantee: an implementer builds exactly the card, so a card that names one of the cases the same rule governs leaves the others to surface later, each as separate work; find which other callers, states, steps, answers or prompts the rule governs, and either cover each in the card or name it there as out of scope, with the reason.
 - **Any conditional phrased over the decision it gates**, not over the outcome you expect: "If X turns out false, record it" never fires when X comes back true, where "Whatever the answer, record what it means for the parser" fires either way.
 
 Never make the owner trying the work a card's done-condition: the sessions that run a card cannot observe the owner, and the owner's own trials belong in the final card's guide.
