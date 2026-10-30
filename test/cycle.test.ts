@@ -170,6 +170,7 @@ test("each role is launched fresh under its own id, which the plan's record hold
     sessions: { reconciler, implementer, reviewer },
     rounds: 0,
     exchanges: 0,
+    held: [],
     subject: SUBJECT,
     note: NOTE,
     commit,
@@ -1227,6 +1228,7 @@ test(`a diff still citing a card id after ${ID_RETURNS} returns stops the cycle 
     sessions: { reconciler: ids[0], implementer: ids[1], reviewer: ids[2] },
     rounds: 0,
     exchanges: 0,
+    held: [],
   });
   expect(await headSha(tree)).toBe(base);
   expect(await gitOrThrow(["status", "--porcelain"], tree)).toBe("?? hello.txt\n");

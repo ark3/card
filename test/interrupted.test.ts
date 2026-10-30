@@ -2,13 +2,13 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseCard } from "../src/cardfile.ts";
-import type { Cycle } from "../src/cycle.ts";
+import { type Cycle, fileHeld } from "../src/cycle.ts";
 import { createDeck, type Deck } from "../src/deck.ts";
 import { gitOrThrow } from "../src/git.ts";
 import { ensureBranch, holdWorktree, land } from "../src/landing.ts";
 import { closeCard, fileCard } from "../src/operations.ts";
 import { startPlan, writeRecord } from "../src/plan.ts";
-import { clearCardRoot, removeTempDirs, tempRepo } from "./helpers.ts";
+import { clearCardRoot, queue, removeTempDirs, stand, tempRepo } from "./helpers.ts";
 
 const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
 // Each death is a fresh fixture and several runs of `card`.
@@ -28,7 +28,8 @@ async function card(args: string[], cwd: string, dieAfter?: number) {
   return { code: await proc.exited, stdout, stderr };
 }
 
-type Fixture = { repo: string; deck: Deck; args: string[] };
+/** A fixture, and the headline of a finding its verb files, where it files one. */
+type Fixture = { repo: string; deck: Deck; args: string[]; files?: string };
 
 /** A repository with a `proj` deck and the plan `greeting`, its document written, and a way to file a card in it. */
 async function greeting() {
@@ -60,7 +61,14 @@ async function inCards(): Promise<Fixture> {
   return { repo, deck, args: ["drop"] };
 }
 
-/** The plan Bounced at its first card, the bounced implementer's work left uncommitted in the worktree. */
+// A finding a reviewer gave with its approval, which its cycle holds.
+const GOODBYE = { headline: "Nothing says goodbye", body: "The greeting has no farewell." };
+
+/**
+ * The plan Bounced at its first card's land step, the work left uncommitted
+ * in the worktree, the reviewer having approved with a finding its cycle
+ * holds, not yet filed.
+ */
 async function bounced(verb: string): Promise<Fixture> {
   const { repo, deck, plan, file } = await greeting();
   const first = await file("Add the greeting");
@@ -70,10 +78,21 @@ async function bounced(verb: string): Promise<Fixture> {
   writeFileSync(path.join(tree, "hello.txt"), "half\n");
   const base = (await gitOrThrow(["rev-parse", "main"], repo)).trim();
   const session = { harness: "pi" as const, id: crypto.randomUUID(), dir: tree };
-  const cycle: Cycle = { card: first, base, role: "implementer", step: "implement", sessions: { implementer: session.id }, rounds: 0, exchanges: 0 };
-  const bounce = { role: "implementer" as const, session, cause: "usage limit reached" };
+  const cycle: Cycle = {
+    card: first,
+    base,
+    role: "reviewer",
+    step: "land",
+    sessions: { reviewer: session.id },
+    rounds: 0,
+    exchanges: 0,
+    held: [GOODBYE],
+    subject: "Add the greeting",
+    note: "Landed.",
+  };
+  const bounce = { role: "reviewer" as const, session, cause: "the host repository's hook still refused the commit after 2 returns" };
   await writeRecord(plan, { state: "Bounced", placeholder: false, cards: [first, final], final, harness: "pi", run: await deadRun(), cycle, bounce });
-  return { repo, deck, args: [verb] };
+  return { repo, deck, args: [verb], files: GOODBYE.headline };
 }
 
 /** The plan with a run on record, which reads Dead when `state` is Running, its worktree clean, both its cards open. */
@@ -161,6 +180,7 @@ async function snapshot({ repo, deck }: Fixture) {
               final: record.final === null ? null : named([record.final])[0],
               joins: named(record.joins),
               later: named(record.later),
+              findings: named(record.findings.map(({ id }: { id: string }) => id)),
               bounced: record.bounce !== null,
               pending: (record.pending ?? null) !== null,
             },
@@ -203,6 +223,9 @@ for (const [verb, setup, planVerb] of VERBS) {
       expect(run.code).toBe(0);
       const after = await snapshot(uninterrupted);
       expect(after).not.toEqual(before);
+      // Every retry ends as this does, so each files the finding once too.
+      const { files } = uninterrupted;
+      if (files !== undefined) expect(after.cards.filter((line) => line.includes(files))).toEqual([`open - ${files}, 0 close notes, 0 promotions`]);
 
       /** Kills the verb after its `writes`th write, unless it finishes first, and returns whether it died. */
       async function killed(fixture: Fixture, writes: number): Promise<boolean> {
@@ -400,6 +423,54 @@ test("a drop in Bounced whose worktree the owner removed by hand still settles t
     "closed done Add the greeting, 1 close notes, 0 promotions",
   ]);
 });
+
+test("a run that died after its landing filed the reviewer's findings and before the commit was recorded is carried on by bare card filing none of them twice", async () => {
+  const { repo, deck, plan, file } = await greeting();
+  const first = await file("Add the greeting");
+  const final = await file("Check the plan");
+  await ensureBranch("plan/greeting", "main", repo);
+  const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+  const base = (await gitOrThrow(["rev-parse", "main"], repo)).trim();
+  writeFileSync(path.join(tree, "hello.txt"), "hello\n");
+  await land("Add the greeting", "Landed.", tree);
+  const cycle: Cycle = {
+    card: first,
+    base,
+    role: "reviewer",
+    step: "land",
+    sessions: { reviewer: crypto.randomUUID() },
+    rounds: 0,
+    exchanges: 0,
+    held: [GOODBYE],
+    subject: "Add the greeting",
+    note: "Landed.",
+  };
+  // As the landing leaves the plan once the commit is made and its findings filed.
+  const landed = await fileHeld(deck, await writeRecord(plan, { state: "Running", placeholder: false, cards: [first, final], final, harness: "pi", run: await deadRun(), cycle }));
+  expect(landed.findings).toHaveLength(1);
+
+  // The carried-on run's reconciler stops it, so it writes nothing more once it bounces.
+  const outer = process.env.PATH;
+  try {
+    const control = stand(["pi"]);
+    queue(control, [{ answer: JSON.stringify({ outcome: "stop", cause: "intent", question: "Is a greeting wanted?" }) }]);
+    const carried = await card([], repo);
+    expect(carried.stderr).toBe("");
+    expect(carried.code).toBe(0);
+    const state = path.join(plan.dir, "state.json");
+    for (const deadline = Date.now() + 20_000; JSON.parse(readFileSync(state, "utf8")).state !== "Bounced"; await Bun.sleep(50)) {
+      if (Date.now() > deadline) throw new Error("timed out waiting for the carried-on run to bounce");
+    }
+  } finally {
+    process.env.PATH = outer;
+  }
+
+  const record = JSON.parse(readFileSync(path.join(plan.dir, "state.json"), "utf8"));
+  expect(record.findings).toEqual(landed.findings);
+  expect((await snapshot({ repo, deck, args: [] })).cards.filter((line) => line.includes(GOODBYE.headline))).toEqual([
+    "open - Nothing says goodbye, 0 close notes, 0 promotions",
+  ]);
+}, 30_000);
 
 test("card done refuses a drafted card it could not write before it writes anything, so fixing the draft and running card done again files every card once", async () => {
   const fixture = await drafted();

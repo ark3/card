@@ -24,7 +24,9 @@ Leave the worktree uncommitted, as before, because the tool makes the card's one
 
 ## Your answer
 
-When the ids are gone, answer `fixed`, with your subject as `subject`, your close note as `close_note` and your findings as `findings`, because this answer replaces your earlier one: the tool commits under this answer and files its findings, and files none from your earlier one.
+When the ids are gone, answer `fixed`, with your subject as `subject`, your close note as `close_note` and your findings as `findings`: the tool commits under this answer's subject and close note, which replace your earlier ones.
 Give the same subject and close note as before, changed only where one of them cites a card id, which neither may.
-Give the same findings as before, and add each finding you noticed while removing the ids, such as a defect on a line you may not edit, so that each finding reaches the owner once.
+The tool keeps every finding you gave in an earlier answer, whether or not you give it again in this one, and files each finding once.
+A finding you give under the same headline as an earlier one replaces that finding's earlier text, so keep a finding's headline as it was when you rewrite its body, because a finding under a new headline is filed as a new one, beside the earlier.
+Add each finding you noticed while removing the ids, such as a defect on a line you may not edit.
 Once you answer, the tool checks your subject, your close note and the lines the diff adds again, and it sends lines that still cite a card id back to you twice at most before it stops the run for the owner.

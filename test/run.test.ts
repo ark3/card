@@ -1480,6 +1480,150 @@ test(
   SLOW,
 );
 
+type Finding = { headline: string; body: string };
+const GOODBYE: Finding = { headline: "Nothing says goodbye", body: "The greeting has no farewell." };
+const README: Finding = { headline: "The README is stale", body: "It names no greeting." };
+
+/** A reviewer's answer for the first card under `outcome`, carrying `findings`. */
+function landing(outcome: "approved" | "fixed", findings: Finding[]): Reply {
+  return { answer: JSON.stringify({ outcome, subject: "Add the greeting", close_note: "Landed it.", findings }) };
+}
+
+/**
+ * A pre-commit hook in `repo` that refuses every commit, or only the first
+ * where `once`, and its path. It runs on the run's PATH, which holds no
+ * command but git and the stand-ins, so it uses only the shell's own.
+ */
+function refusingHook(repo: string, once = false): string {
+  const hook = path.join(repo, ".git", "hooks", "pre-commit");
+  const refuse = "echo 'the hook refuses' >&2; exit 1";
+  const marker = path.join(repo, ".git", "hook-refused");
+  writeFileSync(hook, `#!/bin/sh\n${once ? `[ -e '${marker}' ] && exit 0; : > '${marker}'; ` : ""}${refuse}\n`, { mode: 0o755 });
+  return hook;
+}
+
+/**
+ * Runs `inCheck`'s plan until a hook refusing every commit bounces it at the
+ * land step: the first card's reviewer approves with `findings`, answers each
+ * of the hook's two returns with `returned`, and then gives `resumed`, for a
+ * `card resume` to reach. Returns the hook.
+ */
+async function bounceAtLand(repo: string, plan: Plan, control: string, findings: Finding[], returned: Finding[], resumed: Reply[] = []) {
+  const hook = refusingHook(repo);
+  const reviewer = [landing("approved", findings), landing("fixed", returned), landing("fixed", returned), ...resumed];
+  queue(control, [proceed()], [done("printf 'hello\\n' > hello.txt")], reviewer, [proceed()], [done()], [approved("Check the plan")]);
+  expect((await card(["approve"], repo)).code).toBe(0);
+  await until("the run to end", () => !running(record(plan.dir).run!.pid));
+  expect(record(plan.dir)).toMatchObject({ state: "Bounced", cycle: { role: "reviewer", step: "land" } });
+  return hook;
+}
+
+/** The text of each card in `open/` headed `headline`. */
+function openHeaded(deck: Deck, headline: string): string[] {
+  return readdirSync(deck.openDir)
+    .map((name) => readFileSync(path.join(deck.openDir, name), "utf8"))
+    .filter((text) => text.startsWith(`# ${headline}\n`));
+}
+
+/** A finding as the first card's reviewer files it, a waiting card naming the reviewer, the card and the plan. */
+function filedFinding(first: string, { headline, body }: Finding): string {
+  return `# ${headline}\n\nFiled by the reviewer of ${first}, in the plan greeting.\n\n${body}\n`;
+}
+
+test(
+  "a finding a reviewer gave with its approval, bounced at the land step by a hook past its returns, is filed once by card amend, a waiting card the Cards stage lists, and the rerun after card done and card approve files it no second time",
+  async () => {
+    const { repo, deck, plan, first } = await inCheck();
+    const control = stand(["pi"]);
+    rmSync(await bounceAtLand(repo, plan, control, [GOODBYE], []));
+
+    const amending = await card(["amend"], repo);
+    expect(amending.stderr).toBe("");
+    expect(amending.code).toBe(0);
+    const [filed] = record(plan.dir).findings;
+    expect(record(plan.dir).findings).toEqual([{ id: filed!.id, role: "reviewer", card: first }]);
+    expect(amending.stdout).toContain(`${filed!.id}  ${GOODBYE.headline}\n`);
+    expect((await card(["done"], repo)).code).toBe(0);
+    queue(control, [proceed()], [done("printf 'hello\\n' > hello.txt")], [approved("Add the greeting")], [proceed()], [done()], [approved("Check the plan")]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the run to end", () => record(plan.dir).state !== "Running");
+
+    expect(record(plan.dir).state).toBe("Ended");
+    expect(record(plan.dir).findings).toEqual([filed]);
+    expect(openHeaded(deck, GOODBYE.headline)).toEqual([filedFinding(first, GOODBYE)]);
+  },
+  SLOW,
+);
+
+test(
+  "a finding a reviewer gave with its approval, bounced at the land step by a hook past its returns, is a waiting card once card drop has removed the plan",
+  async () => {
+    const { repo, deck, plan, first } = await inCheck();
+    const control = stand(["pi"]);
+    await bounceAtLand(repo, plan, control, [GOODBYE], []);
+
+    const dropping = await card(["drop"], repo);
+    expect(dropping.stderr).toBe("");
+    expect(dropping.code).toBe(0);
+    expect(await listPlans(deck)).toEqual([]);
+    const waiting = await waitingCards(deck);
+    expect(waiting.map(({ card }) => card.headline)).toEqual([GOODBYE.headline]);
+    expect(readFileSync(path.join(deck.openDir, `${waiting[0]!.id}.md`), "utf8")).toBe(filedFinding(first, GOODBYE));
+  },
+  SLOW,
+);
+
+test(
+  "a reviewer resumed at the land step whose landing answer omits one finding and restates another under its headline with new text files both once, the restated one with its new text",
+  async () => {
+    const { repo, deck, plan, first } = await inCheck();
+    const control = stand(["pi"]);
+    const restated = { ...README, body: "It names no greeting, and its example is wrong." };
+    const hook = await bounceAtLand(repo, plan, control, [GOODBYE, README], [GOODBYE, README], [landing("fixed", [restated])]);
+
+    rmSync(hook);
+    expect((await card(["resume"], repo)).code).toBe(0);
+    await until("the run to end", () => !running(record(plan.dir).run!.pid));
+
+    expect(record(plan.dir).state).toBe("Ended");
+    expect(record(plan.dir).findings.map(({ role, card }) => ({ role, card }))).toEqual([
+      { role: "reviewer", card: first },
+      { role: "reviewer", card: first },
+    ]);
+    expect(openHeaded(deck, GOODBYE.headline)).toEqual([filedFinding(first, GOODBYE)]);
+    expect(openHeaded(deck, README.headline)).toEqual([filedFinding(first, restated)]);
+  },
+  SLOW,
+);
+
+test(
+  "a card landing after one hook return whose answer restates the earlier findings files each once",
+  async () => {
+    const { repo, deck, plan, first, base } = await inCheck();
+    refusingHook(repo, true);
+    const control = stand(["pi"]);
+    queue(
+      control,
+      [proceed()],
+      [done("printf 'hello\\n' > hello.txt")],
+      [landing("approved", [GOODBYE, README]), landing("fixed", [GOODBYE, README])],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the run to end", () => !running(record(plan.dir).run!.pid));
+
+    expect(record(plan.dir).bounce).toBeNull();
+    expect(record(plan.dir).state).toBe("Ended");
+    expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan"]);
+    expect(record(plan.dir).findings).toHaveLength(2);
+    expect(openHeaded(deck, GOODBYE.headline)).toEqual([filedFinding(first, GOODBYE)]);
+    expect(openHeaded(deck, README.headline)).toEqual([filedFinding(first, README)]);
+  },
+  SLOW,
+);
+
 // Every step a cycle can record, with the role that answers it, so a step
 // added without a role to resume fails the type check, and one added without
 // a resume path fails the test below.

@@ -1,4 +1,5 @@
 import { startRun } from "./check.ts";
+import { fileHeld } from "./cycle.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { discard, holdWorktree } from "./landing.ts";
@@ -33,7 +34,10 @@ export async function endRun(deck: Deck, plan: Plan): Promise<Plan> {
 /**
  * Settles the card that was in flight when the run ended, from what the state
  * records, and returns the plan, with any record written under the state it
- * holds, and the worktree it holds.
+ * holds, and the worktree it holds. Every abandoned cycle is discarded here,
+ * so the findings its reviewer's landing answers left recorded and not yet
+ * filed are filed here, as the landing would have filed them, and none the
+ * landing or an earlier settling filed is filed again.
  */
 export async function settle(deck: Deck, plan: Plan): Promise<{ plan: Plan; tree: string }> {
   // `card approve` made the branch and the worktree, which is returned as it stands.
@@ -45,6 +49,7 @@ export async function settle(deck: Deck, plan: Plan): Promise<{ plan: Plan; tree
   // the card in flight, which reruns from the start of its cycle.
   const { cycle } = plan;
   await discard(tree, cycle?.commit ?? cycle?.base);
+  plan = await fileHeld(deck, plan);
   // By its commit, since a final card reopened by a join has landed once already.
   if (cycle?.commit !== undefined && !plan.landed.some(({ commit }) => commit === cycle.commit)) {
     // Its commit landed, so it closes from the reviewer's note, never committed again.

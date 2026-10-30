@@ -12,14 +12,14 @@ import review from "../payload/review.md" with { type: "text" };
 import revise from "../payload/revise.md" with { type: "text" };
 import stripIds from "../payload/strip-ids.md" with { type: "text" };
 import type { Answer, ObjectSchema, Schema } from "./answer.ts";
-import { escapePasted, refuseHeadline } from "./cardfile.ts";
+import { type Card, escapePasted, refuseHeadline } from "./cardfile.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { headSha } from "./git.ts";
 import { type Answering, type Check, correct, type Harness, launch, resume, RoleFailure, type Session } from "./harness.ts";
 import { citedIds } from "./id.ts";
 import { addedLines, changedSince, CommitRefused, discard, land, snapshot, uncommittedDiff, undoMovedHead } from "./landing.ts";
-import { appendRecord, closeCard, dropUnlanded, fileCard, toolWrittenChanges } from "./operations.ts";
+import { appendRecord, closeCard, drawIds, dropUnlanded, fileCard, fileCardAs, toolWrittenChanges } from "./operations.ts";
 import { fill } from "./payload.ts";
 import { type Plan, writeRecord } from "./plan.ts";
 
@@ -68,6 +68,14 @@ export type Cycle = {
    */
   subject?: string;
   note?: string;
+  /**
+   * The findings of the reviewer's `approved` and `fixed` answers, recorded
+   * as each is read and merged by headline, so a cycle that never lands
+   * still has them to file where `settle` abandons it. Each takes the id of
+   * its card, drawn and recorded before the card is written, once filing
+   * begins; one whose id the plan's `findings` holds is filed.
+   */
+  held?: (Finding & { id?: string })[];
   /** The card's commit, recorded once it lands and before the card closes. */
   commit?: string;
   /**
@@ -307,7 +315,8 @@ const reviewed: Check = (answer: Answer) => {
  * The reviewer's answer when the landing sends it back for a card id or a
  * hook's refusal, or when a cycle that stopped at the land step is resumed:
  * its whole report again, under an outcome that lands, findings included,
- * since the answer that lands is the one whose findings are filed.
+ * which are merged by headline into the findings the cycle holds, so one it
+ * restates replaces its earlier text and one it omits is kept.
  */
 const LANDING: ObjectSchema = {
   type: "object",
@@ -343,9 +352,18 @@ function messageCites(answer: Answer, prefix: string): string | null {
  * reviewer under strip-ids.md with the offending lines quoted, to remove each
  * id as a small fix, and both checks run again on its answer. Each check
  * sends the reviewer back ID_RETURNS times, and its next failure throws
- * RoleFailure, quoting what still cites an id.
+ * RoleFailure, quoting what still cites an id. Each answer it sends back
+ * for is handed to `hold` as it is read, so its findings are recorded even
+ * where a later check fails.
  */
-async function referenceChecked(deck: Deck, reviewer: Answering, tree: string, base: string, answer: Answer): Promise<Answer> {
+async function referenceChecked(
+  deck: Deck,
+  reviewer: Answering,
+  tree: string,
+  base: string,
+  answer: Answer,
+  hold: (answer: Answer) => Promise<void>,
+): Promise<Answer> {
   let messageReturns = 0;
   let diffReturns = 0;
   for (;;) {
@@ -356,6 +374,7 @@ async function referenceChecked(deck: Deck, reviewer: Answering, tree: string, b
       }
       messageReturns++;
       answer = await correct(reviewer, cited, LANDING, reviewed);
+      await hold(answer);
       continue;
     }
     // A reviewer committing its fixes would otherwise hide them from the
@@ -371,22 +390,69 @@ async function referenceChecked(deck: Deck, reviewer: Answering, tree: string, b
     const ids = [...new Set(lines.flatMap((line) => citedIds(line, deck.prefix)))];
     const stripping = fill(stripIds, { LINES: lines.join("\n"), IDS: ids.map((id) => `\`${id}\``).join(", ") });
     answer = await resume(reviewer, stripping, LANDING, reviewed);
+    await hold(answer);
   }
 }
 
 /**
+ * The findings `held` with `findings` merged in by exact headline: a held
+ * finding takes the body of a later one under its headline, a finding under
+ * a new headline is added, and a held one `findings` omits stays.
+ */
+function merged(held: Finding[], findings: Finding[]): Finding[] {
+  const kept = held.map((finding) => {
+    const later = findings.findLast(({ headline }) => headline === finding.headline);
+    return later === undefined ? finding : { ...finding, body: later.body };
+  });
+  return [...kept, ...findings.filter(({ headline }) => !held.some((finding) => finding.headline === headline))];
+}
+
+/**
+ * The waiting card a finding from the role `role` working the card `card` is
+ * filed as: in no plan's order, with the role, the card and the plan on its
+ * body's first line and the body as `escapePasted` makes it, so no line of
+ * it cuts the new card's contract short.
+ */
+function findingCard(plan: Plan, role: Role, card: string, { headline, body }: Finding): Omit<Card, "closed"> {
+  return { labels: [], blockedBy: [], headline, body: `Filed by the ${role} of ${card}, in the plan ${plan.slug}.\n\n${escapePasted(body)}` };
+}
+
+/**
  * Files each finding in `answer`, from the role `role` working the card
- * `card`, through deck's filing function: into `open/` and in no plan's
- * order, so it waits and no run picks it up, with the role, the card and the
- * plan on its body's first line and the body as `escapePasted` makes it, so
- * no line of it cuts the new card's contract short. Each is recorded in the
+ * `card`, through deck's filing function into `open/`, as `findingCard`
+ * makes it, so it waits and no run picks it up. Each is recorded in the
  * plan's state as it is filed, for the end of the plan.
  */
 async function fileFindings(deck: Deck, plan: Plan, role: Role, card: string, answer: Answer): Promise<Plan> {
-  for (const { headline, body } of (answer.findings ?? []) as Finding[]) {
-    const filed = `Filed by the ${role} of ${card}, in the plan ${plan.slug}.\n\n${escapePasted(body)}`;
-    const id = await fileCard(deck, { labels: [], blockedBy: [], headline, body: filed });
+  for (const finding of (answer.findings ?? []) as Finding[]) {
+    const id = await fileCard(deck, findingCard(plan, role, card, finding));
     plan = await writeRecord(plan, { findings: [...plan.findings, { id, role, card }] });
+  }
+  return plan;
+}
+
+/**
+ * Files each finding the plan's cycle holds from its reviewer that is not
+ * filed yet, as `fileFindings` files one, and returns the plan with each
+ * recorded in its `findings`. The ids are drawn and recorded in the cycle
+ * before any card is written, and a card already under its id is passed
+ * over, so a filing that died partway files under the same ids when run
+ * again, and nothing is filed twice.
+ */
+export async function fileHeld(deck: Deck, plan: Plan): Promise<Plan> {
+  const cycle = plan.cycle;
+  if (cycle?.held === undefined) return plan;
+  const unnumbered = cycle.held.filter(({ id }) => id === undefined);
+  if (unnumbered.length > 0) {
+    const ids = await drawIds(deck, unnumbered.length);
+    const held = cycle.held.map((finding) => (finding.id === undefined ? { ...finding, id: ids.shift()! } : finding));
+    plan = await writeRecord(plan, { cycle: { ...cycle, held } });
+  }
+  for (const finding of plan.cycle!.held!) {
+    const id = finding.id!;
+    if (plan.findings.some((filed) => filed.id === id)) continue;
+    await fileCardAs(deck, id, findingCard(plan, "reviewer", cycle.card, finding));
+    plan = await writeRecord(plan, { findings: [...plan.findings, { id, role: "reviewer", card: cycle.card }] });
   }
   return plan;
 }
@@ -447,16 +513,18 @@ export function reconcilerPrompt(card: { path: string; text: string }, document:
  * for up to ID_RETURNS returns, after which the reviewer has failed; no hook
  * is ever bypassed. Every answer's findings are filed as waiting cards as the
  * answer is read, whatever its outcome, but for a reviewer's `approved` or
- * `fixed`: each answer the landing sends back, for a card id or a hook, is
- * replaced by the reviewer's next, which restates the whole report, so the
- * findings filed are those of the answer that lands, filed once its commit is
- * made and before the commit is recorded, and a reviewer that fails at its
- * last return files none. A reconciler that proceeds, or amends the card after
- * a blocking finding, having changed the worktree, or the card's frontmatter
- * or record, has failed, and the change is left in place, the implementer's
- * work beside it, undiscarded. A reconciler that stops, a reviewer asking for
- * a revision past the cap, or a role that fails, ends the cycle stopped, with
- * its cause and session.
+ * `fixed`: those are recorded in the cycle as each is read, and each later
+ * one of the cycle, whether the landing sent it back for a card id or a hook
+ * or the cycle was resumed, merges its findings in by headline rather than
+ * replacing them, so a finding it omits is kept. They are filed once the
+ * card's commit is made and before the commit is recorded, or by `settle`
+ * where the cycle is abandoned, as when the reviewer fails at its last
+ * return and the owner amends or drops the plan. A reconciler that
+ * proceeds, or amends the card after a blocking finding, having changed the
+ * worktree, or the card's frontmatter or record, has failed, and the change
+ * is left in place, the implementer's work beside it, undiscarded. A
+ * reconciler that stops, a reviewer asking for a revision past the cap, or a
+ * role that fails, ends the cycle stopped, with its cause and session.
  */
 export async function runCard(deck: Deck, plan: Plan, id: string, tree: string, harness: Harness): Promise<CycleEnd> {
   const base = await headSha(tree);
@@ -576,6 +644,11 @@ async function cycleFrom(
     cycle = { ...cycle, role, step, sessions, rounds, exchanges };
     plan = await writeRecord(plan, { cycle });
   };
+  /** Records the findings of a reviewer's `approved` or `fixed` answer in the cycle, merged into those it holds. */
+  const hold = async (answer: Answer) => {
+    cycle = { ...cycle, held: merged(cycle.held ?? [], (answer.findings ?? []) as Finding[]) };
+    plan = await writeRecord(plan, { cycle });
+  };
 
   for (;;) {
     const { role, step } = cycle;
@@ -586,7 +659,9 @@ async function cycleFrom(
       answer = await answering(answerer(role), prompt, ...asked(step, exchanges, final));
       // A cycle resumed at the land step lands its reviewer's landing answer here too.
       for (let hookReturns = 0; (step === "review" || step === "land") && answer.outcome !== "revision"; hookReturns++) {
-        answer = await referenceChecked(deck, answerer(role), tree, base, answer);
+        // The answer read above, or the one a hook's refusal sent back for.
+        await hold(answer);
+        answer = await referenceChecked(deck, answerer(role), tree, base, answer, hold);
         // The commit and the card's close note take the note alike, as `escapePasted` makes it.
         const subject = landingSubject(answer.subject as string);
         const note = escapePasted(answer.close_note as string);
@@ -609,10 +684,15 @@ async function cycleFrom(
       if (!(error instanceof RoleFailure)) throw error;
       return { plan, outcome: "stopped", role, session: session(role), cause: error.message };
     }
-    // For a reviewer, from the answer that landed, which restates its whole
-    // report, and before its commit is recorded, so a run dying between the
-    // two reruns the card rather than losing them.
-    plan = await fileFindings(deck, plan, role, id, answer);
+    if (sha === "") {
+      plan = await fileFindings(deck, plan, role, id, answer);
+    } else {
+      // The reviewer's, merged from every answer the cycle held, and before
+      // its commit is recorded, so a run dying between the two is carried on
+      // through `settle`, which finds them filed.
+      plan = await fileHeld(deck, plan);
+      cycle = plan.cycle!;
+    }
 
     // On every answer the reconciler gives, before any outcome's branch acts on it.
     if (step === "reconcile" || step === "converse") {
