@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
 import * as bounced from "./bounced.ts";
 import type { Card } from "./cardfile.ts";
-import { createDeck, type Deck, DEFAULT_PREFIX, requireDeck, resolveDeck } from "./deck.ts";
+import { createDeck, type Deck, DEFAULT_PREFIX, locate, requireDeck, resolveDeck } from "./deck.ts";
 import * as cards from "./cards.ts";
 import * as check from "./check.ts";
 import * as dead from "./dead.ts";
 import * as document from "./document.ts";
 import * as ended from "./ended.ts";
+import { undoReopen } from "./operations.ts";
 import { forOwner } from "./owner.ts";
 import { awaitingKey, type Context, listPlans, listWaiting, type Plan, refuseSlug, startPlan, type State, waitingCards } from "./plan.ts";
 import * as reports from "./reports.ts";
@@ -97,6 +98,27 @@ async function printWaiting(deck: Deck, command: string): Promise<void> {
   process.stdout.write(forOwner(listWaiting(listed, command, settle)));
 }
 
+/**
+ * Every plan in progress, each put back first to a state its record holds,
+ * where a verb that writes more than once died between its writes. A plan's
+ * record is the commit point of the owner's decision, so what a verb did
+ * ahead of a record it never wrote was not decided, and is undone here, once,
+ * before any verb or bare `card` acts on the plan. Done here rather than in
+ * `listPlans`, which reads, so that no read path writes, and no run of
+ * another plan, which lists the plans too, undoes a verb still in flight.
+ *
+ * An Ended plan has every card closed, so a final card found open in one is
+ * one a `card join` reopened before its record moved the plan to Cards; it
+ * goes back closed done, and the finding is unsettled again.
+ */
+async function plansIn(deck: Deck): Promise<Plan[]> {
+  const plans = await listPlans(deck);
+  for (const { state, final } of plans) {
+    if (state === "Ended" && !(await locate(deck, final!))!.closed) await undoReopen(deck, final!, "done");
+  }
+  return plans;
+}
+
 /** Starts a plan, under `slug` or a placeholder, and prints what a start prints. */
 async function start(deck: Deck, slug: string | null, many: boolean): Promise<void> {
   const plan = await startPlan(deck, slug);
@@ -109,7 +131,7 @@ async function start(deck: Deck, slug: string | null, many: boolean): Promise<vo
 async function bare(slug: string | null, cwd: string): Promise<void> {
   // A plan is about to start or already exists, and either way it needs a deck.
   const deck = (await resolveDeck(cwd)) ?? (await createDeck(cwd, DEFAULT_PREFIX));
-  const plans = await listPlans(deck);
+  const plans = await plansIn(deck);
   const many = plans.length > 1;
 
   if (slug !== null) {
@@ -167,7 +189,7 @@ async function main(argv: string[], cwd: string): Promise<void> {
   if (!(VERBS as readonly string[]).includes(name)) throw new Error(`no such verb as \`${name}\`\n${USAGE}`);
 
   const deck = await requireDeck(cwd);
-  const plans = await listPlans(deck);
+  const plans = await plansIn(deck);
   if (name === "decline" || name === "promote") {
     // A slug it is given must still name a plan, so a typo is refused here as everywhere.
     if (slug !== null) pick(plans, slug, name);

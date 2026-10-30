@@ -1729,21 +1729,71 @@ test("card join at Ended refuses a finding awaiting its key, naming the --key fo
   expect(record(plan.dir).state).toBe("Ended");
 });
 
+/**
+ * A plan in Ended with one finding, as a `card join` of it leaves the deck
+ * when it dies between its reopen of the final card and its record: the
+ * final card reopened, and where `both`, whole in `closed/` as well, as a
+ * reopen that died before its unlink leaves it. `closed` is the final card's
+ * text as it closed done, before the join.
+ */
+async function diedJoining(both: boolean) {
+  const { repo, deck, plan, first, final } = await inCheck();
+  await ensureBranch("plan/greeting", "main", repo);
+  const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+  await closeCard(deck, first, "done", "Landed.");
+  await closeCard(deck, final, "done", "Guide.");
+  const finding = await fileCard(deck, { labels: [], blockedBy: [], headline: "Nothing says goodbye", body: "Found.\n" });
+  await writeRecord(plan, { state: "Ended", harness: "pi", findings: [{ id: finding, role: "reviewer", card: first }] });
+  const closed = readFileSync(path.join(deck.closedDir, `${final}.md`), "utf8");
+  await reopenCard(deck, final);
+  if (both) writeFileSync(path.join(deck.closedDir, `${final}.md`), closed);
+  return { repo, deck, plan, final, finding, tree, closed };
+}
+
+/** That the final card is in `closed/` alone, as it closed done before the join that died. */
+function closedAsBefore(deck: Deck, final: string, closed: string): void {
+  expect(existsSync(path.join(deck.openDir, `${final}.md`))).toBe(false);
+  expect(readFileSync(path.join(deck.closedDir, `${final}.md`), "utf8")).toBe(closed);
+}
+
 for (const [left, both] of [
   ["reopened", false],
   ["whole in both open/ and closed/", true],
 ] as const) {
+  test(`bare card at Ended, after a join died with the final card ${left}, puts the final card back closed done in closed/ alone, and lists the finding unsettled`, async () => {
+    const { repo, deck, plan, final, finding, tree, closed } = await diedJoining(both);
+
+    const filed = `The run filed these findings, each a waiting card until the owner settles it:\n\n${listed(finding, "Nothing says goodbye")}`;
+    expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan, final, tree, "Guide.\n", filed), stderr: "" });
+    closedAsBefore(deck, final, closed);
+    expect(record(plan.dir).state).toBe("Ended");
+  });
+
+  test(`card later and then card finish at Ended, after a join died with the final card ${left}, end the plan with the final card closed done in closed/ alone`, async () => {
+    const { repo, deck, final, finding, closed } = await diedJoining(both);
+
+    const later = await card(["later", finding], repo);
+    expect(later.stderr).toBe("");
+    expect(later.code).toBe(0);
+    closedAsBefore(deck, final, closed);
+    const finishing = await card(["finish"], repo);
+    expect(finishing.stderr).toBe("");
+    expect(finishing.code).toBe(0);
+    expect(await listPlans(deck)).toEqual([]);
+    closedAsBefore(deck, final, closed);
+  });
+
+  test(`card drop at Ended, after a join died with the final card ${left}, leaves the final card closed done in closed/ alone, closing no card declined`, async () => {
+    const { repo, deck, final, closed } = await diedJoining(both);
+
+    const dropping = await card(["drop"], repo);
+    expect(dropping).toEqual({ code: 0, stdout: forOwner("The plan `greeting` is dropped.\n\nNo card of the plan was left open to close.\n"), stderr: "" });
+    expect(await listPlans(deck)).toEqual([]);
+    closedAsBefore(deck, final, closed);
+  });
+
   test(`card join at Ended, retried after a join died with the final card ${left} and the plan still in Ended, joins the finding and leaves the final card open once`, async () => {
-    const { repo, deck, plan, first, final } = await inCheck();
-    await ensureBranch("plan/greeting", "main", repo);
-    await holdWorktree(plan.slug, "plan/greeting", repo);
-    await closeCard(deck, first, "done", "Landed.");
-    await closeCard(deck, final, "done", "Guide.");
-    const finding = await fileCard(deck, { labels: [], blockedBy: [], headline: "Nothing says goodbye", body: "Found.\n" });
-    await writeRecord(plan, { state: "Ended", harness: "pi", findings: [{ id: finding, role: "reviewer", card: first }] });
-    const closed = readFileSync(path.join(deck.closedDir, `${final}.md`), "utf8");
-    await reopenCard(deck, final);
-    if (both) writeFileSync(path.join(deck.closedDir, `${final}.md`), closed);
+    const { repo, deck, plan, final, finding } = await diedJoining(both);
 
     const joining = await card(["join", finding], repo);
     expect(joining.stderr).toBe("");

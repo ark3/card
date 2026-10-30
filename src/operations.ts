@@ -282,6 +282,25 @@ export async function reopenCard(deck: Deck, id: string): Promise<void> {
   await unlink(found.path);
 }
 
+/**
+ * Puts the card `id`, which `reopenCard` moved to `open/`, back in `closed/`
+ * with `outcome` as its `closed:` line, the inverse of the reopen. A copy
+ * still in `closed/`, from a reopen interrupted before its unlink, is the
+ * card exactly as it closed, and is kept; otherwise the open copy is the
+ * closed card less its `closed:` line, which goes back where `close` put it.
+ * In the same order as the reopen, so no interruption loses the card.
+ */
+export async function undoReopen(deck: Deck, id: string, outcome: Outcome): Promise<void> {
+  const open = path.join(deck.openDir, `${id}.md`);
+  const closed = path.join(deck.closedDir, `${id}.md`);
+  if (!(await Bun.file(closed).exists())) {
+    const staging = path.join(deck.closedDir, `.${id}.md.restoring`);
+    await writeFile(staging, recordOutcome(id, await Bun.file(open).text(), outcome));
+    await rename(staging, closed);
+  }
+  await unlink(open);
+}
+
 export type Dependent = { id: string; headline: string };
 
 export type CloseReport = {
