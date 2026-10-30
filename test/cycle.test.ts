@@ -5,6 +5,7 @@ import { EXCHANGES, ID_RETURNS, RECONCILER, REVISION_ROUNDS, runCard } from "../
 import { createDeck, type Deck } from "../src/deck.ts";
 import { gitOrThrow, headSha } from "../src/git.ts";
 import { ensureBranch, holdWorktree } from "../src/landing.ts";
+import { readCard } from "../src/cardfile.ts";
 import { appendRecord, fileCard } from "../src/operations.ts";
 import { bootId, listPlans, type Plan, startPlan, waitingCards, writeRecord } from "../src/plan.ts";
 import { answerInstruction } from "../src/answer.ts";
@@ -233,25 +234,31 @@ test("a reviewer's fixes in place land in the card's one commit, with no second 
   expect(await gitOrThrow(["show", "HEAD:hello.txt"], tree)).toBe("hello, fixed\n");
 });
 
-test("an account with a line starting `# ` draws the repair prompt, and the repaired account is the one appended", async () => {
+test("an account, subject, close note and finding body holding lines starting `# ` are taken with no repair round, the card holding each line as `## ` and the subject losing its marker", async () => {
   const { deck, plan, id, tree } = await running();
-  const headed = answer({ outcome: "done", account: `# What I did\n\n${ACCOUNT}` });
-  const { control, ended } = await cycle(deck, plan, id, tree, [headed, done()], [approved()]);
+  const headedBody = { headline: FOUND[0]!.headline, body: `# README\n\n${FOUND[0]!.body}` };
+  const implementer = finding(answer({ outcome: "done", account: `# What I did\n\n${ACCOUNT}` }), [headedBody]);
+  const reviewer = answer({ outcome: "approved", subject: `# ${SUBJECT}`, close_note: `# Landed\n\n${NOTE}` });
+  const { control, ended } = await cycle(deck, plan, id, tree, [implementer], [reviewer]);
 
   expect(ended.outcome).toBe("landed");
-  const [, repair] = calls(control, ids[1]!);
-  expect(repair!.stdin).toContain("The previous report was invalid:\nanswer.account has a line starting `# `");
-  expect(readFileSync(path.join(deck.closedDir, `${id}.md`), "utf8")).toContain(`## Account\n\n${ACCOUNT}\n`);
+  expect(calls(control, ids[1]!)).toHaveLength(1);
+  expect(calls(control, ids[2]!)).toHaveLength(1);
+  const closed = readFileSync(path.join(deck.closedDir, `${id}.md`), "utf8");
+  expect(closed).toContain(`## Account\n\n## What I did\n\n${ACCOUNT}\n`);
+  expect(closed).toEndWith(`## Close note\n\n## Landed\n\n${NOTE}\n`);
+  expect(await message(tree)).toBe(`${SUBJECT}\n\n## Landed\n\n${NOTE}\n`);
+  expect((await filed(deck)).files).toEqual([findingFile("implementer", id, { ...headedBody, body: `## README\n\n${FOUND[0]!.body}` })]);
 });
 
-test("a subject or a close note with a line starting `# ` draws the repair prompt", async () => {
+test("a `# ` line inside a fenced code block in an account comes through unchanged, and the card still reads with its one headline", async () => {
   const { deck, plan, id, tree } = await running();
-  const headed = answer({ outcome: "approved", subject: SUBJECT, close_note: `# Landed\n\n${NOTE}` });
-  const { control } = await cycle(deck, plan, id, tree, [done()], [headed, approved()]);
+  const fenced = `${ACCOUNT}\n\n\`\`\`sh\n# write the greeting\nprintf 'hello\\n' > hello.txt\n\`\`\``;
+  const { ended } = await cycle(deck, plan, id, tree, [answer({ outcome: "done", account: fenced })], [approved()]);
 
-  const [, repair] = calls(control, ids[2]!);
-  expect(repair!.stdin).toContain("The previous report was invalid:\nanswer.close_note has a line starting `# `");
-  expect(await message(tree)).toBe(`${SUBJECT}\n\n${NOTE}\n`);
+  expect(ended.outcome).toBe("landed");
+  expect(cardFile(deck, id)).toContain(`## Account\n\n${fenced}\n`);
+  expect((await readCard(path.join(deck.closedDir, `${id}.md`))).headline).toBe("Add the greeting");
 });
 
 test("a subject spanning more than one line draws the repair prompt, and the repaired subject is the commit's first line", async () => {
@@ -561,17 +568,16 @@ test(`past ${REVISION_ROUNDS} revision rounds, a reviewer asking for another sto
   expect(existsSync(path.join(deck.openDir, `${id}.md`))).toBe(true);
 });
 
-test("feedback with a line starting `# ` draws the repair prompt, and a revision lacking feedback does too", async () => {
+test("feedback with a line starting `# ` is taken with the line as `## `, and a revision lacking feedback draws the repair prompt", async () => {
   const { deck, plan, id, tree } = await running();
-  const headed = revision(`# Findings\n\n${FEEDBACK}`);
   const bare = answer({ outcome: "revision" });
-  const reviewer = [headed, bare, revision()];
-  const { control } = await cycle(deck, plan, id, tree, [done(MISSPELT), revised(RESPELT)], reviewer, [proceed()], [[approved()]]);
+  const headed = revision(`# Findings\n\n${FEEDBACK}`);
+  const { control } = await cycle(deck, plan, id, tree, [done(MISSPELT), revised(RESPELT)], [bare, headed], [proceed()], [[approved()]]);
 
-  const [, first, second] = calls(control, ids[2]!);
-  expect(first!.stdin).toContain("The previous report was invalid:\nanswer.feedback has a line starting `# `");
-  expect(second!.stdin).toContain('The previous report was invalid:\nanswer lacks the field "feedback", which outcome "revision" carries');
-  expect(cardFile(deck, id)).toContain(`## Review feedback\n\n${FEEDBACK}\n\n## Account\n`);
+  const [, repair, ...more] = calls(control, ids[2]!);
+  expect(repair!.stdin).toContain('The previous report was invalid:\nanswer lacks the field "feedback", which outcome "revision" carries');
+  expect(more).toEqual([]);
+  expect(cardFile(deck, id)).toContain(`## Review feedback\n\n## Findings\n\n${FEEDBACK}\n\n## Account\n`);
 });
 
 const FINDING = "The card's done-condition reads `greeting.txt`, which nothing in the card writes: it asks for `hello.txt` alone.";
@@ -1025,16 +1031,14 @@ test("an implementer's finding is filed as a waiting card naming the implementer
   expect(cardFile(deck, id)).toContain(`## Account\n\n${ACCOUNT}\n`);
 });
 
-test("a finding whose headline wraps, or whose body has a line starting `# `, draws the repair prompt, and the repaired finding is filed", async () => {
+test("a finding whose headline wraps draws the repair prompt, and the repaired finding is filed", async () => {
   const { deck, plan, id, tree } = await running();
   const wraps = finding(done(), [{ headline: "The README\nstill names greet.sh", body: FOUND[0]!.body }]);
-  const headed = finding(done(), [{ headline: FOUND[0]!.headline, body: `# README\n\n${FOUND[0]!.body}` }]);
-  const { control, ended } = await cycle(deck, plan, id, tree, [wraps, headed, finding(done(), [FOUND[0]!])], [approved()]);
+  const { control, ended } = await cycle(deck, plan, id, tree, [wraps, finding(done(), [FOUND[0]!])], [approved()]);
 
   expect(ended.outcome).toBe("landed");
-  const [, first, second] = calls(control, ids[1]!);
-  expect(first!.stdin).toContain("The previous report was invalid:\nanswer.findings[0].headline: a headline is one line and never wraps");
-  expect(second!.stdin).toContain("The previous report was invalid:\nanswer.findings[0].body has a line starting `# `");
+  const [, repair] = calls(control, ids[1]!);
+  expect(repair!.stdin).toContain("The previous report was invalid:\nanswer.findings[0].headline: a headline is one line and never wraps");
   expect((await filed(deck)).files).toEqual([findingFile("implementer", id, FOUND[0]!)]);
 });
 

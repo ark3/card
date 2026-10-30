@@ -59,8 +59,6 @@ The card and the diff do not carry what you found while verifying, so write that
 - what you noticed and left alone;
 - your doubts.
 
-Start no line of the account with `# `, because in a card only its headline starts that way, and the tool refuses an account that does.
-
 ## When a criterion does not hold
 
 Answer `blocked` instead of `done`, with your blocking finding as `finding`, when an acceptance criterion of the plan document does not hold on the branch, which is a gap in the plan, or when the card cannot be implemented as written: something it cites is absent from the code, the approach it sets cannot work, or its done-condition cannot be reached.
@@ -84,4 +82,4 @@ Report each finding in the `findings` list of your answer, beside whichever outc
 The tool files each finding as a card of its own, and no run picks that card up: it waits for the owner, who settles it at the end of the plan.
 You write a finding down so that you can put it down: once it is in `findings`, it asks nothing more of you, and your attention goes back to the card.
 A gap is never a finding, and neither is any other problem inside the card's contract, because a defect filed as a finding lets the card close done with the defect parked in a waiting card: answer `blocked` with your blocking finding, as "When a criterion does not hold" sets out.
-Start no line of a finding's body with `# ` and keep its headline to one line, because the tool makes the headline the `# ` line of the finding's card, and in a card only its headline starts that way; the tool refuses a finding that breaks either rule.
+Keep a finding's headline to one line: the tool makes it the headline of the finding's card, which never wraps, and refuses a finding whose headline spans more than one line.

@@ -52,18 +52,58 @@ function parseOutcome(raw: string): string {
   return outcome;
 }
 
+// A fence's opening line, by CommonMark: up to three spaces, then three or
+// more backticks or tildes.
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+
 /**
- * Refuses `text`, naming `what` it is and every line in it that starts `# `,
- * since a card's one such line is its headline. Run on any text before it
- * becomes part of a card, so the rule holds when a card is written rather
- * than surfacing as an unreadable card at its next read.
+ * Whether each line of `text` starts `# ` outside a fenced code block, where
+ * it would read as a headline; a fenced line is code, such as a shell comment.
+ * A fence closes on a line of its own character, at least as long, and an
+ * unclosed one runs to the end of the text.
+ */
+function headlineLines(text: string): boolean[] {
+  let fence: string | null = null;
+  return text.split("\n").map((line) => {
+    if (fence === null) {
+      const open = FENCE.exec(line);
+      if (open !== null) fence = open[1]!;
+      return open === null && line.startsWith("# ");
+    }
+    const close = FENCE.exec(line);
+    if (close !== null && close[1]![0] === fence[0] && close[1]!.length >= fence.length && line.trim() === close[1]) fence = null;
+    return false;
+  });
+}
+
+/**
+ * Refuses `text`, naming `what` it is and every line in it that starts `# `
+ * outside a fenced code block, since a card's one such line is its headline.
+ * Run on any text before it becomes part of a card, so the rule holds when a
+ * card is written rather than surfacing as an unreadable card at its next
+ * read.
  */
 export function refuseHeadlines(what: string, text: string): void {
-  const lines = text.split("\n").filter((line) => line.startsWith("# "));
+  const marked = headlineLines(text);
+  const lines = text.split("\n").filter((_, index) => marked[index]);
   if (lines.length === 0) return;
   throw new Error(
     `${what} has a line starting \`# \`, which only a card's headline may: ${lines.map((line) => `\`${line}\``).join(", ")}`,
   );
+}
+
+/**
+ * `text` with each line `refuseHeadlines` would refuse made a `## ` line, for
+ * text the tool takes from a session into a card, so a session's heading
+ * costs it no refusal. Fenced lines are left as they are, since rewriting
+ * them would change the code they show.
+ */
+export function demoteHeadlines(text: string): string {
+  const marked = headlineLines(text);
+  return text
+    .split("\n")
+    .map((line, index) => (marked[index] ? `#${line}` : line))
+    .join("\n");
 }
 
 /** Refuses `headline` as a card's headline: empty, or more than one line. */

@@ -48,8 +48,6 @@ Neither the card nor the diff carries your blocking finding or the reconciler's 
 - what you noticed and left alone;
 - your doubts.
 
-Start no line of the account with `# `, because in a card only its headline starts that way, and the tool refuses an account that does.
-
 ## Findings
 
 A finding is something you notice outside the card's contract, which neither the card nor the plan document's acceptance criteria ask for and your work did not cause, such as a defect in code no criterion concerns that was on the branch before your work began: leave it as it is, because your work is the card and nothing beyond it.
@@ -58,4 +56,4 @@ Report each finding in the `findings` list of your answer, beside whichever outc
 The tool files each finding as a card of its own, and no run picks that card up: it waits for the owner, who settles it at the end of the plan.
 You write a finding down so that you can put it down: once it is in `findings`, it asks nothing more of you, and your attention goes back to the work.
 A gap is never a finding, and neither is any other problem inside the card's contract, because a defect filed as a finding lets the card close done with the defect parked in a waiting card: answer `blocked` with your blocking finding where a criterion does not hold or the card cannot be built as written, as "Taking up the work" sets out.
-Start no line of a finding's body with `# ` and keep its headline to one line, because the tool makes the headline the `# ` line of the finding's card, and in a card only its headline starts that way; the tool refuses a finding that breaks either rule.
+Keep a finding's headline to one line: the tool makes it the headline of the finding's card, which never wraps, and refuses a finding whose headline spans more than one line.

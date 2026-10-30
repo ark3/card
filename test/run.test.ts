@@ -968,6 +968,22 @@ test("card promote at Ended prints a clean draft for two findings for the owner 
   expect(await waitingCards(deck)).toEqual([]);
 });
 
+test("card promote takes a draft opening `# Title`, prints it as drafted for the owner, and stores it in the card with `## Title`", async () => {
+  const { repo, deck, plan, first, final } = await inCheck();
+  await ensureBranch("plan/greeting", "main", repo);
+  await holdWorktree(plan.slug, "plan/greeting", repo);
+  await closeCard(deck, first, "done", "Landed.");
+  await closeCard(deck, final, "done", "Guide.");
+  const finding = await fileCard(deck, { labels: [], blockedBy: [], headline: "Nothing says goodbye", body: "Found.\n" });
+  await writeRecord(plan, { state: "Ended", harness: "pi", findings: [{ id: finding, role: "reviewer", card: first }] });
+
+  const promoting = await card(["promote", finding], repo, `# Title\n\n${DRAFT}`);
+  expect(promoting.stderr).toBe("");
+  expect(promoting.code).toBe(0);
+  expect(promoting.stdout).toStartWith(forOwner(`# Title\n\n${DRAFT}`));
+  expect(readFileSync(path.join(deck.openDir, `${finding}.md`), "utf8")).toEndWith(`Found.\n\n## Promotion\n\n## Title\n\n${DRAFT}\n`);
+});
+
 test("a finding another plan joins is settled at Ended, listed with the plan that took it and no command, and card finish ends the plan", async () => {
   const { repo, deck, plan, first, final } = await inCheck();
   await ensureBranch("plan/greeting", "main", repo);

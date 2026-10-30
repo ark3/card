@@ -1,7 +1,7 @@
 import { readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Card, Outcome } from "./cardfile.ts";
-import { createCard, readCard, refuseHeadlines } from "./cardfile.ts";
+import { createCard, demoteHeadlines, readCard } from "./cardfile.ts";
 import { type Deck, locate, stagedId, stagingName } from "./deck.ts";
 import { citedIds, drawId } from "./id.ts";
 
@@ -193,13 +193,13 @@ export function toolWrittenChanges(before: string, after: string): string[] {
 }
 
 /**
- * `text` with a record section appended: `heading`, then `body`. The heading
- * is what says where the card's contract ends and the record begins; nothing
- * else marks the seam.
+ * `text` with a record section appended: `heading`, then `body`, any line of
+ * it starting `# ` made a `## ` line, since a card's one such line is its
+ * headline. The heading is what says where the card's contract ends and the
+ * record begins; nothing else marks the seam.
  */
 function withRecord(text: string, heading: RecordHeading, body: string): string {
-  refuseHeadlines(`the ${heading} section`, body);
-  return `${text.replace(/\n*$/, "\n")}\n## ${heading}\n\n${body.replace(/\n*$/, "\n")}`;
+  return `${text.replace(/\n*$/, "\n")}\n## ${heading}\n\n${demoteHeadlines(body).replace(/\n*$/, "\n")}`;
 }
 
 /**

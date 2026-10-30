@@ -11,7 +11,7 @@ import review from "../payload/review.md" with { type: "text" };
 import revise from "../payload/revise.md" with { type: "text" };
 import stripIds from "../payload/strip-ids.md" with { type: "text" };
 import type { Answer, ObjectSchema, Schema } from "./answer.ts";
-import { refuseHeadline, refuseHeadlines } from "./cardfile.ts";
+import { demoteHeadlines, refuseHeadline } from "./cardfile.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { headSha } from "./git.ts";
@@ -216,18 +216,16 @@ const carried: Check = (answer: Answer) => {
 type Finding = { headline: string; body: string };
 
 /**
- * Refuses an answer holding a finding the tool could not file as a card, a
- * headline that is empty or wraps or a body with a line starting `# `, while
- * the role can still repair it.
+ * Refuses an answer holding a finding the tool could not file as a card, one
+ * whose headline is empty or wraps, while the role can still repair it.
  */
 const fileable: Check = (answer: Answer) => {
-  for (const [index, { headline, body }] of ((answer.findings ?? []) as Finding[]).entries()) {
+  for (const [index, { headline }] of ((answer.findings ?? []) as Finding[]).entries()) {
     try {
       refuseHeadline(headline);
     } catch (error) {
       throw new Error(`answer.findings[${index}].headline: ${(error as Error).message}`);
     }
-    refuseHeadlines(`answer.findings[${index}].body`, body);
   }
 };
 
@@ -279,41 +277,28 @@ const REVIEWER: ObjectSchema = {
 };
 
 /**
- * Refuses an answer whose `fields`, those it holds, hold a line starting
- * `# `, while the role can still repair it, rather than when the text is
- * written into the card after the role has ended.
+ * The reviewer's `subject` as the card's commit takes it: a leading `# `
+ * dropped rather than made `## `, since a commit's first line is no heading.
  */
-function noHeadlines(...fields: string[]): Check {
-  return (answer: Answer) => {
-    for (const field of fields) if (field in answer) refuseHeadlines(`answer.${field}`, answer[field] as string);
-  };
+function landingSubject(subject: string): string {
+  return subject.startsWith("# ") ? subject.slice(2) : subject;
 }
 
-/** Refuses an implementer's answer that `answered` refuses, or that holds a headline in its account. */
-const implemented: Check = (answer: Answer) => {
-  answered(answer);
-  noHeadlines("account")(answer);
-};
-
 /**
- * Refuses an answer whose subject, where it holds one, is empty or spans
- * more than one line, while the reviewer can still repair it, rather than
- * when the card's commit lands with a malformed first line.
+ * Refuses an answer whose subject, where it holds one, is empty as it lands
+ * or spans more than one line, while the reviewer can still repair it,
+ * rather than when the card's commit lands with a malformed first line.
  */
 const oneLineSubject: Check = (answer: Answer) => {
   if (!("subject" in answer)) return;
-  const subject = answer.subject as string;
+  const subject = landingSubject(answer.subject as string);
   if (subject.trim() === "") throw new Error("answer.subject is empty");
   if (subject.includes("\n")) throw new Error("answer.subject spans more than one line, and a commit's subject is one line");
 };
 
-/**
- * Refuses a reviewer's answer that `answered` refuses, that holds a headline
- * in a field its outcome carries, or whose subject is not one line.
- */
+/** Refuses a reviewer's answer that `answered` refuses, or whose subject is not one line. */
 const reviewed: Check = (answer: Answer) => {
   answered(answer);
-  noHeadlines("subject", "close_note", "feedback")(answer);
   oneLineSubject(answer);
 };
 
@@ -392,12 +377,12 @@ async function referenceChecked(deck: Deck, reviewer: Session, tree: string, bas
  * Files each finding in `answer`, from the role `role` working the card
  * `card`, through deck's filing function: into `open/` and in no plan's
  * order, so it waits and no run picks it up, with the role, the card and the
- * plan on its body's first line. Each is recorded in the plan's state as it
- * is filed, for the end of the plan.
+ * plan on its body's first line and the body's `# ` lines made `## `. Each
+ * is recorded in the plan's state as it is filed, for the end of the plan.
  */
 async function fileFindings(deck: Deck, plan: Plan, role: Role, card: string, answer: Answer): Promise<Plan> {
   for (const { headline, body } of (answer.findings ?? []) as Finding[]) {
-    const filed = `Filed by the ${role} of ${card}, in the plan ${plan.slug}.\n\n${body}`;
+    const filed = `Filed by the ${role} of ${card}, in the plan ${plan.slug}.\n\n${demoteHeadlines(body)}`;
     const id = await fileCard(deck, { labels: [], blockedBy: [], headline, body: filed });
     plan = await writeRecord(plan, { findings: [...plan.findings, { id, role, card }] });
   }
@@ -533,7 +518,7 @@ function asked(step: Step, exchanges: number, final: boolean): [ObjectSchema, Ch
       if (exchanges > EXCHANGES) return [final ? FINAL_DISAGREEMENT : DISAGREEMENT, answered];
       return [final ? FINAL_CONVERSE : CONVERSE, answered];
     case "implement":
-      return [IMPLEMENTER, implemented];
+      return [IMPLEMENTER, answered];
     case "review":
       return [REVIEWER, reviewed];
     case "land":
@@ -598,7 +583,9 @@ async function cycleFrom(
       // A cycle resumed at the land step lands its reviewer's landing answer here too.
       for (let hookReturns = 0; (step === "review" || step === "land") && answer.outcome !== "revision"; hookReturns++) {
         answer = await referenceChecked(deck, session(role), tree, base, answer);
-        const { subject, close_note: note } = answer as { subject: string; close_note: string };
+        // The commit and the card's close note take the note alike, its `# ` lines made `## `.
+        const subject = landingSubject(answer.subject as string);
+        const note = demoteHeadlines(answer.close_note as string);
         cycle = { ...cycle, step: "land", subject, note };
         plan = await writeRecord(plan, { cycle });
         try {

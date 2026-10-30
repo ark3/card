@@ -104,8 +104,6 @@ Write the subject as one line, the commit's first, under the repository's conven
 Where that reads `(none)`, the owner recorded no convention: write the subject as an imperative with a capital letter and no trailing period, such as `Verify the export feature end to end`, as Git's own history is written.
 The subject goes public with the commit, as the close note does, so it cites no card id either.
 
-Start no line of the subject, the close note or the feedback with `# `, because in a card only its headline starts that way, and the tool refuses a subject, a close note or feedback that does.
-
 ## Findings
 
 A finding is something you notice outside the card's contract, which neither the card nor the plan document's criteria ask for and the work did not cause, such as a stale comment or a defect in code no criterion concerns that was on the branch before the work began, even in a file the diff changes.
@@ -114,4 +112,4 @@ Change no file for a finding, however small its fix, because `fixed` covers the 
 The tool files each finding as a card of its own, and no run picks that card up: it waits for the owner, who settles it at the end of the plan.
 You write a finding down so that you can put it down: once it is in `findings`, it asks nothing more of you, and your attention goes back to the review.
 A gap or a shortfall is never a finding, because one filed as a finding lets the card close done with it parked in a waiting card: ask for a gap under `revision`, and put a small shortfall right yourself and answer `fixed`, or ask for it under `revision`, as "Your answer" sets out.
-Start no line of a finding's body with `# ` and keep its headline to one line, because the tool makes the headline the `# ` line of the finding's card, and in a card only its headline starts that way; the tool refuses a finding that breaks either rule.
+Keep a finding's headline to one line: the tool makes it the headline of the finding's card, which never wraps, and refuses a finding whose headline spans more than one line.
