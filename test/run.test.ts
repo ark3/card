@@ -762,6 +762,48 @@ test(
 );
 
 test(
+  "card amend after a bounce returns with no process left running that a role whose session ended normally started in a session of its own, and the worktree clean",
+  async () => {
+    const { repo, plan } = await inCheck();
+    const control = stand(["pi"]);
+    queue(control, [proceed()], [done(escaping(control))], [{ stderr: "usage limit reached", exit: 1 }]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+    const escaped = Number(readFileSync(path.join(control, "escaped"), "utf8"));
+
+    expect((await card(["amend"], repo)).code).toBe(0);
+    expect(running(escaped)).toBe(false);
+    // Long enough for a writer still running to rewrite the file it writes.
+    await Bun.sleep(200);
+    const tree = path.join(repo, ".worktrees", "greeting");
+    expect(await gitOrThrow(["status", "--porcelain", "--untracked-files=all"], tree)).toBe("");
+  },
+  SLOW,
+);
+
+test(
+  "card finish after the run ends returns with no process left running that the last role, whose session ended normally, started in a session of its own, and the worktree removed",
+  async () => {
+    const { repo, plan } = await inCheck();
+    const control = stand(["pi"]);
+    const writing = { ...approved("Check the plan"), run: escaping(control) };
+    queue(control, [proceed()], [done()], [approved("Add the greeting")], [proceed()], [done()], [writing]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+    const escaped = Number(readFileSync(path.join(control, "escaped"), "utf8"));
+    // Long enough for a writer still running to rewrite the file it writes.
+    await Bun.sleep(200);
+
+    const finishing = await card(["finish"], repo);
+    expect(finishing.stderr).toBe("");
+    expect(finishing.code).toBe(0);
+    expect(running(escaped)).toBe(false);
+    expect(existsSync(path.join(repo, ".worktrees", "greeting"))).toBe(false);
+  },
+  SLOW,
+);
+
+test(
   "an error a card's cycle throws that is no role's failure bounces the plan with the error as its cause, naming the recorded step's session, and ends the run, so bare card reports the bounce rather than carrying the run on",
   async () => {
     const { repo, plan, first } = await inCheck();

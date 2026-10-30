@@ -1,8 +1,9 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { answerInstruction, type ObjectSchema, readAnswer } from "../src/answer.ts";
 import { chooseHarness, type Harness, launch, REPAIR_PROMPTS, resume, resumeCommand, RoleFailure } from "../src/harness.ts";
+import { bootId, RUN_MARK, runMark } from "../src/plan.ts";
 import { calls, type Reply, removeTempDirs, script, stand, tempDir } from "./helpers.ts";
 
 const OUTER_PATH = process.env.PATH;
@@ -10,6 +11,7 @@ const OUTER_PATH = process.env.PATH;
 afterEach(() => {
   if (OUTER_PATH === undefined) delete process.env.PATH;
   else process.env.PATH = OUTER_PATH;
+  delete process.env[RUN_MARK];
 });
 afterAll(removeTempDirs);
 
@@ -159,6 +161,48 @@ test("Pi's plain output is the answer, and its new-session warning on stderr is 
     stderr: "No project session found with id; creating a new session\n",
   });
   expect(await launch(session("pi"), "go", SCHEMA)).toEqual(GOOD);
+});
+
+/**
+ * Shell, as the session's work, that starts a process in a session of its own
+ * from a subshell that exits at once, as a role's command can, and waits until
+ * it has written its pid to `file`. With `quiet` it holds none of the
+ * stand-in's output; without, it holds the stand-in's stderr open.
+ */
+function leaving(file: string, quiet = false): string {
+  return `(setsid sh -c 'echo $$ > "$0"; exec sleep 30' '${file}' ${quiet ? ">/dev/null 2>&1 " : ""}&); while [ ! -s '${file}' ]; do sleep 0.01; done`;
+}
+
+/** Whether `pid` names a process still running: a zombie has ended, and only waits to be reaped. */
+function running(pid: number): boolean {
+  try {
+    return !readFileSync(`/proc/${pid}/stat`, "utf8").replace(/^.*\) /s, "").startsWith("Z");
+  } catch {
+    return false;
+  }
+}
+
+test("a turn in a run, its environment holding this process's mark, ends what the session left running, even a process holding its output open", async () => {
+  const control = stand();
+  const left = `${tempDir()}/left`;
+  script(control, ID, { stdout: JSON.stringify(GOOD), run: leaving(left) });
+  process.env[RUN_MARK] = runMark({ pid: process.pid, boot: await bootId() });
+  expect(await launch(session("pi"), "go", SCHEMA)).toEqual(GOOD);
+  expect(running(Number(readFileSync(left, "utf8")))).toBe(false);
+});
+
+test("a turn whose environment holds another process's mark, as a test a role runs inherits its run's, ends nothing", async () => {
+  const control = stand();
+  const left = `${tempDir()}/left`;
+  script(control, ID, { stdout: JSON.stringify(GOOD), run: leaving(left, true) });
+  process.env[RUN_MARK] = runMark({ pid: process.ppid, boot: await bootId() });
+  expect(await launch(session("pi"), "go", SCHEMA)).toEqual(GOOD);
+  const pid = Number(readFileSync(left, "utf8"));
+  try {
+    expect(running(pid)).toBe(true);
+  } finally {
+    process.kill(pid, "SIGKILL");
+  }
 });
 
 test("an answer with prose around its JSON gets a repair by resuming, carrying the fence, the error and the schema", async () => {

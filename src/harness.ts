@@ -1,6 +1,7 @@
 import repair from "../payload/repair.md" with { type: "text" };
 import { type Answer, answerInstruction, type ObjectSchema, readAnswer } from "./answer.ts";
 import { fill } from "./payload.ts";
+import { bootId, endMarked, RUN_MARK, runMark } from "./plan.ts";
 
 /** The harnesses card knows how to start a session in. */
 export type Harness = "claude" | "pi";
@@ -57,6 +58,21 @@ export function resumeCommand({ harness, id, dir }: Session): string {
 }
 
 /**
+ * Ends what a role's turn left running, where this process is the run: both
+ * harnesses start each command a role runs in a session of its own, and a
+ * command can leave what it starts orphaned at once, so a turn can end, its
+ * harness gone, with a process of the role's still writing in the worktree
+ * that the run goes on to commit, discard or hand back. Such a process holds
+ * the run's mark, which names the run's pid, so only the run ends them: a
+ * turn run outside a run, or by a process the run started, such as a test a
+ * role runs, ends nothing.
+ */
+async function endLeftovers(): Promise<void> {
+  const mark = runMark({ pid: process.pid, boot: await bootId() });
+  if (process.env[RUN_MARK] === mark) await endMarked(`${RUN_MARK}=${mark}`);
+}
+
+/**
  * Runs one turn of `session` with `prompt` on stdin, which has no size limit
  * where an argument does, and returns the session's final text. The session
  * gets this process's environment, because Bun otherwise resolves the
@@ -71,11 +87,13 @@ async function turn(session: Session, resuming: boolean, prompt: string): Promis
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [stdout, stderr, status] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  // Read from the start, so a harness that prints more than a pipe holds
+  // can exit, and to the end only after what it left running is ended, since
+  // a process that kept the harness's output open would hold the read open.
+  const reading = Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  const status = await proc.exited;
+  await endLeftovers();
+  const [stdout, stderr] = await reading;
   if (status !== 0) {
     const ended = proc.signalCode !== null ? `was killed by ${proc.signalCode}` : `exited with status ${status}`;
     throw new RoleFailure(`${session.harness} ${ended}: ${(stderr + stdout).trim()}`);

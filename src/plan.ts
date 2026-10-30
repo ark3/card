@@ -1,4 +1,4 @@
-import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Card } from "./cardfile.ts";
 import type { Cycle, Role } from "./cycle.ts";
@@ -221,13 +221,55 @@ export async function bootId(): Promise<string> {
  * The environment variable the run sets, before it starts anything, to the
  * value `runMark` makes of the run it records, so every process a role
  * starts carries it whatever session or parent it comes to have, and the run
- * can be ended whole from its record.
+ * can be ended whole from its record, and what a role's turn leaves running
+ * ended when the turn does.
  */
 export const RUN_MARK = "CARD_RUN";
 
 /** The value of RUN_MARK for `run`, which no other live run shares, by its pid within its boot. */
 export function runMark({ pid, boot }: { pid: number; boot: string }): string {
   return `${boot}:${pid}`;
+}
+
+/** Sends `signal` to `pid`, a group if negative, and returns whether it named anything. */
+export function kill(pid: number, signal: "SIGKILL" | 0): boolean {
+  try {
+    process.kill(pid, signal);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    return false;
+  }
+}
+
+/**
+ * Every process whose environment holds `entry`, but this one, which holds it
+ * when a role ran it. An environment that cannot be read is no match: a
+ * process that has gone, a zombie, which runs nothing, or another user's,
+ * which this process could not kill.
+ */
+export async function marked(entry: string): Promise<number[]> {
+  const pids: number[] = [];
+  for (const name of await readdir("/proc")) {
+    const pid = Number(name);
+    if (!Number.isInteger(pid) || pid === process.pid) continue;
+    try {
+      if ((await readFile(`/proc/${pid}/environ`, "utf8")).split("\0").includes(entry)) pids.push(pid);
+    } catch {}
+  }
+  return pids;
+}
+
+/**
+ * Ends every process but this one whose environment holds `entry`, returning
+ * once none still runs. A signal is sent, not yet acted on, so a process can
+ * still start another, which inherits the mark.
+ */
+export async function endMarked(entry: string): Promise<void> {
+  for (let left = await marked(entry); left.length > 0; left = await marked(entry)) {
+    for (const each of left) kill(each, "SIGKILL");
+    await Bun.sleep(10);
+  }
 }
 
 /** Moves the plan, everything in its directory with it, to `slug`. */

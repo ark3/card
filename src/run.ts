@@ -24,7 +24,8 @@ if (plan.run?.pid !== process.pid) {
   process.exit(1);
 }
 // Before anything starts, since every role launches with this process's
-// environment, and `endRun` ends what a role starts by finding it there.
+// environment, and `endRun`, and each role's turn as it ends, end what a role
+// starts by finding it there.
 process.env[RUN_MARK] = runMark(plan.run);
 
 for (const id of plan.cards) {

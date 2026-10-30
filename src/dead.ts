@@ -1,40 +1,10 @@
-import { readdir, readFile } from "node:fs/promises";
 import { startRun } from "./check.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { discard, holdWorktree } from "./landing.ts";
 import { closeCard } from "./operations.ts";
-import { bootId, type Context, listPlans, type Plan, RUN_MARK, runMark, writeRecord } from "./plan.ts";
+import { bootId, type Context, kill, listPlans, marked, type Plan, RUN_MARK, runMark, writeRecord } from "./plan.ts";
 import { report } from "./reports.ts";
-
-/** Sends `signal` to `pid`, a group if negative, and returns whether it named anything. */
-function kill(pid: number, signal: "SIGKILL" | 0): boolean {
-  try {
-    process.kill(pid, signal);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-    return false;
-  }
-}
-
-/**
- * Every process whose environment holds `entry`, but this one, which holds it
- * when a role ran it. An environment that cannot be read is no match: a
- * process that has gone, a zombie, which runs nothing, or another user's,
- * which this process could not kill.
- */
-async function marked(entry: string): Promise<number[]> {
-  const pids: number[] = [];
-  for (const name of await readdir("/proc")) {
-    const pid = Number(name);
-    if (!Number.isInteger(pid) || pid === process.pid) continue;
-    try {
-      if ((await readFile(`/proc/${pid}/environ`, "utf8")).split("\0").includes(entry)) pids.push(pid);
-    } catch {}
-  }
-  return pids;
-}
 
 /**
  * Ends the plan's run and what is left of it: a run that died alone leaves
