@@ -1233,6 +1233,22 @@ for (const [harness, argv, stdout] of [
   });
 }
 
+test("card ask returns with no process left running that the role started in a session of its own while it answered", async () => {
+  const { repo, plan, first, base } = await inCheck();
+  await ensureBranch("plan/greeting", "main", repo);
+  const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+  const session = { harness: "pi" as const, id: crypto.randomUUID(), dir: tree };
+  const cycle: Cycle = { card: first, base, role: "reconciler", step: "reconcile", sessions: { reconciler: session.id }, rounds: 0, exchanges: 0 };
+  const bounce = { role: "reconciler" as const, session, cause: "the card's intent itself is wrong", question: "Is it?" };
+  await writeRecord(plan, { state: "Bounced", harness: "pi", cycle, bounce });
+  const control = stand(["pi"]);
+  // Off the harness's output, which a writer holding it would keep `card ask` reading until the writer ended.
+  script(control, session.id, { stdout: RESPONSE, run: `(${escaping(control)}) > /dev/null 2>&1` });
+
+  expect((await card(["ask"], repo, `${ASKED}\n`)).code).toBe(0);
+  expect(running(Number(readFileSync(path.join(control, "escaped"), "utf8")))).toBe(false);
+});
+
 test("card ask in Running refuses, and resumes no session", async () => {
   const { repo, plan, first, base } = await inCheck();
   const control = stand(["pi"]);

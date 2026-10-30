@@ -67,15 +67,16 @@ export function resumeCommand({ harness, id, dir }: Session): string {
 
 /**
  * Ends `harness` where it still runs, and what a role's turn left running,
- * where this process is the run: both harnesses start each command a role
- * runs in a session of its own, and a command can leave what it starts
- * orphaned at once, so a turn can end, its harness gone, with a process of
- * the role's still writing in the worktree that the run goes on to commit,
- * discard or hand back. Such a process holds the run's mark, which names the
- * run's pid, so only the run ends them: a turn run outside a run, or by a
- * process the run started, such as a test a role runs, ends nothing but its
- * harness. The harness is ended with them, so each gets the whole grace
- * period, the harness to save its session in.
+ * where this process is the run or marks itself as one: both harnesses start
+ * each command a role runs in a session of its own, and a command can leave
+ * what it starts orphaned at once, so a turn can end, its harness gone, with a
+ * process of the role's still writing in the worktree that the run goes on to
+ * commit, discard or hand back. Such a process holds the run's mark, which
+ * names the run's pid, so only the run ends them: a turn run by a process the
+ * run started, such as a test a role runs, ends nothing but its harness. `card
+ * ask`, which runs a turn outside a run, marks itself as a run does, and so
+ * ends what its turn left. The harness is ended with them, so each gets the
+ * whole grace period, the harness to save its session in.
  */
 async function endLeftovers(harness: Bun.Subprocess | null): Promise<void> {
   const mark = runMark({ pid: process.pid, boot: await bootId() });

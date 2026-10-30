@@ -250,7 +250,8 @@ export async function bootId(): Promise<string> {
  * value `runMark` makes of the run it records, so every process a role
  * starts carries it whatever session or parent it comes to have, and the run
  * can be ended whole from its record, and what a role's turn leaves running
- * ended when the turn does.
+ * ended when the turn does. `card ask` sets it the same way, of its own pid,
+ * for the one turn it runs outside a run.
  */
 export const RUN_MARK = "CARD_RUN";
 

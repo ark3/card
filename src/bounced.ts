@@ -7,19 +7,22 @@ import { question } from "./harness.ts";
 import { holdWorktree } from "./landing.ts";
 import { forOwner } from "./owner.ts";
 import { fill } from "./payload.ts";
-import type { Context } from "./plan.ts";
+import { bootId, type Context, RUN_MARK, runMark } from "./plan.ts";
 
 /**
  * `card ask` in Bounced: the owner's question, on stdin, put to the session
  * whose answer stopped the run, by resuming it under its recorded id from the
  * directory it ran in, and its response printed for the owner. The tool
- * writes nothing, and the plan stays Bounced.
+ * writes nothing, and the plan stays Bounced. This process marks the turn as
+ * the run marks its own, so what the role starts while it answers is ended
+ * with the turn rather than left writing in the worktree.
  */
 export async function ask({ plan, command, args }: Context): Promise<void> {
   if (args.length > 0) throw new Error(`usage: ${command} ask, with the owner's question on stdin`);
   const asked = (await Bun.stdin.text()).trimEnd();
   if (asked.trim() === "") throw new Error(`\`${command} ask\` needs the owner's question on stdin`);
   const { role, session } = plan.bounce!;
+  process.env[RUN_MARK] = runMark({ pid: process.pid, boot: await bootId() });
   const response = await question(session, fill(asking, { QUESTION: asked }));
   process.stdout.write(forOwner(`The ${role}'s response:\n\n${response}`));
 }
