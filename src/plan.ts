@@ -326,11 +326,23 @@ export async function waitingCards(deck: Deck, plan: Plan | null = null): Promis
 export type Standing = { settled: string | null; commands: string[] };
 
 /**
+ * Every card id `plan` holds: its cards, its joins, and the ids a verb its
+ * record holds pending carries, which become its cards or its joins once the
+ * verb finishes, and which a plan held on a verb that could not finish holds
+ * until it does. Every check of whether a card is waiting reads this, so
+ * none offers or settles a card another check counts as a plan's.
+ */
+export function holds(plan: Plan): string[] {
+  const pending = plan.pending?.verb === "done" ? plan.pending.drafts.map(({ id }) => id) : plan.pending?.verb === "join" ? [plan.pending.id] : [];
+  return [...plan.cards, ...plan.joins, ...pending];
+}
+
+/**
  * How a card stands, for `plan` or for no plan at all. In order: closed,
- * with its outcome; held by a plan, in its order or joined to it, since a
- * join is the owner's decision already made and listing the card would offer
- * it to a second plan, and since every settling verb refuses a card a plan
- * holds, ahead of a draft whose key that refusal would keep from being
+ * with its outcome; held by a plan, as `holds` has it, since a join or a
+ * take-in is the owner's decision already made and listing the card would
+ * offer it to a second plan, and since every settling verb refuses a card a
+ * plan holds, ahead of a draft whose key that refusal would keep from being
  * recorded; drafted for promotion and awaiting its key, which outranks
  * `plan`'s later, since `promote` writes no plan's record and the key is
  * still to be recorded; left for later by `plan`, whose sessions have the
@@ -339,7 +351,7 @@ export type Standing = { settled: string | null; commands: string[] };
  */
 export function standing(id: string, card: Card, plans: Plan[], plan: Plan | null): Standing {
   if (card.closed !== undefined) return { settled: `closed ${card.closed}`, commands: [] };
-  const taker = plans.find((other) => other.cards.includes(id) || other.joins.includes(id));
+  const taker = plans.find((other) => holds(other).includes(id));
   if (taker !== undefined) return { settled: `joined the plan \`${taker.slug}\``, commands: [] };
   if (awaitingKey(card)) return { settled: "drafted for promotion, awaiting its key", commands: [`promote ${id} --key <KEY>`] };
   if (plan?.later.includes(id)) return { settled: "left for later", commands: [] };

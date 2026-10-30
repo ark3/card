@@ -282,6 +282,53 @@ test("a drop that died once recorded, an untracked file then written into its wo
   expect(existsSync(tree)).toBe(false);
 });
 
+// Each verb whose record carries card ids, its fixture, and the ids it carries.
+const CARRIES: [string, () => Promise<Fixture>, (pending: { drafts?: { id: string }[]; id?: string }) => string[]][] = [
+  ["card done in the Cards stage", drafted, (pending) => pending.drafts!.map(({ id }) => id)],
+  [
+    "card join at Ended",
+    async () => {
+      const fixture = await ended(true);
+      return { ...fixture, args: ["join", fixture.finding] };
+    },
+    (pending) => [pending.id!],
+  ],
+];
+
+for (const [verb, setup, carried] of CARRIES) {
+  test(`a plan held on a recorded ${verb} holds the ids it carries: another plan is shown none of them waiting, and join, decline and promote refuse each, naming the held plan`, async () => {
+    const fixture = await setup();
+    const { repo, deck } = fixture;
+    expect((await card(fixture.args, repo, 1)).code).toBe(137);
+    const dir = path.join(deck.cardDir, "plans", "greeting");
+    const ids = carried(JSON.parse(readFileSync(path.join(dir, "state.json"), "utf8")).pending);
+    // A directory where the record is staged, so the finisher fails writing it, as on a disk error.
+    mkdirSync(path.join(dir, ".state.json.writing"));
+    const other = await writeRecord(await startPlan(deck, "other"), { state: "Cards", placeholder: false });
+
+    const shown = await card(["--plan", other.slug], repo);
+    expect(shown.stderr).toContain("on the plan `greeting` is recorded but did not finish, and finishing it failed");
+    expect(shown.code).toBe(0);
+    for (const id of ids) {
+      expect(existsSync(path.join(deck.openDir, `${id}.md`))).toBe(true);
+      expect(shown.stdout).not.toContain(id);
+      for (const [args, stdin] of [
+        [["--plan", other.slug, "join", id], ""],
+        [["decline", id], "Not needed.\n"],
+        [["promote", id], "A ticket.\n"],
+      ] as const) {
+        const proc = Bun.spawn([process.execPath, CARD, ...args], { cwd: repo, stdin: new Blob([stdin]), stdout: "pipe", stderr: "pipe" });
+        const stderr = await new Response(proc.stderr).text();
+        expect(await proc.exited).toBe(1);
+        const refusal = stderr.trimEnd().split("\n").at(-1)!;
+        expect(refusal).toStartWith(`card: ${id} `);
+        expect(refusal).toContain("the plan `greeting`");
+      }
+      expect(readFileSync(path.join(deck.openDir, `${id}.md`), "utf8")).not.toContain("## Promotion");
+    }
+  });
+}
+
 test("a drop git refuses once recorded holds that plan alone: another plan and decline go on, and the drop finishes on the first card run once git can remove the worktree", async () => {
   const fixture = await afterRun("Stopped");
   const { repo, deck } = fixture;

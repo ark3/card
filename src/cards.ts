@@ -8,7 +8,7 @@ import { citedIds } from "./id.ts";
 import { appendRecord, closeCard, drawIds, fileCardAs } from "./operations.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
-import { awaitingKey, type Context, listPlans, listWaiting, type Pending, type Plan, waitingCards, writeRecord } from "./plan.ts";
+import { awaitingKey, type Context, holds, listPlans, listWaiting, type Pending, type Plan, waitingCards, writeRecord } from "./plan.ts";
 
 type Member = { id: string; path: string; landed: boolean; card: Card };
 
@@ -185,7 +185,7 @@ export async function settling({ deck, plan, command, args }: Context, verb: str
   for (const other of await listPlans(deck)) {
     if (other.slug === plan.slug) {
       if (other.cards.includes(id)) throw new Error(`${id} is already one of this plan's cards`);
-    } else if (other.cards.includes(id) || other.joins.includes(id)) {
+    } else if (holds(other).includes(id)) {
       throw new Error(`${id} belongs to the plan \`${other.slug}\`, so it is not waiting`);
     }
   }
@@ -220,9 +220,9 @@ export async function later(context: Context): Promise<void> {
 }
 
 /**
- * The waiting card `decline` or `promote` names: an open card in no plan's
- * order and joined to none, or, where `closedAs` is given, the card already
- * closed with that text, which a run that died after closing it left.
+ * The waiting card `decline` or `promote` names: an open card no plan holds,
+ * or, where `closedAs` is given, the card already closed with that text,
+ * which a run that died after closing it left.
  */
 async function waitingCard(deck: Deck, id: string, closedAs?: string): Promise<Card> {
   const found = await locate(deck, id);
@@ -232,8 +232,10 @@ async function waitingCard(deck: Deck, id: string, closedAs?: string): Promise<C
     throw new Error(`${id} is closed, so it is not waiting`);
   }
   for (const plan of await listPlans(deck)) {
+    if (!holds(plan).includes(id)) continue;
     if (plan.cards.includes(id)) throw new Error(`${id} is one of the plan \`${plan.slug}\`'s cards, so it is not waiting`);
     if (plan.joins.includes(id)) throw new Error(`${id} has joined the plan \`${plan.slug}\`, so it is not waiting`);
+    throw new Error(`${id} is held by the plan \`${plan.slug}\` until its recorded \`card ${plan.pending!.verb}\` finishes, so it is not waiting`);
   }
   return readCard(found.path);
 }
