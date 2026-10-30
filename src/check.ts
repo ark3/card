@@ -61,7 +61,8 @@ export async function approve({ deck, plan, command, args }: Context): Promise<v
       : chooseHarness(args.length === 2 ? (args[1] as Harness) : null);
 
   // `card done` in the Document stage refused a document without either.
-  const { fields } = readDocument(await Bun.file(plan.document).text());
+  const text = await Bun.file(plan.document).text();
+  const { fields } = readDocument(text);
   const branch = fields.get("branch")!;
   const startPoint = fields.get("start-point")!;
   const cwd = process.cwd();
@@ -71,6 +72,8 @@ export async function approve({ deck, plan, command, args }: Context): Promise<v
   }
   await ensureBranch(branch, start, cwd);
   const tree = await holdWorktree(plan.slug, branch, cwd);
+  // The approval is of the document as it stands, so the plan's end can show what the run changed in it.
+  await Bun.write(plan.approved, text);
   const log = await startRun(plan, harness, tree, cwd);
   process.stdout.write(forOwner(`The plan \`${plan.slug}\` is running on ${harness}, since ${why}, in ${tree}; its log is ${log}.\n`));
 }

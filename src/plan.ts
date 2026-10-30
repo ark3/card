@@ -115,6 +115,8 @@ export type Plan = PlanRecord & {
   dir: string;
   /** The plan document, which the Document stage's session writes. */
   document: string;
+  /** The plan document's text as the owner last approved it, which every `card approve` keeps. */
+  approved: string;
   /** Where the Cards stage's session drafts the cards. */
   cardsDir: string;
 };
@@ -144,7 +146,7 @@ function plansDir(deck: Deck): string {
 
 function plan(deck: Deck, slug: string, record: PlanRecord): Plan {
   const dir = path.join(plansDir(deck), slug);
-  return { ...record, slug, dir, document: path.join(dir, "plan.md"), cardsDir: path.join(dir, "cards") };
+  return { ...record, slug, dir, document: path.join(dir, "plan.md"), approved: path.join(dir, "approved.md"), cardsDir: path.join(dir, "cards") };
 }
 
 /**

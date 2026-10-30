@@ -97,15 +97,21 @@ function bouncedReport(id: string, role: string, cause: string, resume: string, 
 
 const NO_FINDINGS = "The run filed no findings.\n";
 
+/** What bare `card` says in Ended of a plan document unchanged since `card approve` kept its text. */
+const asApproved = (plan: Plan) => `The plan document ${plan.document} is as the owner last approved it.\n`;
+/** What bare `card` says in Ended of a plan document no `card approve` kept the text of. */
+const NOT_KEPT = "No approved text of the plan document was kept for this plan, so what the run changed in it cannot be shown.\n";
+
 /**
  * What bare `card` prints in Ended for `inCheck`'s plan, its final card closed
- * under `note` and the run's findings listed as `findings`: the report for the
- * owner, then the settling prompt, its commands starting `command`.
+ * under `note`, the plan document's changes since approval told as `changes`
+ * and the run's findings listed as `findings`: the report for the owner, then
+ * the settling prompt, its commands starting `command`.
  */
-function ended(plan: Plan, final: string, tree: string, note: string, findings = NO_FINDINGS, command = "card"): string {
+function ended(plan: Plan, final: string, tree: string, note: string, changes: string, findings = NO_FINDINGS, command = "card"): string {
   const report =
     `The plan \`greeting\`'s run has ended, with every card closed.\n\nIts branch is \`plan/greeting\`, checked out in the worktree ${tree}.\n\n` +
-    `${findings}\nOnce every finding is settled, this ends the plan, removing the worktree and keeping the branch:\n\n  ${command} finish\n\n` +
+    `${changes}\n${findings}\nOnce every finding is settled, this ends the plan, removing the worktree and keeping the branch:\n\n  ${command} finish\n\n` +
     `The final card, ${final}  Check the plan, closed with this note, which is the guide to the plan's work:\n\n${note}`;
   return forOwner(report) + wrapPayload(command, fill(settle, { CARD: command, PLAN_DOCUMENT: plan.document }));
 }
@@ -158,7 +164,7 @@ test(
     expect(await gitOrThrow(["show", "plan/greeting~1:hello.txt"], repo)).toBe("hello\n");
     for (const id of [first, final]) expect(readFileSync(path.join(deck.closedDir, `${id}.md`), "utf8")).toContain("closed: done");
     expect(readFileSync(path.join(plan.dir, "run.log"), "utf8")).toContain("ended");
-    expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan, final, tree, "Landed it.\n"), stderr: "" });
+    expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan, final, tree, "Landed it.\n", asApproved(plan)), stderr: "" });
   },
   SLOW,
 );
@@ -457,10 +463,60 @@ test(
     expect(reviewer).toStartWith("# Reviewing the final card\n");
     expect(reviewer).toContain(`\n${DOCUMENT_BODY}\n</plan_document>\n`);
     const tree = path.join(repo, ".worktrees", "greeting");
-    expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan, final, tree, `${guide}\n`), stderr: "" });
+    expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan, final, tree, `${guide}\n`, asApproved(plan)), stderr: "" });
   },
   SLOW,
 );
+
+// An acceptance criterion `inCheck`'s plan document gains for a test, and the
+// shell a reconciler runs to edit it in place, as no reconciler should.
+const CRITERION = "## Acceptance criteria\n\n1. The greeting prints hello.\n";
+const moveCriterion = (plan: Plan) => `sed -i 's/prints hello/prints hi/' '${plan.document}'`;
+
+/** The text inside the owner marks of a printout. */
+function ownerBlock(stdout: string): string {
+  return stdout.slice(stdout.indexOf("<for_owner>\n"), stdout.indexOf("</for_owner>\n"));
+}
+
+test(
+  "a reconciler that edits an acceptance criterion in the plan document has bare card at Ended show the owner a diff with the criterion's old and new text, ahead of the findings",
+  async () => {
+    const { repo, plan } = await inCheck();
+    writeFileSync(plan.document, `${readFileSync(plan.document, "utf8")}\n${CRITERION}`);
+    const control = stand(["pi"]);
+    queue(control, [proceed(moveCriterion(plan))], [done()], [approved("Add the greeting")], [proceed()], [done()], [approved("Check the plan")]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const ending = await card([], repo);
+    expect(ending.code).toBe(0);
+    const owner = ownerBlock(ending.stdout);
+    const changed = `The plan document ${plan.document} has changed since the owner last approved it, as this diff from the approved text to the current one shows:\n\n\`\`\`diff\n@@ -9,4 +9,4 @@\n`;
+    expect(owner).toContain(`\n\n${changed}`);
+    expect(owner).toContain("\n-1. The greeting prints hello.\n+1. The greeting prints hi.\n```\n\nThe run filed no findings.\n");
+    expect(owner).not.toContain("as the owner last approved it.");
+  },
+  SLOW,
+);
+
+test("bare card in Ended says no approved text was kept for a plan without one, and that the plan document is as approved once the kept text matches it, with no diff either way", async () => {
+  const { repo, deck, plan, first, final } = await inCheck();
+  await ensureBranch("plan/greeting", "main", repo);
+  const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+  await closeCard(deck, first, "done", "Landed.");
+  await closeCard(deck, final, "done", "Guide.\n");
+  await writeRecord(plan, { state: "Ended", harness: "pi" });
+
+  const unkept = await card([], repo);
+  expect(unkept).toEqual({ code: 0, stdout: ended(plan, final, tree, "Guide.\n", NOT_KEPT), stderr: "" });
+  expect(ownerBlock(unkept.stdout)).not.toContain("```");
+
+  writeFileSync(plan.approved, readFileSync(plan.document, "utf8"));
+  const kept = await card([], repo);
+  expect(kept).toEqual({ code: 0, stdout: ended(plan, final, tree, "Guide.\n", asApproved(plan)), stderr: "" });
+  expect(ownerBlock(kept.stdout)).not.toContain("```");
+});
 
 /** Asserts that nothing of a run started: the plan in Check, no branch, no worktree, no log, and no role called. */
 async function nothingLaunched(repo: string, dir: string, control: string): Promise<void> {
@@ -942,7 +998,7 @@ test("bare card in Ended reports the branch, the worktree and the final card's c
   await writeRecord(plan, { state: "Ended", harness: "pi" });
 
   const result = await card([], repo);
-  expect(result).toEqual({ code: 0, stdout: ended(plan, final, tree, RECORDED), stderr: "" });
+  expect(result).toEqual({ code: 0, stdout: ended(plan, final, tree, RECORDED, NOT_KEPT), stderr: "" });
   expect(result.stdout).toContain(`\n\n${RECORDED}</for_owner>\n`);
 });
 
@@ -965,7 +1021,7 @@ test(
     const tree = path.join(repo, ".worktrees", "greeting");
     const filed = "The run filed these findings, each a waiting card until the owner settles it:\n\n";
     const unsettled = `${filed}${listed(readme, readmeHeadline)}\n${listed(license, licenseHeadline)}`;
-    expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan, final, tree, "Landed it.\n", unsettled), stderr: "" });
+    expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan, final, tree, "Landed it.\n", asApproved(plan), unsettled), stderr: "" });
 
     const refused = await card(["finish"], repo);
     expect(refused).toEqual({
@@ -980,7 +1036,7 @@ test(
     expect(declining).toEqual({ code: 0, stdout: `${license} is closed declined: ${licenseHeadline}\n`, stderr: "" });
     expect(readFileSync(path.join(deck.closedDir, `${license}.md`), "utf8")).toEndWith("## Close note\n\nNo license until the owner picks one.\n");
     const settled = `${filed}${listed(readme, readmeHeadline, "left for later")}\n${listed(license, licenseHeadline, "closed declined")}`;
-    expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan, final, tree, "Landed it.\n", settled), stderr: "" });
+    expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan, final, tree, "Landed it.\n", asApproved(plan), settled), stderr: "" });
 
     const finishing = await card(["finish"], repo);
     expect(finishing).toEqual({
@@ -1037,7 +1093,7 @@ test("card promote at Ended prints a clean draft for two findings for the owner 
   const awaiting = (id: string, headline: string) =>
     `${id}  ${headline}\n  filed by the reviewer, drafted for promotion, awaiting its key\n  card promote ${id} --key <KEY>\n`;
   const filed = `The run filed these findings, each a waiting card until the owner settles it:\n\n${awaiting(readme, readmeHeadline)}\n${awaiting(license, licenseHeadline)}`;
-  expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan, final, tree, "Guide.\n", filed), stderr: "" });
+  expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan, final, tree, "Guide.\n", NOT_KEPT, filed), stderr: "" });
 
   const finishing = await card(["finish"], repo);
   expect(finishing.stderr).toBe("");
@@ -1093,7 +1149,7 @@ test("a finding another plan joins is settled at Ended, listed with the plan tha
 
   expect((await card(["--plan", "other", "join", readme], repo)).code).toBe(0);
   const filed = `The run filed these findings, each a waiting card until the owner settles it:\n\n${listed(readme, headline, "joined the plan `other`")}`;
-  const settled = ended(plan, final, tree, "Guide.\n", filed, "card --plan greeting");
+  const settled = ended(plan, final, tree, "Guide.\n", NOT_KEPT, filed, "card --plan greeting");
   expect(await card(["--plan", "greeting"], repo)).toEqual({ code: 0, stdout: settled, stderr: "" });
 
   // Taken in by the other plan's Cards stage, it is one of that plan's cards, and settled all the same.
@@ -2164,6 +2220,38 @@ test(
 );
 
 test(
+  "after a join at Ended and a Cards-stage edit to the plan document, the next Ended measures the document against the text re-approved, not the first",
+  async () => {
+    const { repo, deck, plan } = await inCheck();
+    writeFileSync(plan.document, `${readFileSync(plan.document, "utf8")}\n${CRITERION}`);
+    const control = stand(["pi"]);
+    const findings = [{ headline: "Nothing says goodbye", body: "The greeting has no farewell." }];
+    const approvedWith = { answer: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Landed it.", findings }) };
+    queue(control, [proceed(moveCriterion(plan))], [done()], [approvedWith], [proceed()], [done()], [approved("Check the plan")]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+    expect(ownerBlock((await card([], repo)).stdout)).toContain("\n-1. The greeting prints hello.\n+1. The greeting prints hi.\n");
+
+    // In the Cards stage the criterion is put back, and one added for the farewell.
+    const finding = record(plan.dir).findings[0]!.id;
+    expect((await card(["join", finding], repo)).code).toBe(0);
+    writeFileSync(plan.document, readFileSync(plan.document, "utf8").replace("prints hi.\n", "prints hello.\n2. The farewell prints goodbye.\n"));
+    writeFileSync(path.join(deck.openDir, `${finding}.md`), "# Add a farewell\n\nPrint goodbye after the greeting.\n");
+    expect((await card(["done"], repo)).code).toBe(0);
+    queue(control, [proceed()], [done()], [approved("Add a farewell")], [proceed()], [done()], [approved("Check the plan")]);
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the run to end or bounce", () => record(plan.dir).state !== "Running");
+    expect(record(plan.dir).state).toBe("Ended");
+
+    const owner = ownerBlock((await card([], repo)).stdout);
+    expect(owner).toContain(`\n\n${asApproved(plan)}\n`);
+    expect(owner).not.toContain("```");
+    expect(owner).not.toContain("goodbye");
+  },
+  SLOW,
+);
+
+test(
   "bare card in a run after a join at Ended, at the joined card, counts and lists as closed only the cards closed done, not the reopened final card",
   async () => {
     const { repo, deck, plan, first } = await inCheck();
@@ -2448,7 +2536,7 @@ test(
 
     // Ended.
     await until("the plan to end", () => record(plan!.dir).state === "Ended");
-    expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan!, final, tree, `${guide}\n`), stderr: "" });
+    expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan!, final, tree, `${guide}\n`, asApproved(plan!)), stderr: "" });
     await closedIn(repo, plan!.dir, "Ended", waiting);
 
     // Every state of the run was walked, and its report ends, inside the owner marks, with the commands open once it printed.

@@ -315,6 +315,7 @@ Claude Code's own `--json-schema` is not passed for now ("What stays open" below
 Its frontmatter carries the plan's branch, the point the branch starts from and the host repository's commit convention, which the tool reads for execution.
 Every reconciler reads it, and so do the final card's roles; the implementers and reviewers of other cards never see it.
 During a run only the reconciler changes it, within the plan's intent; changing the intent goes to the owner.
+Nothing in code holds that line, since the reconciler's bounds check cannot tell a corrected statement from a moved criterion, so every `card approve` keeps a copy of the document's text in the plan's directory, and at Ended bare `card` shows the owner a diff of the document against that copy, or says it is unchanged; the settling session takes the owner through each change before `card finish` removes the document with the plan's directory.
 Why it is not in the cards alone: a reconciler choosing a new approach after a blocking finding needs the rejected alternatives and their reasons, or it can amend towards an approach authoring rejected while every check still passes.
 Which cards make up the plan, and in what order, the tool stores where it likes; reconcilers do not see it, since the tool builds every prompt.
 
@@ -383,7 +384,7 @@ A held plan, below, is the one exception: it stays in its state and opens no com
 | Bounced | reports what the stopped role asks, and why | `ask` (stays); `resume` → Running; `amend` → Cards |
 | Stopped | reports the card the run stopped at | `resume` → Running; `amend` → Cards |
 | Dead | carries the run on → Running | `stop` → Stopped |
-| Ended | prints the final card's guide, the branch, the worktree's path, the findings with the role that filed each, and the settling prompt | `later`, `decline`, `promote` (stay); `join` → Cards; `finish` → over |
+| Ended | prints the final card's guide, the branch, the worktree's path, how the plan document differs from the text last approved, the findings with the role that filed each, and the settling prompt | `later`, `decline`, `promote` (stay); `join` → Cards; `finish` → over |
 
 Running moves on by itself: to Bounced when a role stops the run, and to Ended when the last card closes done.
 Dead is Running with its process gone, which the tool detects by pid and boot id ("Where the run lives").
@@ -621,7 +622,8 @@ The design is implemented when every one of these holds on the finished branch; 
    The final card runs last.
    A gap it finds stops the run; `card amend` adds cards ahead of it, and `card approve` runs it again with the gap in its record; a finding joined at the plan's end reopens it in place.
 9. **The end.**
-   With every card done, bare `card` prints the final card's guide, the branch, the worktree's path, the findings by headline with the role that filed each, and the settling prompt.
+   With every card done, bare `card` prints the final card's guide, the branch, the worktree's path, a diff of the plan document against the copy of its text the last `card approve` kept, or a sentence that it is unchanged, the findings by headline with the role that filed each, and the settling prompt.
+   The settling session takes the owner through each change to the plan document, and a change the owner says does not stand comes back into the plan as a card filed with `deck new` and joined with `card join`.
    `card join` moves a finding into the plan and takes the plan back to the Cards stage; `card later` records the decision and leaves the card waiting; `card decline` closes it; `card promote` takes two invocations, with the id check first.
    `card finish` refuses while a finding is unsettled, then removes the worktree and keeps the branch.
    `card drop` ends a plan from any state, closing declined, with one note, every card of the plan not yet closed done.

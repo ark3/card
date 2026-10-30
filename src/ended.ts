@@ -5,6 +5,7 @@ import type { Role } from "./cycle.ts";
 import { endRun, settle } from "./dead.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
+import { git } from "./git.ts";
 import { holdWorktree, removeWorktree, unremovable, worktreeOf } from "./landing.ts";
 import { closeCard, recordSections, reopenCard } from "./operations.ts";
 import { forOwner } from "./owner.ts";
@@ -36,9 +37,40 @@ async function branchOf(plan: Plan): Promise<string> {
 }
 
 /**
- * Bare `card` in Ended: for the owner, the plan's branch and worktree, the
- * findings the run filed, and the final card's close note as the guide to
- * the plan's work, then the settling prompt. An unsettled finding is listed
+ * How the plan document differs from the text the owner last approved, which
+ * `card approve` keeps: a diff of the two, frontmatter included, or a
+ * sentence saying they are the same, or that a plan approved before the text
+ * was kept has none to compare against. A reconciler may edit the document
+ * during the run, and the final card checks the criteria it states then.
+ */
+async function documentChanges(plan: Plan): Promise<string> {
+  const kept = Bun.file(plan.approved);
+  if (!(await kept.exists())) {
+    return "No approved text of the plan document was kept for this plan, so what the run changed in it cannot be shown.\n";
+  }
+  if ((await kept.text()) === (await Bun.file(plan.document).text())) {
+    return `The plan document ${plan.document} is as the owner last approved it.\n`;
+  }
+  // Exit 1 is git's word that the files differ.
+  const diff = await git(["diff", "--no-index", "--no-color", "--no-ext-diff", "-U3", "--", plan.approved, plan.document], plan.dir);
+  if (!diff.stdout.includes("\n@@ ")) throw new Error(diff.stderr.trim() || "git diff failed on the plan document");
+  // From the first hunk, since the header above it names only the files, and
+  // each hunk's header cut to its line numbers, without the line of the
+  // document git puts after them as context.
+  const hunks = diff.stdout.slice(diff.stdout.indexOf("\n@@ ") + 1).replace(/^(@@ -\S+ \+\S+ @@).*$/gm, "$1");
+  // Longer than any run of backticks in the diff, so no line of the document closes it.
+  const fence = "`".repeat(Math.max(3, ...(hunks.match(/`+/g) ?? []).map((run) => run.length + 1)));
+  return (
+    `The plan document ${plan.document} has changed since the owner last approved it, as this diff from the approved text to the current one shows:\n\n` +
+    `${fence}diff\n${hunks}${fence}\n`
+  );
+}
+
+/**
+ * Bare `card` in Ended: for the owner, the plan's branch and worktree, how
+ * the plan document differs from the text last approved, the findings the
+ * run filed, and the final card's close note as the guide to the plan's
+ * work, then the settling prompt. An unsettled finding is listed
  * with the commands that settle it, and a settled one with how it was, and
  * no command, since the owner has decided it already, but for one awaiting
  * its key, which is listed with the command that records it.
@@ -65,6 +97,7 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
     forOwner(
       `The plan \`${plan.slug}\`'s run has ended, with every card closed.\n\n` +
         `Its branch is \`${branch}\`, checked out in the worktree ${tree}.\n\n` +
+        `${await documentChanges(plan)}\n` +
         `${filed}\nOnce every finding is settled, this ends the plan, removing the worktree and keeping the branch:\n\n  ${command} finish\n\n` +
         `The final card, ${await named(deck, final)}, closed with this note, which is the guide to the plan's work:\n\n${guide}`,
     ),
