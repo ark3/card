@@ -57,23 +57,34 @@ function parseOutcome(raw: string): string {
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
 /**
+ * Which lines of `text` belong to a fenced code block, its opening and
+ * closing lines included, and the fence still open at the end of the text,
+ * null where none is. A fence closes on a line of its own character, at least
+ * as long, and an unclosed one runs to the end of the text. Every reader of a
+ * card's structure decides what is code by this one rule, so text the tool
+ * pastes cannot read as code to one and as structure to another.
+ */
+export function fences(text: string): { fenced: boolean[]; open: string | null } {
+  let open: string | null = null;
+  const fenced = text.split("\n").map((line) => {
+    const match = FENCE.exec(line);
+    if (open === null) {
+      if (match !== null) open = match[1]!;
+      return match !== null;
+    }
+    if (match !== null && match[1]![0] === open[0] && match[1]!.length >= open.length && line.trim() === match[1]) open = null;
+    return true;
+  });
+  return { fenced, open };
+}
+
+/**
  * Whether each line of `text` starts `# ` outside a fenced code block, where
  * it would read as a headline; a fenced line is code, such as a shell comment.
- * A fence closes on a line of its own character, at least as long, and an
- * unclosed one runs to the end of the text.
  */
 function headlineLines(text: string): boolean[] {
-  let fence: string | null = null;
-  return text.split("\n").map((line) => {
-    if (fence === null) {
-      const open = FENCE.exec(line);
-      if (open !== null) fence = open[1]!;
-      return open === null && line.startsWith("# ");
-    }
-    const close = FENCE.exec(line);
-    if (close !== null && close[1]![0] === fence[0] && close[1]!.length >= fence.length && line.trim() === close[1]) fence = null;
-    return false;
-  });
+  const { fenced } = fences(text);
+  return text.split("\n").map((line, index) => !fenced[index] && line.startsWith("# "));
 }
 
 /**
@@ -92,18 +103,47 @@ export function refuseHeadlines(what: string, text: string): void {
   );
 }
 
+// An ATX heading's marker, by CommonMark: up to three spaces, then one to six
+// `#`, then a space, a tab or the end of the line.
+const HEADING = /^( {0,3})(#{1,6})(?=[ \t]|$)/;
+// The level of the shallowest heading pasted text keeps, below the `## `
+// section the tool writes it under.
+const PASTED_LEVEL = 3;
+
 /**
- * `text` with each line `refuseHeadlines` would refuse made a `## ` line, for
- * text the tool takes from a session into a card, so a session's heading
- * costs it no refusal. Fenced lines are left as they are, since rewriting
- * them would change the code they show.
+ * `text` as the tool pastes it from a session into a card, inert to every
+ * reader of the card's structure. Outside fences, each heading is shifted
+ * down by the one number of levels that brings the shallowest to level 3, so
+ * the text's headings become subheadings of the section it is written under,
+ * in their own relative structure, and no line can read as the headline or a
+ * record boundary; a heading the shift would take past level 6, the deepest
+ * Markdown has, stops at 6. Text whose headings are all level 3 or deeper is
+ * left as it is, so pasting twice changes nothing. A fence the text leaves
+ * open is closed at its end, so it cannot hide what the tool writes after
+ * it. Fenced lines are left as they are, since rewriting them would change
+ * the code they show.
  */
-export function demoteHeadlines(text: string): string {
-  const marked = headlineLines(text);
-  return text
-    .split("\n")
-    .map((line, index) => (marked[index] ? `#${line}` : line))
-    .join("\n");
+export function escapePasted(text: string): string {
+  const lines = text.split("\n");
+  const { fenced } = fences(text);
+  // Each line's heading level, 0 for a line that is no heading.
+  const levels = lines.map((line, index) => (fenced[index] ? 0 : (HEADING.exec(line)?.[2]!.length ?? 0)));
+  const headed = levels.filter((level) => level > 0);
+  const shift = headed.length === 0 ? 0 : Math.max(0, PASTED_LEVEL - Math.min(...headed));
+  const shifted = lines.map((line, index) =>
+    levels[index] === 0 ? line : line.replace(HEADING, (_, indent: string) => `${indent}${"#".repeat(Math.min(6, levels[index]! + shift))}`),
+  );
+  return closeFence(shifted.join("\n"));
+}
+
+/**
+ * `text` with the fence it leaves open, if any, closed on a line of its own
+ * at its end, for text the tool writes more below.
+ */
+export function closeFence(text: string): string {
+  const { open } = fences(text);
+  if (open === null) return text;
+  return text.endsWith("\n") ? `${text}${open}\n` : `${text}\n${open}`;
 }
 
 /** Refuses `headline` as a card's headline: empty, or more than one line. */

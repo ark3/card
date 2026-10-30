@@ -104,14 +104,14 @@ test("filing a body with a `# ` line refuses, naming the line, and writes nothin
   expect(await Array.fromAsync(new Bun.Glob("*").scan({ cwd: deck.openDir, dot: true }))).toEqual([]);
 });
 
-test("a close note's `# ` line is closed as a `## ` line", async () => {
+test("a close note's `# ` line is closed as a `### ` line", async () => {
   const deck = await createDeck(await tempRepo(), "proj");
   await Bun.write(path.join(deck.openDir, "proj-behilo.md"), "# The card being closed\n\nBody.\n");
 
   await closeCard(deck, "proj-behilo", "done", "Landed.\n# Not a headline");
 
   expect(await Bun.file(path.join(deck.closedDir, "proj-behilo.md")).text()).toEndWith(
-    "Body.\n\n## Close note\n\nLanded.\n## Not a headline\n",
+    "Body.\n\n## Close note\n\nLanded.\n### Not a headline\n",
   );
 });
 
@@ -224,14 +224,14 @@ test("a record section lands at the end of the card, every byte above it kept", 
   ]);
 });
 
-test("a record section's `# ` line is appended as a `## ` line", async () => {
+test("a record section's `# ` line is appended as a `### ` line", async () => {
   const deck = await createDeck(await tempRepo(), "proj");
   const file = path.join(deck.openDir, "proj-behilo.md");
   await Bun.write(file, "# The card\n\nBody.\n");
 
   await appendRecord(deck, "proj-behilo", "Account", "Did it.\n# Not a headline\n");
 
-  expect(await Bun.file(file).text()).toBe("# The card\n\nBody.\n\n## Account\n\nDid it.\n## Not a headline\n");
+  expect(await Bun.file(file).text()).toBe("# The card\n\nBody.\n\n## Account\n\nDid it.\n### Not a headline\n");
 });
 
 test("filing under a drawn id a card already holds in closed/ counts as filed, and files no second copy in open/", async () => {

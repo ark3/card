@@ -863,7 +863,7 @@ test("bare card in Running reports the card in flight with its role, the cards c
 
 // Recorded text the owner reads, which the reports carry byte for byte: lines
 // of markdown, trailing spaces and a heading below the record's own.
-const RECORDED = "First line.  \n\n## Trying it\n\n```sh\nbun run greet --loud\n```\n\n- one\n  - **two**\n";
+const RECORDED = "First line.  \n\n### Trying it\n\n```sh\nbun run greet --loud\n```\n\n- one\n  - **two**\n";
 
 for (const [harness, resume] of [
   ["claude", (id: string) => `claude --resume ${id}`],
@@ -954,6 +954,8 @@ test(
 // A ticket for two findings, as a session drafts one: headed sections, a
 // line ending in spaces and no final newline, which the owner sees as written.
 const DRAFT = "The greeting's docs and license\n\n## What is wrong\n\nThe README names `greet.sh`,  \nand nothing says how the code is licensed.\n\n## What to do\n\nRename it, and pick a license.";
+// The draft as a card's record holds it, its headings beneath `## Promotion`.
+const STORED_DRAFT = DRAFT.replaceAll("## ", "### ");
 
 test("card promote at Ended prints a clean draft for two findings for the owner and marks both awaiting a key, which settles them for card finish; bare card lists both with the --key form until card promote --key closes both promoted", async () => {
   const { repo, deck, plan, first, final } = await inCheck();
@@ -977,7 +979,7 @@ test("card promote at Ended prints a clean draft for two findings for the owner 
   expect(promoting.stdout).toStartWith(forOwner(DRAFT));
   expect(promoting.stdout).toContain(`<for_owner>\n${DRAFT}\n</for_owner>\n`);
   for (const id of [readme, license]) {
-    expect(readFileSync(path.join(deck.openDir, `${id}.md`), "utf8")).toEndWith(`Found.\n\n## Promotion\n\n${DRAFT}\n`);
+    expect(readFileSync(path.join(deck.openDir, `${id}.md`), "utf8")).toEndWith(`Found.\n\n## Promotion\n\n${STORED_DRAFT}\n`);
   }
 
   const awaiting = (id: string, headline: string) =>
@@ -1005,12 +1007,12 @@ test("card promote at Ended prints a clean draft for two findings for the owner 
   for (const id of [readme, license]) {
     const closed = readFileSync(path.join(deck.closedDir, `${id}.md`), "utf8");
     expect(closed).toContain("closed: promoted");
-    expect(closed).toEndWith(`## Promotion\n\n${DRAFT}\n\n## Close note\n\nPromoted to GREET-42.\n`);
+    expect(closed).toEndWith(`## Promotion\n\n${STORED_DRAFT}\n\n## Close note\n\nPromoted to GREET-42.\n`);
   }
   expect(await waitingCards(deck)).toEqual([]);
 });
 
-test("card promote takes a draft opening `# Title`, prints it as drafted for the owner, and stores it in the card with `## Title`", async () => {
+test("card promote takes a draft opening `# Title`, prints it as drafted for the owner, and stores it in the card with `### Title`, its other headings beneath it", async () => {
   const { repo, deck, plan, first, final } = await inCheck();
   await ensureBranch("plan/greeting", "main", repo);
   await holdWorktree(plan.slug, "plan/greeting", repo);
@@ -1023,7 +1025,7 @@ test("card promote takes a draft opening `# Title`, prints it as drafted for the
   expect(promoting.stderr).toBe("");
   expect(promoting.code).toBe(0);
   expect(promoting.stdout).toStartWith(forOwner(`# Title\n\n${DRAFT}`));
-  expect(readFileSync(path.join(deck.openDir, `${finding}.md`), "utf8")).toEndWith(`Found.\n\n## Promotion\n\n## Title\n\n${DRAFT}\n`);
+  expect(readFileSync(path.join(deck.openDir, `${finding}.md`), "utf8")).toEndWith(`Found.\n\n## Promotion\n\n### Title\n\n${DRAFT.replaceAll("## ", "#### ")}\n`);
 });
 
 test("a finding another plan joins is settled at Ended, listed with the plan that took it and no command, and card finish ends the plan", async () => {

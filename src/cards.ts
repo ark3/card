@@ -1,7 +1,7 @@
 import { readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import prompt from "../payload/cards.md" with { type: "text" };
-import { type Card, demoteHeadlines, formatCard, readCard } from "./cardfile.ts";
+import { type Card, escapePasted, formatCard, readCard } from "./cardfile.ts";
 import { type Deck, locate } from "./deck.ts";
 import { wrote } from "./dying.ts";
 import { citedIds } from "./id.ts";
@@ -291,7 +291,7 @@ export async function promote(deck: Deck, args: string[]): Promise<void> {
   }
   const cited = citedIds(draft, deck.prefix);
   if (cited.length > 0) throw new Error(`the draft must cite no card id, and it cites ${cited.join(", ")}`);
-  const section = `\n## Promotion\n\n${demoteHeadlines(draft).replace(/\n*$/, "\n")}`;
+  const section = `\n## Promotion\n\n${escapePasted(draft).replace(/\n*$/, "\n")}`;
   for (const id of ids) {
     if (!(await Bun.file((await locate(deck, id))!.path).text()).endsWith(section)) await appendRecord(deck, id, "Promotion", draft);
   }

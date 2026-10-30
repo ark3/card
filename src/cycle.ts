@@ -11,7 +11,7 @@ import review from "../payload/review.md" with { type: "text" };
 import revise from "../payload/revise.md" with { type: "text" };
 import stripIds from "../payload/strip-ids.md" with { type: "text" };
 import type { Answer, ObjectSchema, Schema } from "./answer.ts";
-import { demoteHeadlines, refuseHeadline } from "./cardfile.ts";
+import { escapePasted, refuseHeadline } from "./cardfile.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { headSha } from "./git.ts";
@@ -377,12 +377,13 @@ async function referenceChecked(deck: Deck, reviewer: Session, tree: string, bas
  * Files each finding in `answer`, from the role `role` working the card
  * `card`, through deck's filing function: into `open/` and in no plan's
  * order, so it waits and no run picks it up, with the role, the card and the
- * plan on its body's first line and the body's `# ` lines made `## `. Each
- * is recorded in the plan's state as it is filed, for the end of the plan.
+ * plan on its body's first line and the body as `escapePasted` makes it, so
+ * no line of it cuts the new card's contract short. Each is recorded in the
+ * plan's state as it is filed, for the end of the plan.
  */
 async function fileFindings(deck: Deck, plan: Plan, role: Role, card: string, answer: Answer): Promise<Plan> {
   for (const { headline, body } of (answer.findings ?? []) as Finding[]) {
-    const filed = `Filed by the ${role} of ${card}, in the plan ${plan.slug}.\n\n${demoteHeadlines(body)}`;
+    const filed = `Filed by the ${role} of ${card}, in the plan ${plan.slug}.\n\n${escapePasted(body)}`;
     const id = await fileCard(deck, { labels: [], blockedBy: [], headline, body: filed });
     plan = await writeRecord(plan, { findings: [...plan.findings, { id, role, card }] });
   }
@@ -583,9 +584,9 @@ async function cycleFrom(
       // A cycle resumed at the land step lands its reviewer's landing answer here too.
       for (let hookReturns = 0; (step === "review" || step === "land") && answer.outcome !== "revision"; hookReturns++) {
         answer = await referenceChecked(deck, session(role), tree, base, answer);
-        // The commit and the card's close note take the note alike, its `# ` lines made `## `.
+        // The commit and the card's close note take the note alike, as `escapePasted` makes it.
         const subject = landingSubject(answer.subject as string);
-        const note = demoteHeadlines(answer.close_note as string);
+        const note = escapePasted(answer.close_note as string);
         cycle = { ...cycle, step: "land", subject, note };
         plan = await writeRecord(plan, { cycle });
         try {

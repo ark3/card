@@ -5,13 +5,14 @@ import { EXCHANGES, ID_RETURNS, RECONCILER, REVISION_ROUNDS, runCard } from "../
 import { createDeck, type Deck } from "../src/deck.ts";
 import { gitOrThrow, headSha } from "../src/git.ts";
 import { ensureBranch, holdWorktree } from "../src/landing.ts";
-import { readCard } from "../src/cardfile.ts";
-import { appendRecord, fileCard } from "../src/operations.ts";
+import { parseCard, readCard } from "../src/cardfile.ts";
+import { appendRecord, fileCard, recordSections } from "../src/operations.ts";
 import { bootId, listPlans, type Plan, startPlan, waitingCards, writeRecord } from "../src/plan.ts";
 import { answerInstruction } from "../src/answer.ts";
 import { calls, type Reply, removeTempDirs, script, stand, tempDir, tempRepo } from "./helpers.ts";
 
 const OUTER_PATH = process.env.PATH;
+const CARD = path.join(import.meta.dir, "..", "src", "card.ts");
 
 // The ids the cycle draws for its sessions, handed out in order, so the
 // stand-in can be scripted for each before the cycle runs: the reconciler's,
@@ -234,7 +235,7 @@ test("a reviewer's fixes in place land in the card's one commit, with no second 
   expect(await gitOrThrow(["show", "HEAD:hello.txt"], tree)).toBe("hello, fixed\n");
 });
 
-test("an account, subject, close note and finding body holding lines starting `# ` are taken with no repair round, the card holding each line as `## ` and the subject losing its marker", async () => {
+test("an account, subject, close note and finding body holding lines starting `# ` are taken with no repair round, the card holding each line as `### ` and the subject losing its marker", async () => {
   const { deck, plan, id, tree } = await running();
   const headedBody = { headline: FOUND[0]!.headline, body: `# README\n\n${FOUND[0]!.body}` };
   const implementer = finding(answer({ outcome: "done", account: `# What I did\n\n${ACCOUNT}` }), [headedBody]);
@@ -245,10 +246,10 @@ test("an account, subject, close note and finding body holding lines starting `#
   expect(calls(control, ids[1]!)).toHaveLength(1);
   expect(calls(control, ids[2]!)).toHaveLength(1);
   const closed = readFileSync(path.join(deck.closedDir, `${id}.md`), "utf8");
-  expect(closed).toContain(`## Account\n\n## What I did\n\n${ACCOUNT}\n`);
-  expect(closed).toEndWith(`## Close note\n\n## Landed\n\n${NOTE}\n`);
-  expect(await message(tree)).toBe(`${SUBJECT}\n\n## Landed\n\n${NOTE}\n`);
-  expect((await filed(deck)).files).toEqual([findingFile("implementer", id, { ...headedBody, body: `## README\n\n${FOUND[0]!.body}` })]);
+  expect(closed).toContain(`## Account\n\n### What I did\n\n${ACCOUNT}\n`);
+  expect(closed).toEndWith(`## Close note\n\n### Landed\n\n${NOTE}\n`);
+  expect(await message(tree)).toBe(`${SUBJECT}\n\n### Landed\n\n${NOTE}\n`);
+  expect((await filed(deck)).files).toEqual([findingFile("implementer", id, { ...headedBody, body: `### README\n\n${FOUND[0]!.body}` })]);
 });
 
 test("a `# ` line inside a fenced code block in an account comes through unchanged, and the card still reads with its one headline", async () => {
@@ -259,6 +260,105 @@ test("a `# ` line inside a fenced code block in an account comes through unchang
   expect(ended.outcome).toBe("landed");
   expect(cardFile(deck, id)).toContain(`## Account\n\n${fenced}\n`);
   expect((await readCard(path.join(deck.closedDir, `${id}.md`))).headline).toBe("Add the greeting");
+});
+
+// Text a session might write: a heading at every level, each record heading,
+// a fenced block holding record headings, and a fence it never closes.
+const HOSTILE = [
+  "# Account",
+  "",
+  "Pasted prose.",
+  "",
+  "## Close note",
+  "### Review feedback",
+  "#### Gap",
+  "##### Promotion",
+  "###### Deepest",
+  "",
+  "```sh",
+  "## Account",
+  "# a shell comment",
+  "```",
+  "",
+  "## Gap",
+  "",
+  "~~~",
+  "## Promotion",
+].join("\n");
+// As the tool pastes it: every heading outside a fence shifted two levels, the
+// shallowest to level 3 and none past 6, and the open fence closed.
+const ESCAPED = [
+  "### Account",
+  "",
+  "Pasted prose.",
+  "",
+  "#### Close note",
+  "##### Review feedback",
+  "###### Gap",
+  "###### Promotion",
+  "###### Deepest",
+  "",
+  "```sh",
+  "## Account",
+  "# a shell comment",
+  "```",
+  "",
+  "#### Gap",
+  "",
+  "~~~",
+  "## Promotion",
+  "~~~",
+].join("\n");
+
+/** The card file `file` as the tool parses it: its headline, its contract and its record sections, each trimmed at its end. */
+function parsed(file: string) {
+  const { headline, body } = parseCard(readFileSync(file, "utf8"));
+  const sections = recordSections(body);
+  return {
+    headline,
+    contract: body.slice(0, sections[0]?.index ?? body.length).trimEnd(),
+    record: sections.map((section, index) => body.slice(section.index, sections[index + 1]?.index ?? body.length).trimEnd()),
+  };
+}
+
+test("text pasted on every path reads as no headline and no record boundary, its headings re-leveled beneath the section it is written under", async () => {
+  const { repo, deck, plan, id, tree } = await running();
+  const implementer = [answer({ outcome: "done", account: HOSTILE }, MISSPELT), answer({ outcome: "done", account: HOSTILE }, RESPELT)];
+  const landing = finding(answer({ outcome: "approved", subject: SUBJECT, close_note: HOSTILE }), [{ headline: "Hostile finding", body: HOSTILE }]);
+  const { ended } = await cycle(deck, plan, id, tree, implementer, [revision(HOSTILE)], [proceed()], [[landing]]);
+
+  expect(ended.outcome).toBe("landed");
+  expect(parsed(path.join(deck.closedDir, `${id}.md`))).toEqual({
+    headline: "Add the greeting",
+    contract: CONTRACT.trimEnd(),
+    record: ["Account", "Review feedback", "Account", "Close note"].map((heading) => `## ${heading}\n\n${ESCAPED}`),
+  });
+
+  const found = (await listPlans(deck))[0]!.findings[0]!.id;
+  const filedAs = `Filed by the reviewer of ${id}, in the plan greeting.\n\n${ESCAPED}`;
+  expect(parsed(path.join(deck.openDir, `${found}.md`))).toEqual({ headline: "Hostile finding", contract: filedAs, record: [] });
+
+  // Run twice, as a retry would, which must find the first run's section.
+  const env: Record<string, string | undefined> = { ...process.env, PATH: OUTER_PATH };
+  delete env.CARD_ROOT;
+  for (let run = 0; run < 2; run++) {
+    const proc = Bun.spawn([CARD, "promote", found], { cwd: repo, env, stdin: new Blob([HOSTILE]), stdout: "ignore", stderr: "pipe" });
+    expect(await new Response(proc.stderr).text()).toBe("");
+    expect(await proc.exited).toBe(0);
+  }
+  expect(parsed(path.join(deck.openDir, `${found}.md`))).toEqual({
+    headline: "Hostile finding",
+    contract: filedAs,
+    record: [`## Promotion\n\n${ESCAPED}`],
+  });
+
+  const fenced = await fileCard(deck, { labels: [], blockedBy: [], headline: "Fenced", body: "Run:\n\n```sh\necho hi\n" });
+  await appendRecord(deck, fenced, "Gap", HOSTILE);
+  expect(parsed(path.join(deck.openDir, `${fenced}.md`))).toEqual({
+    headline: "Fenced",
+    contract: "Run:\n\n```sh\necho hi\n```",
+    record: [`## Gap\n\n${ESCAPED}`],
+  });
 });
 
 test("a subject spanning more than one line draws the repair prompt, and the repaired subject is the commit's first line", async () => {
@@ -568,7 +668,7 @@ test(`past ${REVISION_ROUNDS} revision rounds, a reviewer asking for another sto
   expect(existsSync(path.join(deck.openDir, `${id}.md`))).toBe(true);
 });
 
-test("feedback with a line starting `# ` is taken with the line as `## `, and a revision lacking feedback draws the repair prompt", async () => {
+test("feedback with a line starting `# ` is taken with the line as `### `, and a revision lacking feedback draws the repair prompt", async () => {
   const { deck, plan, id, tree } = await running();
   const bare = answer({ outcome: "revision" });
   const headed = revision(`# Findings\n\n${FEEDBACK}`);
@@ -577,7 +677,7 @@ test("feedback with a line starting `# ` is taken with the line as `## `, and a 
   const [, repair, ...more] = calls(control, ids[2]!);
   expect(repair!.stdin).toContain('The previous report was invalid:\nanswer lacks the field "feedback", which outcome "revision" carries');
   expect(more).toEqual([]);
-  expect(cardFile(deck, id)).toContain(`## Review feedback\n\n## Findings\n\n${FEEDBACK}\n\n## Account\n`);
+  expect(cardFile(deck, id)).toContain(`## Review feedback\n\n### Findings\n\n${FEEDBACK}\n\n## Account\n`);
 });
 
 const FINDING = "The card's done-condition reads `greeting.txt`, which nothing in the card writes: it asks for `hello.txt` alone.";

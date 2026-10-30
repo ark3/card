@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import path from "node:path";
-import { createCard, demoteHeadlines, formatCard, parseCard, readCard, refuseHeadlines } from "../src/cardfile.ts";
+import { createCard, escapePasted, formatCard, parseCard, readCard, refuseHeadlines } from "../src/cardfile.ts";
 import { removeTempDirs, tempDir } from "./helpers.ts";
 
 afterAll(removeTempDirs);
@@ -111,10 +111,18 @@ test("a `# ` line inside a fenced code block is no headline, to the check and th
   expect(parseCard(`# The card\n\n${fenced}`)).toEqual({ labels: [], blockedBy: [], headline: "The card", body: fenced });
 });
 
-test("demoting turns each `# ` line outside a fence into `## ` and leaves every other line as it was", () => {
-  const text = "# Title\n\nProse # not a heading.\n## Sub\n#hash\n\n```\n# a comment\n```\n# Again\n";
-  expect(demoteHeadlines(text)).toBe("## Title\n\nProse # not a heading.\n## Sub\n#hash\n\n```\n# a comment\n```\n## Again\n");
-  expect(() => refuseHeadlines("note", demoteHeadlines(text))).not.toThrow();
+test("pasted text has its headings outside a fence shifted alike so the shallowest is level 3, and every other line left as it was", () => {
+  const text = "# Title\n\nProse # not a heading.\n## Sub\n#hash\n  # Indented\n#\n##### Deep\n\n```\n# a comment\n```\nSetext\n===\n";
+  const escaped = "### Title\n\nProse # not a heading.\n#### Sub\n#hash\n  ### Indented\n###\n###### Deep\n\n```\n# a comment\n```\nSetext\n===\n";
+  expect(escapePasted(text)).toBe(escaped);
+  expect(escapePasted(escaped)).toBe(escaped);
+  expect(escapePasted("##### Five\n###### Six\n")).toBe("##### Five\n###### Six\n");
+  expect(() => refuseHeadlines("note", escapePasted(text))).not.toThrow();
+});
+
+test("pasted text that leaves a fence open has it closed at its end, with the fence it opened", () => {
+  expect(escapePasted("Ran:\n\n````sh\n# a comment\n```\n")).toBe("Ran:\n\n````sh\n# a comment\n```\n````\n");
+  expect(escapePasted("~~~\n## Account")).toBe("~~~\n## Account\n~~~");
 });
 
 test("rejects a value that could not be written back", () => {

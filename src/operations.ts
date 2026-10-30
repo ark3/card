@@ -1,7 +1,7 @@
 import { readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Card, Outcome } from "./cardfile.ts";
-import { createCard, demoteHeadlines, readCard } from "./cardfile.ts";
+import { closeFence, createCard, escapePasted, fences, readCard } from "./cardfile.ts";
 import { type Deck, locate, stagedId, stagingName } from "./deck.ts";
 import { wrote } from "./dying.ts";
 import { citedIds, drawId } from "./id.ts";
@@ -201,12 +201,29 @@ function recordOutcome(id: string, text: string, outcome: string): string {
 /** The headings a record section can carry, all of them written by the tool. */
 const RECORD_HEADINGS = ["Account", "Review feedback", "Gap", "Close note", "Promotion"] as const;
 export type RecordHeading = (typeof RECORD_HEADINGS)[number];
-const RECORD_SECTION = new RegExp(`^## (${RECORD_HEADINGS.join("|")})$`, "gm");
+const RECORD_SECTION = new RegExp(`^## (${RECORD_HEADINGS.join("|")})$`);
+
+/**
+ * Each record section's heading in a card's text, in order, with the offset
+ * of its line: a whole line `## ` and a record heading, outside any fenced
+ * code block, by the fence rule every reader of a card's structure shares.
+ */
+export function recordSections(text: string): { index: number; heading: RecordHeading }[] {
+  const { fenced } = fences(text);
+  const sections: { index: number; heading: RecordHeading }[] = [];
+  let index = 0;
+  for (const [at, line] of text.split("\n").entries()) {
+    const match = fenced[at] ? null : RECORD_SECTION.exec(line);
+    if (match !== null) sections.push({ index, heading: match[1] as RecordHeading });
+    index += line.length + 1;
+  }
+  return sections;
+}
 
 /** The card text's frontmatter block, empty where it has none, and its record sections in order, each from its heading. */
 function toolWritten(text: string): { frontmatter: string; record: string[] } {
   const end = text.startsWith("---\n") ? text.indexOf("\n---\n", 3) + 5 : 0;
-  const sections = [...text.matchAll(RECORD_SECTION)];
+  const sections = recordSections(text);
   return {
     frontmatter: text.slice(0, end),
     record: sections.map((section, index) => text.slice(section.index, sections[index + 1]?.index ?? text.length)),
@@ -230,13 +247,15 @@ export function toolWrittenChanges(before: string, after: string): string[] {
 }
 
 /**
- * `text` with a record section appended: `heading`, then `body`, any line of
- * it starting `# ` made a `## ` line, since a card's one such line is its
- * headline. The heading is what says where the card's contract ends and the
- * record begins; nothing else marks the seam.
+ * `text` with a record section appended: `heading`, then `body` as
+ * `escapePasted` makes it, so no line of it reads as the headline or as a
+ * record heading. The heading is what says where the card's contract ends and
+ * the record begins; nothing else marks the seam, so a fence `text` leaves
+ * open, as a hand-written contract may, is closed above it first, or the
+ * heading would read as code.
  */
 function withRecord(text: string, heading: RecordHeading, body: string): string {
-  return `${text.replace(/\n*$/, "\n")}\n## ${heading}\n\n${demoteHeadlines(body).replace(/\n*$/, "\n")}`;
+  return `${closeFence(text.replace(/\n*$/, "\n"))}\n## ${heading}\n\n${escapePasted(body).replace(/\n*$/, "\n")}`;
 }
 
 /**
@@ -268,12 +287,12 @@ export async function dropUnlanded(deck: Deck, id: string): Promise<void> {
   const found = await locate(deck, id);
   if (found === null) throw new Error(`no card ${id} in ${deck.deckDir}`);
   const text = await Bun.file(found.path).text();
-  const sections = [...text.matchAll(RECORD_SECTION)];
-  const landed = sections.findLastIndex(([, heading]) => heading === "Close note");
+  const sections = recordSections(text);
+  const landed = sections.findLastIndex(({ heading }) => heading === "Close note");
   let dropped = text;
   // From the end, so the offsets of the sections still to look at hold.
   for (let index = sections.length - 1; index > landed; index--) {
-    const [, heading] = sections[index]!;
+    const { heading } = sections[index]!;
     if (heading !== "Account" && heading !== "Review feedback") continue;
     dropped = dropped.slice(0, sections[index]!.index) + dropped.slice(sections[index + 1]?.index ?? text.length);
   }

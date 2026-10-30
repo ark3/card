@@ -515,6 +515,8 @@ It binds every site where the tool tells the owner something: the stop and what 
 The card file's format is the API, and it stays greppable.
 
 - A card is a markdown file named by its id, with exactly one `# ` line, its headline, which never wraps, and prose below it in whatever shape its own work needs.
+- Text the tool pastes into a card from a session — an account, review feedback, a gap, a close note, a promotion draft, a finding's body — is re-leveled beneath the section it is written under: outside fenced code, its headings shift down together until the shallowest is level 3, and a fence it leaves open is closed at its end, so no pasted text can read as a headline or a record boundary.
+  Every reader of a card's structure decides what is fenced code by one rule, and the tool closes a fence the text above a record heading leaves open before it writes the heading.
 - Its frontmatter permits three fields and no others, one line each and no block sequences, so a grep for `^labels:` shows a line with its values: `blocked-by:` and `labels:`, lists the author writes, and `closed:`, the outcome the tool writes at close.
   Each field is optional: a writer omits a list that is empty, `closed:` appears only on a closed card, and a card with no fields has no frontmatter.
 - Labels are opaque strings the tool stores and matches, with no opinion about what any of them mean.

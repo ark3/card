@@ -6,14 +6,14 @@ import { endRun, settle } from "./dead.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { holdWorktree, removeWorktree, unremovable, worktreeOf } from "./landing.ts";
-import { closeCard, reopenCard } from "./operations.ts";
+import { closeCard, recordSections, reopenCard } from "./operations.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
 import { type Context, listPlans, type Plan, removePlan, type Standing, standing, writeRecord } from "./plan.ts";
 import { named } from "./reports.ts";
 
-// What `closeCard` writes above a close note.
-const CLOSE_NOTE = "\n## Close note\n\n";
+// What `closeCard` writes above a close note, from its heading.
+const CLOSE_NOTE = "## Close note\n\n";
 
 /**
  * Each finding the run filed, with its headline, how the owner settled it,
@@ -47,7 +47,8 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
   const final = plan.final!;
   // The last close note runs to the end of the card, since the close appended it.
   const text = await Bun.file((await locate(deck, final))!.path).text();
-  const guide = text.slice(text.lastIndexOf(CLOSE_NOTE) + CLOSE_NOTE.length);
+  const last = recordSections(text).findLast(({ heading }) => heading === "Close note")!;
+  const guide = text.slice(last.index + CLOSE_NOTE.length);
   const branch = await branchOf(plan);
   // `card approve` made the worktree, which is returned as it stands.
   const tree = await holdWorktree(plan.slug, branch, process.cwd());

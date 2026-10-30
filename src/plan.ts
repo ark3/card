@@ -7,7 +7,7 @@ import type { Deck } from "./deck.ts";
 import { wrote } from "./dying.ts";
 import type { Harness, Session } from "./harness.ts";
 import { drawId } from "./id.ts";
-import { type Listed, listCards } from "./operations.ts";
+import { type Listed, listCards, recordSections } from "./operations.ts";
 
 /**
  * The rows of `BRIEF.md`'s table under "The plan's states and the verb
@@ -373,7 +373,7 @@ export function standing(id: string, card: Card, plans: Plan[], plan: Plan | nul
  * record, and a listing made after its plan is gone still knows it.
  */
 export function awaitingKey(card: Card): boolean {
-  return /^## Promotion$/m.test(card.body);
+  return recordSections(card.body).some(({ heading }) => heading === "Promotion");
 }
 
 /**
