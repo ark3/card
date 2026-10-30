@@ -683,6 +683,64 @@ test("a reconciler that amends the card having changed the worktree stops the cy
   expect(existsSync(path.join(control, ids[2]!, "calls"))).toBe(false);
 });
 
+test("a reconciler that replies having changed the worktree stops the cycle as failed, naming the path and leaving it beside the implementer's work, with the implementer not resumed", async () => {
+  const { deck, plan, id, tree, base } = await running();
+  const { control, ended } = await drawn(deck, plan, id, tree, [proceed(), reply("printf 'stray\\n' > stray.txt")], [blocked("printf 'hel' > hello.txt"), done()], [approved()]);
+
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reconciler");
+  expect(ended.session).toEqual({ harness: "pi", id: ids[0]!, dir: tree });
+  expect(ended.cause).toContain("stray.txt");
+  expect(ended.cause).not.toContain("hello.txt");
+  expect(ended.cause).toContain("left in place");
+  expect(ended.question).toBeUndefined();
+  expect(ended.plan.cycle).toMatchObject({ role: "reconciler", step: "converse" });
+  expect(await headSha(tree)).toBe(base);
+  expect(readFileSync(path.join(tree, "stray.txt"), "utf8")).toBe("stray\n");
+  expect(readFileSync(path.join(tree, "hello.txt"), "utf8")).toBe("hel");
+  expect(calls(control, ids[1]!)).toHaveLength(1);
+  expect(existsSync(path.join(control, ids[2]!, "calls"))).toBe(false);
+});
+
+test("a reconciler that replies having changed the card's frontmatter or record stops the cycle as failed, naming each and leaving the edit, with the implementer not resumed", async () => {
+  const { deck, plan, id, tree } = await running();
+  const file = await withFrontmatterAndRecord(deck, id);
+  const overstep = `sed -i -e 's/labels: greeting/labels: greeting, urgent/' -e 's/found no greeting/found a greeting/' '${file}'`;
+  const { control, ended } = await drawn(deck, plan, id, tree, [proceed(), reply(overstep)], [blocked("printf 'hel' > hello.txt"), done()], [approved()]);
+
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reconciler");
+  expect(ended.cause).toContain("frontmatter");
+  expect(ended.cause).toContain("## Gap");
+  expect(ended.cause).toContain("left in place");
+  expect(ended.plan.cycle).toMatchObject({ role: "reconciler", step: "converse" });
+  const text = readFileSync(file, "utf8");
+  expect(text).toStartWith("---\nlabels: greeting, urgent\n---\n");
+  expect(text).toContain("## Gap\n\nThe plan's last check found a greeting.\n");
+  expect(readFileSync(path.join(tree, "hello.txt"), "utf8")).toBe("hel");
+  expect(calls(control, ids[1]!)).toHaveLength(1);
+  expect(existsSync(path.join(control, ids[2]!, "calls"))).toBe(false);
+});
+
+test("a reconciler that stops having changed the card stops the cycle with a cause naming the change beside its own cause, and its question", async () => {
+  const { deck, plan, id, tree } = await running();
+  const file = await withFrontmatterAndRecord(deck, id);
+  const overstep = `sed -i 's/labels: greeting/labels: greeting, urgent/' '${file}'`;
+  const { control, ended } = await cycle(deck, plan, id, tree, [done()], [approved()], [stop(overstep)]);
+
+  expect(ended.outcome).toBe("stopped");
+  if (ended.outcome !== "stopped") return;
+  expect(ended.role).toBe("reconciler");
+  expect(ended.cause).toContain("frontmatter");
+  expect(ended.cause).toContain("left in place");
+  expect(ended.cause).toContain("the card depends on work no earlier card has landed");
+  expect(ended.question).toBe(QUESTION);
+  expect(readFileSync(file, "utf8")).toStartWith("---\nlabels: greeting, urgent\n---\n");
+  for (const session of [ids[1]!, ids[2]!]) expect(existsSync(path.join(control, session, "calls"))).toBe(false);
+});
+
 test("the fresh implementer an amendment starts reads the card without the account and feedback of the work the amendment discarded", async () => {
   const { deck, plan, id, tree } = await running();
   // The contract alone, since the record of the discarded work names hello.txt too.

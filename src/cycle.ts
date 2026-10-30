@@ -244,6 +244,14 @@ const CAUSES: Record<string, string> = {
   gap: "the final card found an acceptance criterion of the plan document that does not hold on the plan's branch, a gap in the plan for authoring to close with cards ahead of the final card",
 };
 
+/** What the reconciler did, by each outcome it answers, as the run's log and a cause read it. */
+const DID: Record<string, string> = {
+  proceed: "proceeded",
+  stop: "stopped",
+  amended: "amended the card",
+  reply: "replied",
+};
+
 /** The implementer's answer, whose fields by outcome `carried` checks, as it does the reconciler's. */
 const IMPLEMENTER: ObjectSchema = {
   type: "object",
@@ -614,6 +622,24 @@ async function cycleFrom(
     // two reruns the card rather than losing them.
     plan = await fileFindings(deck, plan, role, id, answer);
 
+    // On every answer the reconciler gives, before any outcome's branch acts on it.
+    if (step === "reconcile" || step === "converse") {
+      const paths = await changedSince(tree, base, reconciledFrom.tree);
+      const parts = toolWrittenChanges(reconciledFrom.card, await Bun.file(await cardPath(deck, id)).text());
+      if (paths.length > 0 || parts.length > 0) {
+        const changed = [
+          ...(paths.length > 0 ? [`${paths.join(", ")} in the worktree`] : []),
+          ...(parts.length > 0 ? [`the card's ${parts.join(", ")}`] : []),
+        ];
+        // Left in place, since a reconciler that changes these is a bug in it or its prompt for the owner to find.
+        let cause = `the reconciler ${DID[answer.outcome as string]} having changed ${changed.join(" and ")}, which a reconciler may not change; the change is left in place for the owner to look at`;
+        if (answer.outcome !== "stop") return { plan, outcome: "stopped", role, session: session(role), cause };
+        const { cause: own, question } = answer as { cause: string; question: string };
+        cause += `; it stopped because ${CAUSES[own]!}`;
+        return { plan, outcome: "stopped", role, session: session(role), cause, question };
+      }
+    }
+
     if (answer.outcome === "stop") {
       const { cause, question } = answer as { cause: string; question: string };
       const stopped = { plan, outcome: "stopped", role, session: session(role), cause: CAUSES[cause]!, question } as const;
@@ -632,20 +658,8 @@ async function cycleFrom(
       answering = resume;
     } else if (step === "reconcile" || step === "converse") {
       // Every fresh implementer within a cycle starts here, after a reconciler's proceed or its amendment alike.
-      const did = step === "reconcile" ? "proceeded" : "amended the card";
-      const paths = await changedSince(tree, base, reconciledFrom.tree);
-      const parts = toolWrittenChanges(reconciledFrom.card, await Bun.file(await cardPath(deck, id)).text());
-      if (paths.length > 0 || parts.length > 0) {
-        const changed = [
-          ...(paths.length > 0 ? [`${paths.join(", ")} in the worktree`] : []),
-          ...(parts.length > 0 ? [`the card's ${parts.join(", ")}`] : []),
-        ];
-        // Left in place, since a reconciler that changes these is a bug in it or its prompt for the owner to find.
-        const cause = `the reconciler ${did} having changed ${changed.join(" and ")}, which a reconciler may not change; the change is left in place for the owner to look at`;
-        return { plan, outcome: "stopped", role, session: session(role), cause };
-      }
       // The run's log, where the owner reads what the reconciler changed.
-      console.log(`${id}: the reconciler ${did}: ${answer.amended}`);
+      console.log(`${id}: the reconciler ${DID[answer.outcome as string]}: ${answer.amended}`);
       // Discarded, so an amendment owes nothing to the work it replaces, and
       // that work's account and feedback dropped with it, as a rerun drops
       // them; after a proceed there is neither.
