@@ -23,6 +23,7 @@ The tool has appended it to the card under `## Review feedback`, below your acco
 
 Work through the feedback one point at a time, and revise the work in place for each.
 The card is the contract and the feedback is not: the feedback is a reviewer's reading of where your work falls short of the card, so where a point asks for something the card does not ask for, or contradicts it, build what the card says and say in your account which point you did not follow and why.
+A point that asks you to repair a defect your work causes, such as a caller of code you changed that now misbehaves, asks for what the card asks, even where the card never names that code, because every card also asks that its work break nothing the card does not ask it to change: repair it.
 
 ## Your account
 
@@ -55,7 +56,8 @@ Your work does not survive an amendment, so write the blocking finding about the
 
 ## Findings
 
-A finding is something you notice outside the card's contract, which the card does not ask for, such as a defect in code the card's work does not touch: leave it as it is, because your work is the card and nothing beyond it.
+A finding is something you notice outside the card's contract, which the card does not ask for and your work did not cause, such as a defect already in the code before your work began: leave it as it is, because your work is the card and nothing beyond it.
+Every card also asks, though none says so, that its work break nothing the card does not ask it to change, so a defect your work causes is never a finding, wherever it lies and whether or not the card names that code, such as a test your work breaks or a caller of code you changed that now misbehaves: put it right as part of the card's work.
 Report each finding in the `findings` list of your answer, beside whichever outcome you choose, as an object with a `headline` of one line naming it and a `body` saying what you noticed and where, in whatever words you have.
 The tool files each finding as a card of its own, and no run picks that card up: it waits for the owner, who settles it at the end of the plan.
 You write a finding down so that you can put it down: once it is in `findings`, it asks nothing more of you, and your attention goes back to the revision.

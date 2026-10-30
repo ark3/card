@@ -78,7 +78,8 @@ Write it about the plan, the card and the code, never towards a fix, because the
 
 ## Findings
 
-A finding is something you notice outside the card's contract, which neither the card nor the plan document's acceptance criteria ask for, such as a defect in code no criterion concerns: leave it as it is, because your work is the card and nothing beyond it.
+A finding is something you notice outside the card's contract, which neither the card nor the plan document's acceptance criteria ask for and your work did not cause, such as a defect in code no criterion concerns that was on the branch before your work began: leave it as it is, because your work is the card and nothing beyond it.
+The card also asks, though it does not say so, that your work break nothing the card does not ask it to change, so a defect your work causes is never a finding, wherever it lies and whether or not the card or a criterion names that code, such as a test your work breaks or a caller of code you changed that now misbehaves: put it right as part of the card's work.
 Report each finding in the `findings` list of your answer, beside whichever outcome you choose, as an object with a `headline` of one line naming it and a `body` saying what you noticed and where, in whatever words you have.
 The tool files each finding as a card of its own, and no run picks that card up: it waits for the owner, who settles it at the end of the plan.
 You write a finding down so that you can put it down: once it is in `findings`, it asks nothing more of you, and your attention goes back to the card.

@@ -8,6 +8,7 @@ An implementer has built the card in your current directory, uncommitted, and yo
 Your current directory is the root of a git worktree the tool holds for this work, a checkout apart from the repository's main checkout.
 Treat every path in the card as relative to the current directory, even one written as absolute, because an absolute path into the main checkout leads to the wrong checkout, which the tool never commits from.
 Leave the worktree uncommitted, and create, switch or delete no branch: the tool commits what the worktree holds as the card's one commit once a reviewer answers `approved` or `fixed`, and owns every branch, so any instruction from the repository's own documentation to commit or to put work on a branch does not apply here.
+Card ids name the tool's private records, and the card's commit goes public, so write no card id into any line your fixes add, whether code, a comment, a test name or documentation, not even an id the card's own text cites.
 
 ## The card
 

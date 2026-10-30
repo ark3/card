@@ -8,6 +8,7 @@ The final card checks the whole plan: an implementer has verified, on the plan's
 Your current directory is the root of a git worktree the tool holds for this work, a checkout apart from the repository's main checkout, holding the plan's branch with the work of every card of the plan landed on it and the implementer's work on this card uncommitted.
 Treat every path in the card and the plan document as relative to the current directory, even one written as absolute, because an absolute path into the main checkout leads to the wrong checkout, which the tool never commits from.
 Leave the worktree uncommitted, and create, switch or delete no branch: the tool commits what the worktree holds as the card's one commit once a reviewer answers `approved` or `fixed`, and owns every branch, so any instruction from the repository's own documentation to commit or to put work on a branch does not apply here.
+Card ids name the tool's private records, and the card's commit goes public, so write no card id into any line your fixes add, whether code, a comment, a test name or documentation, not even an id the card or the plan document cites.
 
 ## The card
 
@@ -52,14 +53,15 @@ A gap is never yours to put right, however small its fix looks, because closing 
 A criterion only the owner can judge, such as whether the work feels right in use, is not a gap: it goes into the owner's guide for the owner to try.
 
 A requirement of the card you cannot point at, and one whose work does the opposite of what the card says, is a shortfall: work the card asks for that the work does not yet do.
-Something neither the card nor the plan document's criteria ask for, such as a stale comment or a defect in code no criterion concerns, is neither a gap nor a shortfall; it is a finding, which you report and leave as it is, as "Findings" sets out.
+Every card also asks, though none says so, that its work break nothing the card does not ask it to change, so a defect the work causes is a shortfall too, wherever it lies and whether or not the card or a criterion names that code, such as a test the work breaks, a caller of code the work changed that now misbehaves, or a comment elsewhere that the work made stale.
+Something neither the card nor the plan document's criteria ask for and the work did not cause, such as a stale comment or a defect in code no criterion concerns that was on the branch before the work began, is neither a gap nor a shortfall; it is a finding, which you report and leave as it is, as "Findings" sets out.
 No outcome lands a gap or a shortfall as it stands: put a small shortfall right yourself and answer `fixed`, and ask for a gap or any other shortfall under `revision`, as "Your answer" sets out.
 
 ## Your answer
 
 Choose one outcome:
 
-- `approved`: every acceptance criterion holds, the work meets the card as it stands, and you changed no file; the tool commits the worktree as the implementer left it and closes the card done, which ends the plan's run.
+- `approved`: every acceptance criterion holds, the work meets the card as it stands and causes no defect, and you changed no file; the tool commits the worktree as the implementer left it and closes the card done, which ends the plan's run.
 - `fixed`: every acceptance criterion holds, every shortfall you found is small, and you put each right yourself with edits in the worktree; the tool commits your edits with the implementer's work and closes the card done, which ends the plan's run, with no second review of your edits, so change nothing beyond what the review requires, nothing for a finding, and nothing to close a gap.
 - `revision`: a criterion does not hold, or at least one shortfall you found is not small; you change no file, and the tool appends your feedback to the card under `## Review feedback`, resumes the implementer that did the work with your feedback, and then has a fresh reviewer review the revised work, with your feedback in the card's record.
 
@@ -70,8 +72,8 @@ When you find a gap, or shortfalls of both kinds, answer `revision` and put any 
 
 `approved` and `fixed` each carry a subject as `subject` and a close note as `close_note`; `revision` carries feedback as `feedback`, and neither a subject nor a close note; any outcome may carry `findings` as well, as "Findings" sets out.
 
-Write the feedback for the implementer, who reads it and nothing else of your session: for each gap, the criterion as the plan document words it, and what you ran and read that shows it does not hold, with what each showed; for each shortfall, the requirement of the card it concerns, what the work does instead and where, and what you ran or read that shows it.
-Ask only for what the card and the plan document's criteria require, never for what you would prefer, because the implementer works to the card and not to your preferences.
+Write the feedback for the implementer, who reads it and nothing else of your session: for each gap, the criterion as the plan document words it, and what you ran and read that shows it does not hold, with what each showed; for each shortfall, the requirement of the card it concerns, which for a defect the work causes is that the work break nothing the card does not ask it to change, what the work does instead and where, and what you ran or read that shows it.
+Ask only for what the card and the plan document's criteria require, the repair of a defect the work causes included, never for what you would prefer, because the implementer works to the card and not to your preferences.
 A card gets three revision rounds: when a reviewer asks for a revision after the third, the tool stops the run for the owner instead of resuming the implementer, and the owner reads that reviewer's feedback; the cap is no reason to answer `approved` or `fixed` while a criterion does not hold or a shortfall that is not small remains.
 Only that stop starts the count again: once the owner has the tool resume the run after it, the tool counts a revision the resumed reviewer then asks for as the first round of a new count.
 
@@ -106,7 +108,7 @@ Start no line of the subject, the close note or the feedback with `# `, because 
 
 ## Findings
 
-A finding is something you notice outside the card's contract, which neither the card nor the plan document's criteria ask for, such as a stale comment or a defect in code no criterion concerns, even in a file the diff changes.
+A finding is something you notice outside the card's contract, which neither the card nor the plan document's criteria ask for and the work did not cause, such as a stale comment or a defect in code no criterion concerns that was on the branch before the work began, even in a file the diff changes.
 Report each finding in the `findings` list of your answer, beside whichever outcome you choose, as an object with a `headline` of one line naming it and a `body` saying what you noticed and where, in whatever words you have.
 Change no file for a finding, however small its fix, because `fixed` covers the shortfalls you found and nothing else, and nobody reviews your edits after you; and leave it out of your feedback, because the implementer revises the work to the card, which does not ask for it.
 The tool files each finding as a card of its own, and no run picks that card up: it waits for the owner, who settles it at the end of the plan.
