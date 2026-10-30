@@ -1,5 +1,6 @@
 import converse from "../payload/converse.md" with { type: "text" };
 import finalImplement from "../payload/final-implement.md" with { type: "text" };
+import finalReply from "../payload/final-reply.md" with { type: "text" };
 import finalReview from "../payload/final-review.md" with { type: "text" };
 import finalRevise from "../payload/final-revise.md" with { type: "text" };
 import hookRefused from "../payload/hook-refused.md" with { type: "text" };
@@ -447,10 +448,10 @@ export function reconcilerPrompt(card: { path: string; text: string }, document:
  * disagreement alone. Neither the implementer nor the reviewer is shown the
  * plan document, and the reviewer gets its commit convention alone, except on
  * the plan's final card, which verifies the plan's acceptance criteria: its
- * implementer, a revision of it and its reviewer each get a prompt of their
- * own with the plan document beside the card, and a blocking finding there
- * may be a gap in the plan, which the reconciler stops the run for and the
- * tool appends to the card's record under `## Gap`. Nothing is
+ * implementer, a revision of it, a reply to it and its reviewer each get a
+ * prompt of their own with the plan document beside the card, and a blocking
+ * finding there may be a gap in the plan, which the reconciler stops the run
+ * for and the tool appends to the card's record under `## Gap`. Nothing is
  * committed until the reviewer's subject and close note, and the lines the
  * diff adds, cite no card id of the deck, as `referenceChecked` holds them.
  * A commit the host repository's hook refuses resumes the reviewer under
@@ -653,7 +654,7 @@ async function cycleFrom(
 
     if (step === "converse" && answer.outcome === "reply") {
       await enter("implementer", "implement");
-      prompt = fill(reply, { REPLY: (answer.reply as string).trimEnd() });
+      prompt = fill(final ? finalReply : reply, { REPLY: (answer.reply as string).trimEnd() });
       // A reply resumes the implementer on the work as it left it.
       answering = resume;
     } else if (step === "reconcile" || step === "converse") {

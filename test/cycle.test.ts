@@ -891,6 +891,18 @@ test("the final card's revision resumes its implementer under the final card's r
   expect(ended.outcome).toBe("landed");
 });
 
+test("a reply on the final card resumes its implementer under the final card's reply prompt", async () => {
+  const { deck, plan, id, tree } = await running(undefined, { final: true });
+  const { control, ended } = await drawn(deck, plan, id, tree, [proceed(), reply()], [gapped(), done("printf 'hello\\n' > hello.txt")], [approved()]);
+
+  const [, resumed] = calls(control, ids[1]!);
+  expect(resumed!.stdin).toStartWith("# Resuming the final card after the reconciler's reply\n");
+  expect(resumed!.stdin).toContain(`<reply>\n${REPLY}\n</reply>\n`);
+  expect(resumed!.stdin).toContain('"enum":["done","blocked"]');
+  expect(resumed!.stdin).not.toContain("{{");
+  expect(ended.outcome).toBe("landed");
+});
+
 test("a final implementer's blocked answer that the reconciler stops on for a gap ends the cycle stopped, with the gap in the card's record under `## Gap` and the card open", async () => {
   const { deck, plan, id, tree, base } = await running(undefined, { final: true });
   const { control, ended } = await drawn(deck, plan, id, tree, [proceed(), gapStop], [gapped()]);
