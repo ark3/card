@@ -56,10 +56,10 @@ async function inCheck(startPoint = "main") {
 
 // Text only the plan document's body holds, which only the reconciler reads.
 const DOCUMENT_BODY = "The plan's intent, which only the reconciler reads.";
-const proceed = (run?: string): Reply => ({ stdout: JSON.stringify({ outcome: "proceed", amended: "Nothing needed changing." }), run });
-const done = (run?: string): Reply => ({ stdout: JSON.stringify({ outcome: "done", account: "Did the work." }), run });
+const proceed = (run?: string): Reply => ({ answer: JSON.stringify({ outcome: "proceed", amended: "Nothing needed changing." }), run });
+const done = (run?: string): Reply => ({ answer: JSON.stringify({ outcome: "done", account: "Did the work." }), run });
 const approved = (subject: string): Reply => ({
-  stdout: JSON.stringify({ outcome: "approved", subject, close_note: "Landed it." }),
+  answer: JSON.stringify({ outcome: "approved", subject, close_note: "Landed it." }),
 });
 
 /** Shell that marks the role `name` started, then holds it until the test releases it, for ten seconds at most. */
@@ -203,7 +203,7 @@ test(
       { headline: "The README still names greet.sh", body: "README.md shows `greet.sh`." },
       { headline: "Nothing says how the code is licensed", body: "The tree holds no license file." },
     ];
-    const approvedWith = { stdout: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Landed it.", findings }) };
+    const approvedWith = { answer: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Landed it.", findings }) };
     queue(control, [proceed()], [done()], [approvedWith], [proceed()], [done()], [approved("Check the plan")]);
 
     expect((await card(["approve"], repo)).code).toBe(0);
@@ -272,7 +272,7 @@ test(
     const control = stand(["pi"]);
     const question = "The card calls `greet()`, which nothing in the worktree defines; which card should build it?";
     // The implementer's answers, which no session may take.
-    queue(control, [{ stdout: JSON.stringify({ outcome: "stop", cause: "order", question }) }], [done()]);
+    queue(control, [{ answer: JSON.stringify({ outcome: "stop", cause: "order", question }) }], [done()]);
 
     expect((await card(["approve"], repo)).code).toBe(0);
     await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
@@ -297,7 +297,7 @@ test(
   async () => {
     const { repo, deck, plan, first, base } = await inCheck();
     const control = stand(["pi"]);
-    const revision = (round: number): Reply => ({ stdout: JSON.stringify({ outcome: "revision", feedback: `Round ${round}: not yet.` }) });
+    const revision = (round: number): Reply => ({ answer: JSON.stringify({ outcome: "revision", feedback: `Round ${round}: not yet.` }) });
     queue(control, [proceed()], [done(), done(), done(), done()], [revision(1)], [revision(2)], [revision(3)], [revision(4)]);
 
     expect((await card(["approve"], repo)).code).toBe(0);
@@ -322,7 +322,7 @@ test(
   async () => {
     const { repo, deck, plan, first, base } = await inCheck();
     const control = stand(["pi"]);
-    const citing: Reply = { stdout: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Follows proj-dagobe." }) };
+    const citing: Reply = { answer: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Follows proj-dagobe." }) };
     queue(control, [proceed()], [done()], [citing, citing, citing]);
 
     expect((await card(["approve"], repo)).code).toBe(0);
@@ -345,10 +345,10 @@ test(
   async () => {
     const { repo, deck, plan, first, base } = await inCheck();
     const control = stand(["pi"]);
-    const blocked: Reply = { stdout: JSON.stringify({ outcome: "blocked", finding: "The card names no file to write." }) };
-    const reply: Reply = { stdout: JSON.stringify({ outcome: "reply", reply: "It names hello.txt." }) };
+    const blocked: Reply = { answer: JSON.stringify({ outcome: "blocked", finding: "The card names no file to write." }) };
+    const reply: Reply = { answer: JSON.stringify({ outcome: "reply", reply: "It names hello.txt." }) };
     const question = "We still disagree on whether the card names a file; does it?";
-    const disagreed: Reply = { stdout: JSON.stringify({ outcome: "stop", cause: "disagreement", question }) };
+    const disagreed: Reply = { answer: JSON.stringify({ outcome: "stop", cause: "disagreement", question }) };
     queue(control, [proceed(), reply, reply, reply, disagreed], [blocked, blocked, blocked, blocked]);
 
     expect((await card(["approve"], repo)).code).toBe(0);
@@ -375,9 +375,9 @@ test(
     const { repo, deck, plan, final, base } = await inCheck();
     const control = stand(["pi"]);
     const gap = "The plan document's criterion that `hello.txt` holds `hello` does not hold: the branch holds no `hello.txt`.";
-    const blocked: Reply = { stdout: JSON.stringify({ outcome: "blocked", finding: gap }) };
+    const blocked: Reply = { answer: JSON.stringify({ outcome: "blocked", finding: gap }) };
     const question = "No card of the plan writes `hello.txt`; should authoring add one ahead of the final card?";
-    const stop: Reply = { stdout: JSON.stringify({ outcome: "stop", cause: "gap", question }) };
+    const stop: Reply = { answer: JSON.stringify({ outcome: "stop", cause: "gap", question }) };
     queue(control, [proceed()], [done()], [approved("Add the greeting")], [proceed(), stop], [blocked]);
 
     expect((await card(["approve"], repo)).code).toBe(0);
@@ -408,10 +408,10 @@ test(
     const { repo, deck, plan, final, base } = await inCheck();
     const control = stand(["pi"]);
     const gap = "The plan document's criterion that `hello.txt` holds `hello` does not hold: the branch holds no `hello.txt`.";
-    const account: Reply = { stdout: JSON.stringify({ outcome: "done", account: "The stopped cycle's account." }) };
-    const revision: Reply = { stdout: JSON.stringify({ outcome: "revision", feedback: "The stopped cycle's feedback." }) };
-    const blocked: Reply = { stdout: JSON.stringify({ outcome: "blocked", finding: gap }) };
-    const stop: Reply = { stdout: JSON.stringify({ outcome: "stop", cause: "gap", question: "Should authoring add a card that writes `hello.txt`?" }) };
+    const account: Reply = { answer: JSON.stringify({ outcome: "done", account: "The stopped cycle's account." }) };
+    const revision: Reply = { answer: JSON.stringify({ outcome: "revision", feedback: "The stopped cycle's feedback." }) };
+    const blocked: Reply = { answer: JSON.stringify({ outcome: "blocked", finding: gap }) };
+    const stop: Reply = { answer: JSON.stringify({ outcome: "stop", cause: "gap", question: "Should authoring add a card that writes `hello.txt`?" }) };
     queue(control, [proceed()], [done()], [approved("Add the greeting")], [proceed(), stop], [account, blocked], [revision]);
     expect((await card(["approve"], repo)).code).toBe(0);
     await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
@@ -445,7 +445,7 @@ test(
     const { repo, plan, final } = await inCheck();
     const control = stand(["pi"]);
     const guide = "The greeting plan is done: run `cat hello.txt` in the worktree and see hello.\n\nOnly the owner can judge whether hello is the greeting wanted.";
-    const guiding: Reply = { stdout: JSON.stringify({ outcome: "approved", subject: "Check the plan", close_note: guide }) };
+    const guiding: Reply = { answer: JSON.stringify({ outcome: "approved", subject: "Check the plan", close_note: guide }) };
     queue(control, [proceed()], [done()], [approved("Add the greeting")], [proceed()], [done()], [guiding]);
 
     expect((await card(["approve"], repo)).code).toBe(0);
@@ -661,7 +661,7 @@ test(
     queue(
       control,
       [proceed()],
-      [{ stdout: JSON.stringify({ outcome: "done", account: discarded }), run: "printf 'hello\\n' > hello.txt" }],
+      [{ answer: JSON.stringify({ outcome: "done", account: discarded }), run: "printf 'hello\\n' > hello.txt" }],
       [{ run: hold(control, "reviewer") }],
       [proceed()],
       [done("printf 'hello\\n' > hello.txt")],
@@ -903,7 +903,7 @@ test(
       { headline: "The README still names greet.sh", body: "README.md shows `greet.sh`." },
       { headline: "Nothing says how the code is licensed", body: "The tree holds no license file." },
     ];
-    const approvedWith = { stdout: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Landed it.", findings }) };
+    const approvedWith = { answer: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Landed it.", findings }) };
     queue(control, [proceed()], [done()], [approvedWith], [proceed()], [done()], [approved("Check the plan")]);
     expect((await card(["approve"], repo)).code).toBe(0);
     await until("the plan to end", () => record(plan.dir).state === "Ended");
@@ -1201,7 +1201,7 @@ test(
     const { repo, plan, base } = await inCheck();
     const control = stand(["pi"]);
     const question = "The card calls `greet()`, which nothing defines; should this card build it?";
-    const stop: Reply = { stdout: JSON.stringify({ outcome: "stop", cause: "order", question }) };
+    const stop: Reply = { answer: JSON.stringify({ outcome: "stop", cause: "order", question }) };
     queue(
       control,
       [stop, proceed(hold(control, "resumed"))],
@@ -1233,7 +1233,7 @@ test(
     expect(resumed!.argv).toEqual(["pi", "-p", "--session-id", bounce!.session.id]);
     expect(resumed!.cwd).toBe(tree);
     expect(resumed!.stdin).toContain(`\n${OWNER_ANSWER}\n`);
-    expect(resumed!.stdin).toEndWith(answerInstruction(RECONCILER));
+    expect(resumed!.stdin).toEndWith(answerInstruction(RECONCILER, path.join(plan.dir, "answer.json")));
     expect(await subjects(repo, base)).toEqual(["Add the greeting", "Check the plan"]);
   },
   SLOW,
@@ -1280,7 +1280,7 @@ test(
   async () => {
     const { repo, plan, base } = await inCheck();
     const control = stand(["pi"]);
-    const revision = (round: number): Reply => ({ stdout: JSON.stringify({ outcome: "revision", feedback: `Round ${round}: not yet.` }) });
+    const revision = (round: number): Reply => ({ answer: JSON.stringify({ outcome: "revision", feedback: `Round ${round}: not yet.` }) });
     queue(
       control,
       [proceed()],
@@ -1317,9 +1317,9 @@ test(
   async () => {
     const { repo, plan, base } = await inCheck();
     const control = stand(["pi"]);
-    const blocked: Reply = { stdout: JSON.stringify({ outcome: "blocked", finding: "The card names no file to write." }) };
-    const reply: Reply = { stdout: JSON.stringify({ outcome: "reply", reply: "It names hello.txt." }) };
-    const disagreed: Reply = { stdout: JSON.stringify({ outcome: "stop", cause: "disagreement", question: "Does the card name a file?" }) };
+    const blocked: Reply = { answer: JSON.stringify({ outcome: "blocked", finding: "The card names no file to write." }) };
+    const reply: Reply = { answer: JSON.stringify({ outcome: "reply", reply: "It names hello.txt." }) };
+    const disagreed: Reply = { answer: JSON.stringify({ outcome: "stop", cause: "disagreement", question: "Does the card name a file?" }) };
     queue(
       control,
       [proceed(), reply, reply, reply, disagreed, reply],
@@ -1352,7 +1352,7 @@ test(
   async () => {
     const { repo, plan, base } = await inCheck();
     const control = stand(["pi"]);
-    const revision = (round: number): Reply => ({ stdout: JSON.stringify({ outcome: "revision", feedback: `Round ${round}: not yet.` }) });
+    const revision = (round: number): Reply => ({ answer: JSON.stringify({ outcome: "revision", feedback: `Round ${round}: not yet.` }) });
     // The implementer fails while revising for the third round.
     const failed: Reply = { stderr: "usage limit reached\n", exit: 1 };
     queue(control, [proceed()], [done(), done(), done(), failed, done()], [revision(1)], [revision(2)], [revision(3)], [revision(4)]);
@@ -1379,7 +1379,7 @@ test(
     const hook = path.join(repo, ".git", "hooks", "pre-commit");
     writeFileSync(hook, "#!/bin/sh\necho 'the hook refuses' >&2\nexit 1\n", { mode: 0o755 });
     const control = stand(["pi"]);
-    const fixed: Reply = { stdout: JSON.stringify({ outcome: "fixed", subject: "Add the greeting", close_note: "Landed it." }) };
+    const fixed: Reply = { answer: JSON.stringify({ outcome: "fixed", subject: "Add the greeting", close_note: "Landed it." }) };
     queue(
       control,
       [proceed()],
@@ -1561,7 +1561,7 @@ test(
     const control = stand(["pi"]);
     const pids = path.join(control, "pids");
     const findings = [{ headline: "Nothing says goodbye", body: "The greeting has no farewell." }];
-    const approvedWith = { stdout: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Landed it.", findings }) };
+    const approvedWith = { answer: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Landed it.", findings }) };
     queue(control, [proceed()], [done("printf 'hello\\n' > hello.txt")], [approvedWith], [proceed()], [done(sleeping(control, pids))]);
     expect((await card(["approve"], repo)).code).toBe(0);
     await until("the middle card's implementer to start", () => existsSync(path.join(control, "first.started")) && existsSync(pids));
@@ -1649,7 +1649,7 @@ test(
     // Both on PATH, so a second approval choosing afresh would pick claude.
     const control = stand(["claude", "pi"]);
     const question = "The card uses `greet()`, which no card builds; which card should?";
-    const stop: Reply = { stdout: JSON.stringify({ outcome: "stop", cause: "order", question }), run: "printf 'stray\\n' > stray.txt" };
+    const stop: Reply = { answer: JSON.stringify({ outcome: "stop", cause: "order", question }), run: "printf 'stray\\n' > stray.txt" };
     queue(control, [proceed()], [done("printf 'hello\\n' > hello.txt")], [approved("Add the greeting")], [stop]);
     expect((await card(["approve", "--harness", "pi"], repo)).code).toBe(0);
     await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
@@ -1739,8 +1739,8 @@ const GUIDE = "The guide, as the final card first closed with it.";
  */
 async function endWithFinding(repo: string, plan: Plan, control: string): Promise<string> {
   const findings = [{ headline: "Nothing says goodbye", body: "The greeting has no farewell." }];
-  const approvedWith = { stdout: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Landed it.", findings }) };
-  const guided = { stdout: JSON.stringify({ outcome: "approved", subject: "Check the plan", close_note: GUIDE }) };
+  const approvedWith = { answer: JSON.stringify({ outcome: "approved", subject: "Add the greeting", close_note: "Landed it.", findings }) };
+  const guided = { answer: JSON.stringify({ outcome: "approved", subject: "Check the plan", close_note: GUIDE }) };
   queue(control, [proceed()], [done()], [approvedWith], [proceed()], [done()], [guided]);
   expect((await card(["approve"], repo)).code).toBe(0);
   await until("the plan to end", () => record(plan.dir).state === "Ended");
@@ -2129,7 +2129,7 @@ test(
     const guide = "The greeting plan is done: run `cat hello.txt` in the worktree and see hello.";
     queue(
       control,
-      [{ stdout: JSON.stringify({ outcome: "stop", cause: "order", question }), run: hold(control, "running") }, proceed()],
+      [{ answer: JSON.stringify({ outcome: "stop", cause: "order", question }), run: hold(control, "running") }, proceed()],
       [done(hold(control, "stopping"))],
       [proceed()],
       [done(hold(control, "dying"))],
@@ -2138,7 +2138,7 @@ test(
       [approved("Add the greeting")],
       [proceed()],
       [done()],
-      [{ stdout: JSON.stringify({ outcome: "approved", subject: "Check the plan", close_note: guide }) }],
+      [{ answer: JSON.stringify({ outcome: "approved", subject: "Check the plan", close_note: guide }) }],
     );
 
     // Starting: the waiting card with decline and promote, then the Document stage's prompt.

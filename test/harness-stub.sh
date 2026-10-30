@@ -9,8 +9,10 @@
 # one per line), its stdin and its working directory under
 # <control>/<id>/calls/<n>/, then answers from <control>/<id>/answers/<n>/:
 # `run`, if present, is run with sh in the working directory first, as a
-# session's work, its output on stderr; `stderr` and `stdout` are printed as
-# they are, and `exit` holds the status, 0 if absent.
+# session's work, its output on stderr; `answer`, if present, is then copied
+# to the answer file; `stderr` and `stdout` are printed as they are, and
+# `exit` holds the status, 0 if absent. The answer file is the path the
+# answer instruction in stdin names, and `run` finds it in $ANSWER.
 #
 # An id with nothing under <control>/<id>/ when its first call comes takes the
 # answers of the lowest-numbered session queued under <control>/queue/<k>/
@@ -49,10 +51,13 @@ mkdir "$calls/$n"
 printf '%s\n' "$name" "$@" > "$calls/$n/argv"
 cat > "$calls/$n/stdin"
 pwd -P > "$calls/$n/cwd"
+ANSWER=$(sed -n 's/^Write your report, .*, to `\([^`]*\)`, then respond with `done`\..*/\1/p' "$calls/$n/stdin" | tail -n 1)
+export ANSWER
 
-answer="$HARNESS_STUB/$id/answers/$n"
-if [ -f "$answer/run" ]; then sh "$answer/run" >&2; fi
-if [ -f "$answer/stderr" ]; then cat "$answer/stderr" >&2; fi
-if [ -f "$answer/stdout" ]; then cat "$answer/stdout"; fi
-if [ -f "$answer/exit" ]; then exit "$(cat "$answer/exit")"; fi
+reply="$HARNESS_STUB/$id/answers/$n"
+if [ -f "$reply/run" ]; then sh "$reply/run" >&2; fi
+if [ -f "$reply/answer" ]; then cat "$reply/answer" > "$ANSWER"; fi
+if [ -f "$reply/stderr" ]; then cat "$reply/stderr" >&2; fi
+if [ -f "$reply/stdout" ]; then cat "$reply/stdout"; fi
+if [ -f "$reply/exit" ]; then exit "$(cat "$reply/exit")"; fi
 exit 0

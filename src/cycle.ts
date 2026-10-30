@@ -1,3 +1,4 @@
+import path from "node:path";
 import converse from "../payload/converse.md" with { type: "text" };
 import finalImplement from "../payload/final-implement.md" with { type: "text" };
 import finalReply from "../payload/final-reply.md" with { type: "text" };
@@ -15,7 +16,7 @@ import { escapePasted, refuseHeadline } from "./cardfile.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { headSha } from "./git.ts";
-import { type Check, correct, type Harness, launch, resume, RoleFailure, type Session } from "./harness.ts";
+import { type Answering, type Check, correct, type Harness, launch, resume, RoleFailure, type Session } from "./harness.ts";
 import { citedIds } from "./id.ts";
 import { addedLines, changedSince, CommitRefused, discard, land, snapshot, uncommittedDiff, undoMovedHead } from "./landing.ts";
 import { appendRecord, closeCard, dropUnlanded, fileCard, toolWrittenChanges } from "./operations.ts";
@@ -344,7 +345,7 @@ function messageCites(answer: Answer, prefix: string): string | null {
  * sends the reviewer back ID_RETURNS times, and its next failure throws
  * RoleFailure, quoting what still cites an id.
  */
-async function referenceChecked(deck: Deck, reviewer: Session, tree: string, base: string, answer: Answer): Promise<Answer> {
+async function referenceChecked(deck: Deck, reviewer: Answering, tree: string, base: string, answer: Answer): Promise<Answer> {
   let messageReturns = 0;
   let diffReturns = 0;
   for (;;) {
@@ -544,6 +545,8 @@ async function cycleFrom(
   const { card: id, base } = cycle;
   const final = id === plan.final;
   const session = (role: Role): Session => ({ harness, id: cycle.sessions[role]!, dir: tree });
+  /** `role`'s session with its answer file, in the plan's directory, outside the worktree. */
+  const answerer = (role: Role): Answering => ({ ...session(role), answer: path.join(plan.dir, "answer.json") });
   const documentText = async () => (await Bun.file(plan.document).text()).trimEnd();
   /**
    * The prompt that launches an implementer on the card as its file then
@@ -580,10 +583,10 @@ async function cycleFrom(
     // The card's commit, once a reviewer's answer has landed.
     let sha = "";
     try {
-      answer = await answering(session(role), prompt, ...asked(step, exchanges, final));
+      answer = await answering(answerer(role), prompt, ...asked(step, exchanges, final));
       // A cycle resumed at the land step lands its reviewer's landing answer here too.
       for (let hookReturns = 0; (step === "review" || step === "land") && answer.outcome !== "revision"; hookReturns++) {
-        answer = await referenceChecked(deck, session(role), tree, base, answer);
+        answer = await referenceChecked(deck, answerer(role), tree, base, answer);
         // The commit and the card's close note take the note alike, as `escapePasted` makes it.
         const subject = landingSubject(answer.subject as string);
         const note = escapePasted(answer.close_note as string);
@@ -599,7 +602,7 @@ async function cycleFrom(
           if (hookReturns === ID_RETURNS) {
             throw new RoleFailure(`the host repository's hook still refused the commit after ${ID_RETURNS} returns: ${error.message}`);
           }
-          answer = await resume(session(role), fill(hookRefused, { OUTPUT: error.message }), LANDING, reviewed);
+          answer = await resume(answerer(role), fill(hookRefused, { OUTPUT: error.message }), LANDING, reviewed);
         }
       }
     } catch (error) {

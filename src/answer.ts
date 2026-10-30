@@ -11,22 +11,28 @@ export type ObjectSchema = { type: "object"; properties: Record<string, Schema>;
 /** An answer that has passed its schema. */
 export type Answer = Record<string, unknown>;
 
-/** The instruction appended to a role's prompt, restating `schema` whole. */
-export function answerInstruction(schema: ObjectSchema): string {
-  return `End with your report as your final response: exactly one JSON object matching this JSON Schema and nothing else, with no Markdown fence and no text before or after it.\n${JSON.stringify(schema)}`;
+/**
+ * The instruction appended to a role's prompt and to the repair prompt,
+ * naming `file`, the answer file, and restating `schema` whole. It states the
+ * signal the turn's sweep sends (`endMarked` in plan.ts), so a change to that
+ * signal changes this sentence too.
+ */
+export function answerInstruction(schema: ObjectSchema, file: string): string {
+  return `Write your report, one JSON object matching this JSON Schema, to \`${file}\`, then respond with \`done\`. The tool takes your answer from that file as soon as it holds complete JSON, and once it has taken your answer it stops every process your commands started that is still running, with SIGKILL, which no process can catch, so nothing it stops gets to clean up.\n${JSON.stringify(schema)}`;
 }
 
 /**
- * The answer in a session's final text, which has to be one JSON object
- * matching `schema` and nothing else. Throws an error whose message says what
- * is wrong, which the repair prompt quotes back to the session.
+ * The answer in `text`, what a session wrote to its answer file, which has
+ * to be one JSON object matching `schema` and nothing else. Throws an error
+ * whose message says what is wrong, which the repair prompt quotes back to
+ * the session.
  */
 export function readAnswer(schema: ObjectSchema, text: string): Answer {
   let value: unknown;
   try {
     value = JSON.parse(text);
   } catch (error) {
-    throw new Error(`the final response is not one JSON object alone: ${(error as Error).message}`);
+    throw new Error(`the answer file does not hold one JSON object alone: ${(error as Error).message}`);
   }
   const problem = mismatch(schema, value, "answer");
   if (problem !== null) throw new Error(problem);

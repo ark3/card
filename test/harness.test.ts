@@ -75,26 +75,31 @@ function claudeJson(result: string, isError = false, subtype = "success"): Reply
   return { stdout: JSON.stringify({ type: "result", subtype, is_error: isError, result, session_id: "x" }) };
 }
 
+/** A Claude Code turn that writes `answer` to the answer file and responds `done`. */
+function claudeAnswer(answer: string): Reply {
+  return { ...claudeJson("done"), answer };
+}
+
 const ID = "6f1c2c1e-0000-4000-8000-000000000001";
 const CLAUDE_LAUNCH = ["claude", "-p", "--output-format", "json", "--permission-mode", "bypassPermissions", "--session-id", ID];
 const CLAUDE_RESUME = ["claude", "-p", "--output-format", "json", "--permission-mode", "bypassPermissions", "--resume", ID];
 const PI = ["pi", "-p", "--session-id", ID];
 
 function session(harness: Harness) {
-  return { harness, id: ID, dir: tempDir() };
+  return { harness, id: ID, dir: tempDir(), answer: path.join(tempDir(), "answer.json") };
 }
 
 test("Claude Code launches with --session-id and resumes with --resume, the prompt on stdin, in the named directory", async () => {
   const control = stand();
   const role = session("claude");
-  script(control, ID, claudeJson(JSON.stringify(GOOD)), claudeJson(JSON.stringify(GOOD)));
+  script(control, ID, claudeAnswer(JSON.stringify(GOOD)), claudeAnswer(JSON.stringify(GOOD)));
   await launch(role, "first prompt", SCHEMA);
   await resume(role, "second prompt", SCHEMA);
   const [first, second] = calls(control, ID);
   expect(first.argv).toEqual(CLAUDE_LAUNCH);
   expect(second.argv).toEqual(CLAUDE_RESUME);
-  expect(first.stdin).toBe(`first prompt\n\n${answerInstruction(SCHEMA)}`);
-  expect(second.stdin).toBe(`second prompt\n\n${answerInstruction(SCHEMA)}`);
+  expect(first.stdin).toBe(`first prompt\n\n${answerInstruction(SCHEMA, role.answer)}`);
+  expect(second.stdin).toBe(`second prompt\n\n${answerInstruction(SCHEMA, role.answer)}`);
   expect(first.cwd).toBe(role.dir);
   expect(second.cwd).toBe(role.dir);
 });
@@ -102,14 +107,14 @@ test("Claude Code launches with --session-id and resumes with --resume, the prom
 test("Pi launches and resumes alike with --session-id, the prompt on stdin, in the named directory", async () => {
   const control = stand();
   const role = session("pi");
-  script(control, ID, { stdout: JSON.stringify(GOOD) }, { stdout: JSON.stringify(GOOD) });
+  script(control, ID, { answer: JSON.stringify(GOOD) }, { answer: JSON.stringify(GOOD) });
   await launch(role, "first prompt", SCHEMA);
   await resume(role, "second prompt", SCHEMA);
   const [first, second] = calls(control, ID);
   expect(first.argv).toEqual(PI);
   expect(second.argv).toEqual(PI);
-  expect(first.stdin).toBe(`first prompt\n\n${answerInstruction(SCHEMA)}`);
-  expect(second.stdin).toBe(`second prompt\n\n${answerInstruction(SCHEMA)}`);
+  expect(first.stdin).toBe(`first prompt\n\n${answerInstruction(SCHEMA, role.answer)}`);
+  expect(second.stdin).toBe(`second prompt\n\n${answerInstruction(SCHEMA, role.answer)}`);
   expect(first.cwd).toBe(role.dir);
   expect(second.cwd).toBe(role.dir);
 });
@@ -125,10 +130,10 @@ test("the resume command runs from its directory even when the path holds a spac
   }
 });
 
-test("a Claude Code result holding one JSON object is the answer", async () => {
+test("the answer file holding one JSON object is the answer, whatever the final text says", async () => {
   const control = stand();
   const answer = { ...GOOD, findings: [{ headline: "h", body: "b" }] };
-  script(control, ID, claudeJson(`\n${JSON.stringify(answer)}\n`));
+  script(control, ID, { ...claudeJson(JSON.stringify({ outcome: "blocked", account: "not this" })), answer: `\n${JSON.stringify(answer)}\n` });
   expect(await launch(session("claude"), "go", SCHEMA)).toEqual(answer);
 });
 
@@ -154,10 +159,11 @@ test("a non-zero exit is a failure carrying what the harness printed", async () 
   await expect(failed).rejects.toThrow("pi exited with status 1: No conversation found with session ID");
 });
 
-test("Pi's plain output is the answer, and its new-session warning on stderr is no failure", async () => {
+test("Pi's new-session warning on stderr is no failure", async () => {
   const control = stand();
   script(control, ID, {
-    stdout: `${JSON.stringify(GOOD)}\n`,
+    answer: `${JSON.stringify(GOOD)}\n`,
+    stdout: "done\n",
     stderr: "No project session found with id; creating a new session\n",
   });
   expect(await launch(session("pi"), "go", SCHEMA)).toEqual(GOOD);
@@ -185,7 +191,7 @@ function running(pid: number): boolean {
 test("a turn in a run, its environment holding this process's mark, ends what the session left running, even a process holding its output open", async () => {
   const control = stand();
   const left = `${tempDir()}/left`;
-  script(control, ID, { stdout: JSON.stringify(GOOD), run: leaving(left) });
+  script(control, ID, { answer: JSON.stringify(GOOD), run: leaving(left) });
   process.env[RUN_MARK] = runMark({ pid: process.pid, boot: await bootId() });
   expect(await launch(session("pi"), "go", SCHEMA)).toEqual(GOOD);
   expect(running(Number(readFileSync(left, "utf8")))).toBe(false);
@@ -194,7 +200,7 @@ test("a turn in a run, its environment holding this process's mark, ends what th
 test("a turn whose environment holds another process's mark, as a test a role runs inherits its run's, ends nothing", async () => {
   const control = stand();
   const left = `${tempDir()}/left`;
-  script(control, ID, { stdout: JSON.stringify(GOOD), run: leaving(left, true) });
+  script(control, ID, { answer: JSON.stringify(GOOD), run: leaving(left, true) });
   process.env[RUN_MARK] = runMark({ pid: process.ppid, boot: await bootId() });
   expect(await launch(session("pi"), "go", SCHEMA)).toEqual(GOOD);
   const pid = Number(readFileSync(left, "utf8"));
@@ -205,43 +211,78 @@ test("a turn whose environment holds another process's mark, as a test a role ru
   }
 });
 
-test("an answer with prose around its JSON gets a repair by resuming, carrying the fence, the error and the schema", async () => {
+/**
+ * Shell, as the session's work, that writes `answer` to the answer file and
+ * then keeps the stand-in running, as a background task a harness waits on
+ * would, writing its own pid to `file` first.
+ */
+function lingering(answer: string, file: string): string {
+  return `echo $$ > '${file}'; printf '%s' '${answer}' > "$ANSWER"; exec sleep 30`;
+}
+
+test("a role that writes its answer and keeps running has the answer taken and its turn ended without waiting, and what it left running ended", async () => {
+  const control = stand();
+  const left = `${tempDir()}/left`;
+  script(control, ID, { ...claudeJson("done"), run: lingering(JSON.stringify(GOOD), left) });
+  process.env[RUN_MARK] = runMark({ pid: process.pid, boot: await bootId() });
+  const started = Date.now();
+  expect(await launch(session("claude"), "go", SCHEMA)).toEqual(GOOD);
+  expect(Date.now() - started).toBeLessThan(10_000);
+  expect(running(Number(readFileSync(left, "utf8")))).toBe(false);
+});
+
+test("an answer the tool took and ended the harness for gets a repair when it fails its schema, rather than counting as a failure", async () => {
+  const control = stand();
+  const left = `${tempDir()}/left`;
+  script(control, ID, { run: lingering(JSON.stringify({ outcome: "finished", account: "x" }), left) }, { answer: JSON.stringify(GOOD) });
+  process.env[RUN_MARK] = runMark({ pid: process.pid, boot: await bootId() });
+  expect(await launch(session("pi"), "go", SCHEMA)).toEqual(GOOD);
+  const [, repair] = calls(control, ID);
+  expect(repair.stdin).toContain('The previous report was invalid:\nanswer.outcome is "finished", which is not one of "done", "blocked"\n');
+});
+
+test("a turn that ends without writing the answer file gets a repair by resuming, carrying the fence, the error and the instruction naming the file", async () => {
   const control = stand();
   const role = session("claude");
-  script(control, ID, claudeJson(`Here is my report: ${JSON.stringify(GOOD)}`), claudeJson(JSON.stringify(GOOD)));
+  script(control, ID, claudeJson(JSON.stringify(GOOD)), claudeAnswer(JSON.stringify(GOOD)));
   expect(await launch(role, "go", SCHEMA)).toEqual(GOOD);
   const [first, repair] = calls(control, ID);
   expect(first.argv).toEqual(CLAUDE_LAUNCH);
   expect(repair.argv).toEqual(CLAUDE_RESUME);
   expect(repair.cwd).toBe(role.dir);
-  let error = "";
-  try {
-    readAnswer(SCHEMA, `Here is my report: ${JSON.stringify(GOOD)}`);
-  } catch (thrown) {
-    error = (thrown as Error).message;
-  }
-  expect(error).not.toBe("");
   expect(repair.stdin).toContain(
-    "The work attempt is finished.\nDo not continue implementing or reviewing.\nDo not modify any files.\nCorrect only the final report.",
+    "The work attempt is finished.\nDo not continue implementing or reviewing.\nDo not modify any file except the answer file named below.\nCorrect only the report you write there.",
   );
-  expect(repair.stdin).toContain(`The previous report was invalid:\n${error}\n`);
-  expect(repair.stdin).toContain(answerInstruction(SCHEMA));
+  expect(repair.stdin).toContain(`The previous report was invalid:\nthe turn ended without writing the answer file\n`);
+  expect(repair.stdin).toContain(answerInstruction(SCHEMA, role.answer));
   expect(repair.stdin).not.toContain("go\n\n");
 });
 
-test("Pi's repair resumes the same session too", async () => {
+test("an answer file that is not JSON gets a repair by resuming the same session, on Pi too", async () => {
   const control = stand();
-  script(control, ID, { stdout: "```json\n{}\n```" }, { stdout: JSON.stringify(GOOD) });
+  script(control, ID, { answer: "```json\n{}\n```" }, { answer: JSON.stringify(GOOD) });
   expect(await launch(session("pi"), "go", SCHEMA)).toEqual(GOOD);
   const [, repair] = calls(control, ID);
   expect(repair.argv).toEqual(PI);
-  expect(repair.stdin).toContain("Correct only the final report.");
+  expect(repair.stdin).toContain("The previous report was invalid:\nthe answer file does not hold one JSON object alone: ");
+});
+
+test("an answer file left from an earlier turn is never read", async () => {
+  const control = stand();
+  const role = session("pi");
+  writeFileSync(role.answer, JSON.stringify({ ...GOOD, account: "stale" }));
+  const seen = `${tempDir()}/seen`;
+  script(control, ID, { run: `[ -e "$ANSWER" ] && echo there > '${seen}' || echo gone > '${seen}'` }, { answer: JSON.stringify(GOOD) });
+  expect(await launch(role, "go", SCHEMA)).toEqual(GOOD);
+  expect(readFileSync(seen, "utf8")).toBe("gone\n");
+  const [, repair] = calls(control, ID);
+  expect(repair.stdin).toContain("The previous report was invalid:\nthe turn ended without writing the answer file\n");
 });
 
 test("an answer still malformed after two repairs is a failure, and no third repair is sent", async () => {
   const control = stand();
-  const bad = claudeJson(JSON.stringify({ outcome: "finished", account: "x" }));
-  script(control, ID, bad, bad, bad, claudeJson(JSON.stringify(GOOD)));
+  const bad = claudeAnswer(JSON.stringify({ outcome: "finished", account: "x" }));
+  script(control, ID, bad, bad, bad, claudeAnswer(JSON.stringify(GOOD)));
   const failed = launch(session("claude"), "go", SCHEMA);
   await expect(failed).rejects.toBeInstanceOf(RoleFailure);
   await expect(failed).rejects.toThrow(`still malformed after ${REPAIR_PROMPTS} repair prompts`);
@@ -255,7 +296,7 @@ test("an answer its check refuses gets a repair quoting the check's error, as a 
   const refuse = (answer: Record<string, unknown>) => {
     if (answer.account === "bad") throw new Error("answer.account is bad");
   };
-  script(control, ID, { stdout: JSON.stringify({ ...GOOD, account: "bad" }) }, { stdout: JSON.stringify(GOOD) });
+  script(control, ID, { answer: JSON.stringify({ ...GOOD, account: "bad" }) }, { answer: JSON.stringify(GOOD) });
   expect(await launch(session("pi"), "go", SCHEMA, refuse)).toEqual(GOOD);
   const [, repair] = calls(control, ID);
   expect(repair.stdin).toContain("The previous report was invalid:\nanswer.account is bad\n");
@@ -267,9 +308,9 @@ test("the schema yields both the instruction and the validation, so changing it 
     properties: { ...SCHEMA.properties, subject: { type: "string" } },
     required: [...SCHEMA.required, "subject"],
   };
-  expect(answerInstruction(SCHEMA)).toContain(JSON.stringify(SCHEMA));
-  expect(answerInstruction(SCHEMA)).not.toContain("subject");
-  expect(answerInstruction(widened)).toContain(JSON.stringify(widened));
+  expect(answerInstruction(SCHEMA, "/a")).toContain(JSON.stringify(SCHEMA));
+  expect(answerInstruction(SCHEMA, "/a")).not.toContain("subject");
+  expect(answerInstruction(widened, "/a")).toContain(JSON.stringify(widened));
   expect(readAnswer(SCHEMA, JSON.stringify(GOOD))).toEqual(GOOD);
   expect(() => readAnswer(widened, JSON.stringify(GOOD))).toThrow('lacks the required field "subject"');
 
@@ -277,7 +318,7 @@ test("the schema yields both the instruction and the validation, so changing it 
     ...SCHEMA,
     properties: { ...SCHEMA.properties, outcome: { type: "string", enum: ["approved", "revision"] } },
   };
-  expect(answerInstruction(reworded)).toContain('"enum":["approved","revision"]');
+  expect(answerInstruction(reworded, "/a")).toContain('"enum":["approved","revision"]');
   expect(() => readAnswer(reworded, JSON.stringify(GOOD))).toThrow('answer.outcome is "done", which is not one of');
 });
 
@@ -288,6 +329,6 @@ test("the answer is checked field by field, into lists of objects", () => {
     readAnswer(SCHEMA, JSON.stringify({ ...GOOD, findings: [{ headline: "h", body: "b" }, { headline: "h" }] })),
   ).toThrow('answer.findings[1] lacks the required field "body"');
   expect(() => readAnswer(SCHEMA, `${JSON.stringify(GOOD)} ${JSON.stringify(GOOD)}`)).toThrow(
-    "the final response is not one JSON object alone",
+    "the answer file does not hold one JSON object alone",
   );
 });

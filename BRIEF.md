@@ -300,8 +300,11 @@ Both read the prompt on stdin, which has no size limit where an argument does.
 `--permission-mode bypassPermissions` is there because a headless session has nobody to answer a permission prompt, and a fresh cloud container carries no settings that would; Pi has no permission prompt, and its `--approve` means trusting project-local files, not tool permission.
 Pi passes the admission test under "Costs accepted", a harness that accepts a session id the caller chooses.
 The run's harness is chosen once, at approval — Claude Code where `claude` is on PATH, else Pi, and `card approve --harness claude|pi` to name one — and recorded in the plan's state, so every launch and resume of that run, `card ask` included, uses the same one; the model and effort are left to each harness's own settings.
-Structured answers take the portable shape: the schema is stated in the prompt, the session's final text must be exactly one JSON object and nothing else, as Tasktron's `final-answer-instructions` asks and its `parse-agent-answer` checks, and a malformed answer gets the repair prompt under "Delivery".
-The launcher reads the answer from the `result` field of Claude Code's JSON output, which also says whether the session ended in an error, and from Pi's plain `-p` output, which is the final text alone, where `--mode json` would stream events.
+Structured answers take one path on both harnesses: the prompt states the schema and the path of an answer file in the plan's directory, outside the worktree, and the session writes its answer there as one JSON object and responds `done`; the tool checks the file as Tasktron's `parse-agent-answer` checks a final text, and a turn that ends without a valid file gets the repair prompt under "Delivery".
+The tool takes the answer the moment the file holds complete JSON, and ends the harness and everything the role's commands left running at once, because a harness's turn ends only when its process exits, and Claude Code's `-p` does not exit while a background task the session started still runs; a server or watcher a role starts to check its work would otherwise hold the turn, and the run, open for as long as it lives.
+Pi can background work too, and whether its `-p` waits on that work was never measured, which the answer file makes moot: the answer arrives the same way whatever a harness waits on before it exits.
+The tool removes the file before each turn, so no turn reads an earlier one's answer, and reads no answer from the final text, not even as a fallback, so there is one answer path and the final text's form is no source of repair rounds.
+Where a harness exits on its own, the tool still reads Claude Code's JSON output for whether the session ended in an error.
 Claude Code's own `--json-schema` is not passed for now ("What stays open" below).
 
 ## The plan document and the final card
@@ -485,9 +488,9 @@ The principles are Tasktron's prompting lessons, read from `reference/tasktron.c
 - **One reader per prompt.**
   Each prompt is built for one role and one step, and no agent sees another role's text, so "you" is always the right reader and the register rule "a sentence that grants what another role is denied names the granted role, never 'you'" never arises.
 - **The schema is the instruction.**
-  The final-answer text is generated from the same schema the code validates against (`final-answer-instructions`), so the instruction cannot drift from what the code accepts.
+  The answer instruction is generated from the same schema the code validates against (`final-answer-instructions`), so the instruction cannot drift from what the code accepts.
 - **A malformed answer gets a repair prompt scoped to the report alone** (`prompt-answer-correction` in `reference/tasktron.clj`), sent by resuming the same session, at most twice before the role counts as failed ("When a role fails").
-  It has three parts: a fence around the work — "The work attempt is finished. Do not continue implementing or reviewing. Do not modify any files. Correct only the final report."; the validation error quoted back verbatim after "The previous report was invalid:"; and the answer's schema restated.
+  It has three parts: a fence around the work — "The work attempt is finished. Do not continue implementing or reviewing. Do not modify any file except the answer file named below. Correct only the report you write there."; the validation error quoted back verbatim after "The previous report was invalid:"; and the answer's schema restated.
   Resuming keeps the agent's knowledge of what it did, and the fence keeps a format error from reopening the work, so a bad report costs one short turn rather than a fresh session; card's role answers are machine-read the same way and want the same repair.
 - **The strongest sentences state their own mechanism.**
   "subtasks execute in temporary git worktrees at a different filesystem location, so absolute paths resolve to the wrong checkout"; "the body ... is included verbatim in every subtask agent's prompt, so duplicated material is paid for once per subtask".

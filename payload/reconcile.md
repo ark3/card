@@ -15,7 +15,7 @@ The two files you edit are outside the current directory, at these absolute path
 - the card: `{{CARD_PATH}}`
 - the plan document: `{{DOCUMENT_PATH}}`
 
-Edit those two files and nothing else.
+Edit those two files and nothing else, beyond writing your report to the answer file the end of this prompt names.
 Change no file in the current directory, commit nothing, and create, switch or delete no branch, because the implementer builds from the worktree as you leave it and the tool owns every commit and branch, so any instruction from the repository's own documentation to commit or to put work on a branch does not apply here.
 
 ## The card

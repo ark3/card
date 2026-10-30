@@ -78,7 +78,7 @@ async function running(frontmatter = `commit-convention: ${CONVENTION}\n`, { fin
   return { repo, deck, plan, id, tree, base: await headSha(tree), before: await mainState(repo) };
 }
 
-const answer = (fields: Record<string, string>, run?: string): Reply => ({ stdout: JSON.stringify(fields), run });
+const answer = (fields: Record<string, string>, run?: string): Reply => ({ answer: JSON.stringify(fields), run });
 const AMENDED = "Nothing needed changing.";
 const proceed = (run?: string) => answer({ outcome: "proceed", amended: AMENDED }, run);
 const QUESTION = "The card calls `greet()`, which nothing in the worktree defines; which card should build it?";
@@ -401,7 +401,7 @@ test("an implementer that fails stops the cycle at its step, with the cause and 
 
 test("a reviewer that fails stops the cycle at review, the account appended and the work left uncommitted", async () => {
   const { deck, plan, id, tree, base } = await running();
-  const malformed = { stdout: "not JSON" };
+  const malformed = { answer: "not JSON" };
   const { ended } = await cycle(deck, plan, id, tree, [done("printf 'hello\\n' > hello.txt")], [malformed, malformed, malformed]);
 
   expect(ended.outcome).toBe("stopped");
@@ -442,7 +442,7 @@ test("each card's first launch is a reconciler in the worktree, given the plan d
   expect(only!.stdin).toContain(`\`${plan.document}\``);
   expect(only!.stdin).toContain(CONVENTION);
   expect(only!.stdin).not.toContain("{{");
-  expect(only!.stdin).toEndWith(`\n\n${answerInstruction(RECONCILER)}`);
+  expect(only!.stdin).toEndWith(`\n\n${answerInstruction(RECONCILER, path.join(plan.dir, "answer.json"))}`);
   expect(logged).toEqual([`${id}: the reconciler proceeded: ${AMENDED}`]);
 });
 
@@ -1073,7 +1073,7 @@ const FOUND = [
 /** `reply`'s answer with `findings` added. */
 const finding = (reply: Reply, findings: { headline: string; body: string }[] = FOUND): Reply => ({
   ...reply,
-  stdout: JSON.stringify({ ...JSON.parse(reply.stdout!), findings }),
+  answer: JSON.stringify({ ...JSON.parse(reply.answer!), findings }),
 });
 
 /**
@@ -1251,7 +1251,7 @@ test(`a close note still citing a card id after ${ID_RETURNS} returns stops the 
 
 test("each check gets its own returns, apart from each other and from the repair prompts a malformed answer gets", async () => {
   const { deck, plan, id, tree } = await running();
-  const reviewer = [{ stdout: "not JSON" }, citing(), citing(), approved(), approved(), stripped()];
+  const reviewer = [{ answer: "not JSON" }, citing(), citing(), approved(), approved(), stripped()];
   const { control, ended } = await cycle(deck, plan, id, tree, [done(CITING_WORK)], reviewer);
 
   const turns = calls(control, ids[2]!);
