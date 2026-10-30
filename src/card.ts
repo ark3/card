@@ -107,10 +107,14 @@ async function printWaiting(deck: Deck, command: string): Promise<void> {
  * no read path writes, and no run of another plan, which lists the plans
  * too, finishes a verb still in flight.
  *
- * A step can refuse as well as die, as git refuses to remove a locked
- * worktree, and then the verb stays recorded and its plan is listed still
- * holding it, which `held` refuses every verb on, so one plan's refusal
- * stops no other plan and no verb that needs none.
+ * A step can fail as well as die, though only on a git or disk error, as
+ * when git refuses to remove a locked worktree: what a verb can refuse over
+ * is met before its record, and what is written after it gives way to the
+ * verb or is kept as newer. Then the verb stays recorded and its plan is
+ * listed still holding it, held: `held` refuses every verb on it, since its
+ * recorded decision can be neither undone nor treated as finished, and the
+ * ids its verb carries stay the plan's, as `holds` has them. So one plan's
+ * failure stops no other plan and no verb that needs none.
  */
 async function plansIn(deck: Deck): Promise<Plan[]> {
   await sweepRemoved(deck);
@@ -135,10 +139,14 @@ async function plansIn(deck: Deck): Promise<Plan[]> {
   return plans;
 }
 
+/** Why a held plan opens no command, and what frees it. */
+const HELD =
+  "it opens no command meanwhile, since its recorded decision can be neither undone nor treated as finished, and the next run of card tries it again once what stopped it, printed above, is put right";
+
 /** Refuses to act on `plan` while it holds a recorded verb that could not finish, which the next run of `card` tries again. */
 function held(plan: Plan): void {
   if (plan.pending === null) return;
-  throw new Error(`the plan \`${plan.slug}\` is held until its recorded \`card ${plan.pending.verb}\` finishes, which the next run of card tries again once what stopped it, above, is put right`);
+  throw new Error(`the plan \`${plan.slug}\` is held until its recorded \`card ${plan.pending.verb}\` finishes: ${HELD}`);
 }
 
 /** Finishes the verb `pending` records on `plan`, returning the plan as the verb leaves it, or null where it removed the plan. */
@@ -196,7 +204,8 @@ async function bare(slug: string | null, cwd: string): Promise<void> {
     .filter((plan) => plan.pending === null)
     .map((plan) => openCommands(plan, commandFor(plan, true)))
     .join("\n");
-  process.stdout.write(`${forOwner(`More than one plan is in progress:\n\n${states}`)}\nThe commands open in each plan, every one naming its plan:\n\n${commands}`);
+  const holding = plans.some((plan) => plan.pending !== null) ? `\nA held plan is held until its recorded verb finishes: ${HELD}.\n` : "";
+  process.stdout.write(`${forOwner(`More than one plan is in progress:\n\n${states}${holding}`)}\nThe commands open in each plan, every one naming its plan:\n\n${commands}`);
 }
 
 /** The plan a verb other than bare `card` means, which must already be in progress. */

@@ -346,13 +346,14 @@ test("a drop git refuses once recorded holds that plan alone: another plan and d
   expect(elsewhere.stderr).toContain("`card drop` on the plan `greeting` is recorded but did not finish");
   const refused = await card(["--plan", "greeting"], repo);
   expect(refused.code).toBe(1);
-  expect(refused.stderr).toContain("the plan `greeting` is held until its recorded `card drop` finishes");
+  expect(refused.stderr).toContain("the plan `greeting` is held until its recorded `card drop` finishes: it opens no command meanwhile");
   const declining = Bun.spawn([process.execPath, CARD, "decline", waitingId], { cwd: repo, stdin: new Blob(["Not needed.\n"]), stdout: "pipe", stderr: "pipe" });
   expect(await declining.exited).toBe(0);
   expect((await snapshot(fixture)).cards).toContain("closed declined Nothing says goodbye, 1 close notes, 0 promotions");
   const listing = await card([], repo);
   expect(listing.code).toBe(0);
   expect(listing.stdout).toContain("greeting  Stopped, held until its recorded `card drop` finishes\n");
+  expect(listing.stdout).toContain("A held plan is held until its recorded verb finishes: it opens no command meanwhile");
   expect(listing.stdout).not.toContain("card --plan greeting");
   const unnamed = await card(["drop"], repo);
   expect(unnamed.stderr).not.toContain("card --plan greeting drop");

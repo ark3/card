@@ -367,6 +367,7 @@ The test that decides each invocation: one is justified only where an interactiv
 
 A plan is always in one state, which the tool records.
 Bare `card` acts on it as the table says and prints the exact commands open in it, so the session copies a command rather than recalling a vocabulary; every other `card` verb is refused there, naming the state and printing the commands that are open.
+A held plan, below, is the one exception: it stays in its state and opens no command.
 
 | State | Bare `card` | Open, and where each leads |
 |---|---|---|
@@ -382,6 +383,13 @@ Bare `card` acts on it as the table says and prints the exact commands open in i
 Running moves on by itself: to Bounced when a role stops the run, and to Ended when the last card closes done.
 Dead is Running with its process gone, which the tool detects by pid and boot id ("Where the run lives").
 `card decline` and `card promote` are open in every state for a waiting card, and `card drop` in every state for the plan.
+
+A verb that writes more than once — `done` in the Cards stage, `join` at Ended, `amend`, `drop` — records the decision it carries in the plan's record before its first other write, and every invocation of `card` finishes a recorded verb before it does anything else, so a verb that died partway is finished from its record, never undone.
+What could refuse such a verb is checked before the record, and what is written after the record gives way to the verb or is kept as newer: a recorded drop removes the worktree by force, so files written into it after the owner decided go with the plan, though a worktree the owner locked with `git worktree lock` still refuses, and a card a recorded `done` filed and someone edited since is kept as edited.
+So a recorded verb fails to finish only on a git or disk error, and its plan is then held: it opens no command, not even `drop`, since its recorded decision can be neither undone nor treated as finished, and every other verb assumes a whole state, which a half-dropped plan, say, is not.
+The cards the recorded verb carries, those a `done` files and the one a `join` takes in, are the held plan's meanwhile, so no other plan's listing offers them and no other plan's `join`, nor `decline` or `promote`, takes them.
+Bare `card` on a held plan prints the error that stopped the verb, then refuses, saying the plan is held until its recorded verb finishes and why it opens no command; with more than one plan in progress, it lists the held plan with its state, marked held, says the same, and prints no command for it.
+The next invocation of `card`, any verb and any plan, tries the recorded verb again once the error is put right; other plans, and `decline` and `promote` on waiting cards, go on meanwhile.
 
 - **Starting.**
   Bare `card` with no plan in progress lists the waiting cards, with `decline` and `promote` open for each, and starts a new plan in the Document stage; the plan exists from there, and `card drop` ends one started by mistake.
