@@ -1,7 +1,7 @@
 import { readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Card, Outcome } from "./cardfile.ts";
-import { createCard, demoteHeadlines, formatCard, readCard } from "./cardfile.ts";
+import { createCard, demoteHeadlines, readCard } from "./cardfile.ts";
 import { type Deck, locate, stagedId, stagingName } from "./deck.ts";
 import { wrote } from "./dying.ts";
 import { citedIds, drawId } from "./id.ts";
@@ -67,19 +67,17 @@ export async function drawIds(deck: Deck, count: number): Promise<string[]> {
 
 /**
  * Files `card` in `open/` under `id`, which `drawIds` drew. A card already
- * in `open/` under it with the same text is this filing, made before, and
- * counts, as does one in `closed/`, which is this filing closed since; so a
- * filing is safe to run again.
+ * under it, in `open/` or `closed/`, is this filing, made before, and kept
+ * as it stands, since whatever changed it since, an edit or a close, is
+ * newer than the filing; so a filing is safe to run again.
  */
 export async function fileCardAs(deck: Deck, id: string, card: Omit<Card, "closed">): Promise<void> {
   if (await Bun.file(path.join(deck.closedDir, `${id}.md`)).exists()) return;
-  const file = path.join(deck.openDir, `${id}.md`);
   try {
-    await createCard(file, card);
+    await createCard(path.join(deck.openDir, `${id}.md`), card);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    if ((await Bun.file(file).text()) === formatCard(card)) return;
-    throw new Error(`${id} was drawn for a card, and another card took it before it was filed; look at the deck at ${deck.deckDir}`);
+    return;
   }
   wrote();
 }

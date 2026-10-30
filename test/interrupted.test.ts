@@ -252,6 +252,21 @@ test("a card done that died once recorded, its drafts then deleted, is finished 
   expect(plan!.record).toMatchObject({ state: "Check", cards: ["Add the greeting", "Add a farewell", "Check the plan"], pending: false });
 });
 
+test("a card done that died after filing a card, that card then edited, keeps the card as edited: bare card finds the plan in Check with it in the order, and no plan held", async () => {
+  const fixture = await drafted();
+  expect((await card(fixture.args, fixture.repo, 2)).code).toBe(137);
+  const record = JSON.parse(readFileSync(path.join(fixture.deck.cardDir, "plans", "greeting", "state.json"), "utf8"));
+  const filed = path.join(fixture.deck.openDir, `${record.pending.drafts[0].id}.md`);
+  const edited = readFileSync(filed, "utf8").replace("Body.", "Body, edited after the death.");
+  writeFileSync(filed, edited);
+
+  const bare = await card([], fixture.repo);
+  expect(bare.stderr).not.toContain("finishing it failed");
+  expect(bare.code).toBe(0);
+  expect((await snapshot(fixture)).plan!.record).toMatchObject({ state: "Check", cards: ["Add the greeting", "Add a farewell", "Check the plan"], pending: false });
+  expect(readFileSync(filed, "utf8")).toBe(edited);
+});
+
 test("a drop that died once recorded, an untracked file then written into its worktree, is finished all the same: bare card finds the plan gone, its cards closed declined once, and no plan held", async () => {
   const fixture = await afterRun("Stopped");
   expect((await card(fixture.args, fixture.repo, 1)).code).toBe(137);

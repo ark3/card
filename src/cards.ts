@@ -151,8 +151,8 @@ export async function done({ deck, plan, command, args }: Context): Promise<void
  * drafted card is filed under the id drawn for it, from the record rather
  * than its file, which a session may change or remove after a death, and
  * its file removed; last the order is recorded, moving the plan to Check.
- * A card already filed and a file already gone are passed over, so every
- * step is safe to run again.
+ * A card already filed, kept as it stands though edited since, and a file
+ * already gone are passed over, so every step is safe to run again.
  */
 export async function finishDone(deck: Deck, plan: Plan, { drafts, cards, final }: Extract<Pending, { verb: "done" }>): Promise<Plan> {
   for (const { name, id, card } of drafts) {
