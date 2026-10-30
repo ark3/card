@@ -45,6 +45,10 @@ export async function approve({ deck, plan, command, args }: Context): Promise<v
   if (args.length !== 0 && !(args.length === 2 && args[0] === "--harness" && ["claude", "pi"].includes(args[1]!))) {
     throw new Error(usage);
   }
+  // Several plans may be in progress at once, since a second plan starts when
+  // the first is halted for it, but only one runs: approval is refused while
+  // another plan's run is Running or Dead, Dead being Running with its process
+  // gone, which bare `card` carries on.
   // This plan is in Check, so a plan Running or Dead is another's.
   const live = (await listPlans(deck)).find(({ state }) => state === "Running" || state === "Dead");
   if (live !== undefined) {

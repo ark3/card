@@ -70,7 +70,9 @@ export async function resolveDeck(cwd: string): Promise<Deck | null> {
   }
   // Refused at any value, rather than ignored, so the owner never believes the
   // flag still applies to a deck. No deck needs it: the one public deck there
-  // was, agentpane's, is being emptied into that repository's issues.
+  // was, agentpane's, is being emptied into that repository's issues. Any key
+  // but `prefix`, `deck` and `public` is ignored, a leftover `[run]` section
+  // included.
   if (parsed.public !== undefined) {
     throw new Error(`${configPath} carries public, but the public flag is gone and nothing reads it; delete public from that file`);
   }
