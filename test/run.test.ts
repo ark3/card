@@ -149,7 +149,7 @@ test(
     expect(record(plan.dir).state).toBe("Running");
     expect(record(plan.dir).harness).toBe("pi");
     expect(await subjects(repo, base)).toEqual([]);
-    const running = `The plan \`greeting\`'s run is at this card, with the implementer:\n\n${first}  Add the greeting\n\n0 of the plan's 2 cards have closed.\n`;
+    const running = `The plan \`greeting\`'s run is at this card, with the implementer:\n\n${first}  Add the greeting\n\n0 of the plan's 2 cards have closed.\n${openList("Running")}`;
     expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(running), stderr: "" });
 
     release(control, "first");
@@ -809,13 +809,13 @@ test("bare card --plan in Stopped, with another plan in progress, ends its repor
   expect(await card(["--plan", "greeting"], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
 });
 
-test("bare card in Running reports the card in flight with its role, and the cards closed with their headlines", async () => {
+test("bare card in Running reports the card in flight with its role, the cards closed with their headlines, and the commands open there", async () => {
   const { repo, deck, plan, first, final, base } = await inCheck();
   await closeCard(deck, first, "done", "Landed.");
   const cycle: Cycle = { card: final, base, role: "reviewer", step: "review", sessions: {}, rounds: 0, exchanges: 0 };
   await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: process.pid, boot: BOOT }, cycle, landed: [{ card: first, commit: base }] });
 
-  const report = `The plan \`greeting\`'s run is at this card, with the reviewer:\n\n${final}  Check the plan\n\n1 of the plan's 2 cards have closed:\n\n${first}  Add the greeting\n`;
+  const report = `The plan \`greeting\`'s run is at this card, with the reviewer:\n\n${final}  Check the plan\n\n1 of the plan's 2 cards have closed:\n\n${first}  Add the greeting\n${openList("Running")}`;
   expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
 });
 
@@ -1870,7 +1870,7 @@ test(
     expect((await card(["approve"], repo)).code).toBe(0);
     await until("the joined card's implementer to start", () => existsSync(path.join(control, "farewell.started")));
 
-    const report = `The plan \`greeting\`'s run is at this card, with the implementer:\n\n${finding}  Add a farewell\n\n1 of the plan's 3 cards have closed:\n\n${first}  Add the greeting\n`;
+    const report = `The plan \`greeting\`'s run is at this card, with the implementer:\n\n${finding}  Add a farewell\n\n1 of the plan's 3 cards have closed:\n\n${first}  Add the greeting\n${openList("Running")}`;
     expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
 
     release(control, "farewell");
@@ -2004,6 +2004,13 @@ const OPEN: Record<State, string[]> = {
 };
 const VERBS = ["done", "approve", "amend", "stop", "ask", "resume", "join", "later", "decline", "promote", "finish", "drop"];
 
+/**
+ * The states whose bare `card` prints a prompt for the session, which names
+ * its own commands. Every other state's bare `card` reports on the run, and
+ * that report ends with the commands open once it is printed.
+ */
+const PROMPTED: State[] = ["Document", "Cards", "Check", "Ended"];
+
 /** The commands open in `state` under `command`, bare `card` among them, sorted, since the table sets no order. */
 function opened(command: string, state: State): string[] {
   return [command, ...OPEN[state].map((verb) => `${command} ${verb}`)].sort();
@@ -2032,10 +2039,17 @@ async function closedIn(repo: string, dir: string, state: State, waiting: string
 }
 
 test(
-  "one plan walked through every state of the table, through the executable: bare card does what each row says, and every verb not open there refuses, naming the state and the commands open in it",
+  "one plan walked through every state of the table, through the executable: bare card does what each row says, every report of the run ends with the commands open once it is printed, and every verb not open there refuses, naming the state and the commands open in it",
   async () => {
     const repo = await tempRepo();
     const deck = await createDeck(repo, "proj");
+    // Bare `card` in each state of the run, with the state the plan is in once it has printed.
+    const reports = new Map<State, { stdout: string; after: State }>();
+    const report = async (state: State) => {
+      const result = await card([], repo);
+      reports.set(state, { stdout: result.stdout, after: (await stateOf(deck)) as State });
+      return result;
+    };
     const waiting = await fileCard(deck, { labels: [], blockedBy: [], headline: "A thought put down earlier", body: "Body.\n" });
     const control = stand(["pi"]);
     const question = "The card calls `greet()`, which nothing defines; should this card build it?";
@@ -2091,8 +2105,8 @@ test(
 
     // Running, the reconciler held.
     await until("the first reconciler to start", () => existsSync(path.join(control, "running.started")));
-    const running = `The plan \`greeting\`'s run is at this card, with the reconciler:\n\n${first}  Add the greeting\n\n0 of the plan's 2 cards have closed.\n`;
-    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(running), stderr: "" });
+    const running = `The plan \`greeting\`'s run is at this card, with the reconciler:\n\n${first}  Add the greeting\n\n0 of the plan's 2 cards have closed.\n${openList("Running")}`;
+    expect(await report("Running")).toEqual({ code: 0, stdout: forOwner(running), stderr: "" });
     await closedIn(repo, plan!.dir, "Running", waiting);
     release(control, "running");
 
@@ -2100,15 +2114,15 @@ test(
     await until("the plan to bounce", () => record(plan!.dir).state === "Bounced");
     const tree = path.join(repo, ".worktrees", "greeting");
     const { bounce } = record(plan!.dir);
-    const report = bouncedReport(first, "reconciler", bounce!.cause, `cd '${tree}' && pi --session-id ${bounce!.session.id}`, question);
-    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(report), stderr: "" });
+    const bouncing = bouncedReport(first, "reconciler", bounce!.cause, `cd '${tree}' && pi --session-id ${bounce!.session.id}`, question);
+    expect(await report("Bounced")).toEqual({ code: 0, stdout: forOwner(bouncing), stderr: "" });
     await closedIn(repo, plan!.dir, "Bounced", waiting);
     expect((await card(["resume"], repo, `${OWNER_ANSWER}\n`)).code).toBe(0);
 
     // Stopped, by `card stop` while the implementer works.
     await until("the implementer to start", () => existsSync(path.join(control, "stopping.started")));
     expect(await card(["stop"], repo)).toEqual({ code: 0, stdout: forOwner(stoppedReport(first)), stderr: "" });
-    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(stoppedReport(first)), stderr: "" });
+    expect(await report("Stopped")).toEqual({ code: 0, stdout: forOwner(stoppedReport(first)), stderr: "" });
     await closedIn(repo, plan!.dir, "Stopped", waiting);
     expect((await card(["resume"], repo)).code).toBe(0);
 
@@ -2120,8 +2134,9 @@ test(
     }
     await closedIn(repo, plan!.dir, "Dead", waiting);
     const log = path.join(plan!.dir, "run.log");
-    const carried = `The plan \`greeting\`'s run had died; it is carried on, on pi, in ${tree}; its log is ${log}.\n`;
-    expect(await card([], repo)).toEqual({ code: 0, stdout: forOwner(carried), stderr: "" });
+    // Carried on, the plan is Running, so the commands are Running's.
+    const carried = `The plan \`greeting\`'s run had died; it is carried on, on pi, in ${tree}; its log is ${log}.\n${openList("Running")}`;
+    expect(await report("Dead")).toEqual({ code: 0, stdout: forOwner(carried), stderr: "" });
     await until("the carried-on reconciler to start", () => existsSync(path.join(control, "carried.started")));
     expect(await stateOf(deck)).toBe("Running");
     release(control, "carried");
@@ -2130,6 +2145,13 @@ test(
     await until("the plan to end", () => record(plan!.dir).state === "Ended");
     expect(await card([], repo)).toEqual({ code: 0, stdout: ended(plan!, final, tree, `${guide}\n`), stderr: "" });
     await closedIn(repo, plan!.dir, "Ended", waiting);
+
+    // Every state of the run was walked, and its report ends, inside the owner marks, with the commands open once it printed.
+    for (const state of (Object.keys(OPEN) as State[]).filter((state) => !PROMPTED.includes(state))) {
+      const walked = reports.get(state);
+      expect(walked).toBeDefined();
+      expect(walked!.stdout).toEndWith(`${openList(walked!.after)}</for_owner>\n`);
+    }
 
     // Over: the worktree gone, the branch kept, and no plan left in progress.
     const finishing = await card(["finish"], repo);

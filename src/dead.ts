@@ -4,8 +4,8 @@ import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { discard, holdWorktree } from "./landing.ts";
 import { closeCard } from "./operations.ts";
-import { forOwner } from "./owner.ts";
 import { bootId, type Context, listPlans, type Plan, RUN_MARK, runMark, writeRecord } from "./plan.ts";
+import { report } from "./reports.ts";
 
 /** Sends `signal` to `pid`, a group if negative, and returns whether it named anything. */
 function kill(pid: number, signal: "SIGKILL" | 0): boolean {
@@ -91,11 +91,13 @@ export async function settle(deck: Deck, plan: Plan): Promise<{ plan: Plan; tree
 /**
  * Bare `card` in Dead: carries the dead run on. It ends what is left of the
  * run, settles the card that was in flight from what the state records, and
- * starts a new run from the last card closed, as `card approve` starts one.
+ * starts a new run from the last card closed, as `card approve` starts one,
+ * reporting it with the commands open in Running, where it leaves the plan.
  */
-export async function carryOn({ deck, plan }: Context): Promise<void> {
+export async function carryOn(context: Context): Promise<void> {
+  const { deck, plan } = context;
   // Dead is read, never written, so every write below records Running.
   const { plan: settled, tree } = await settle(deck, { ...(await endRun(deck, plan)), state: "Running" });
   const log = await startRun(settled, settled.harness!, tree, process.cwd());
-  process.stdout.write(forOwner(`The plan \`${settled.slug}\`'s run had died; it is carried on, on ${settled.harness}, in ${tree}; its log is ${log}.\n`));
+  report({ ...context, plan: settled }, `The plan \`${settled.slug}\`'s run had died; it is carried on, on ${settled.harness}, in ${tree}; its log is ${log}.\n`);
 }
