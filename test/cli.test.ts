@@ -110,6 +110,12 @@ test("bare card lists a waiting card inside the owner marks, with decline and pr
   expect(owner).toContain(`card promote ${id}`);
 });
 
+/** The text between the owner marks of a printout, or "" where it has none. */
+function ownerText(stdout: string): string {
+  const open = stdout.indexOf("<for_owner>\n");
+  return open === -1 ? "" : stdout.slice(open, stdout.indexOf("</for_owner>\n"));
+}
+
 test("card done refuses a document without a start point, then moves the plan to Cards under its headline", async () => {
   const repo = await tempRepo();
   expect((await card([], repo)).code).toBe(0);
@@ -129,6 +135,7 @@ test("card done refuses a document without a start point, then moves the plan to
   );
   const done = await card(["done"], repo);
   expect(done.code).toBe(0);
+  expect(ownerText(done.stdout)).toContain("The Cards stage runs in a fresh session, not this one: start a fresh session and have it run `card`.\n");
   expect(plans(repo)).toEqual(["add-the-export-button"]);
   expect(await planState(repo, "add-the-export-button")).toBe("Cards");
   expect(await Bun.file(path.join(repo, ".git", "card", "plans", "add-the-export-button", "plan.md")).text()).toContain(
@@ -138,6 +145,23 @@ test("card done refuses a document without a start point, then moves the plan to
   const bare = await card([], repo);
   expect(bare.code).toBe(0);
   expect(bare.stdout).toContain("# The Cards stage");
+});
+
+test("card done in Document, with two plans in progress, tells the owner the fresh session runs the command naming the plan by its headline", async () => {
+  const repo = await tempRepo();
+  expect((await card([], repo)).code).toBe(0);
+  const [draft] = plans(repo);
+  expect((await card(["--plan", "second-plan"], repo)).code).toBe(0);
+  await Bun.write(
+    path.join(repo, ".git", "card", "plans", draft!, "plan.md"),
+    "---\nbranch: feature/export\nstart-point: develop\n---\n\n# Add the export button\n\nIntent.\n",
+  );
+
+  const done = await card(["--plan", draft!, "done"], repo);
+  expect(done.code).toBe(0);
+  const owner = ownerText(done.stdout);
+  expect(owner).toContain("have it run `card --plan add-the-export-button`.\n");
+  expect(owner).not.toContain(draft!);
 });
 
 test("card approve in Document refuses, naming the state and the commands open in it", async () => {

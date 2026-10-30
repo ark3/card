@@ -1996,6 +1996,26 @@ test("card join at Ended reopens the final card in place, keeping its record, an
   expect(prompt.stdout).toContain(`${final}  Check the plan  (final card)\n`);
 });
 
+for (const [others, command] of [
+  [false, "card"],
+  [true, "card --plan greeting"],
+] as const) {
+  test(`card join at Ended${others ? ", with two plans in progress," : ""} tells the owner, inside the owner marks, that the Cards stage runs in a fresh session running \`${command}\``, async () => {
+    const { repo, deck, plan, first, final } = await inCheck();
+    await closeCard(deck, first, "done", "Landed.");
+    await closeCard(deck, final, "done", "Guide.");
+    const finding = await fileCard(deck, { labels: [], blockedBy: [], headline: "Nothing says goodbye", body: "Found.\n" });
+    await writeRecord(plan, { state: "Ended", harness: "pi", findings: [{ id: finding, role: "reviewer", card: first }] });
+    if (others) await startPlan(deck, "other");
+
+    const joining = await card([...(others ? ["--plan", "greeting"] : []), "join", finding], repo);
+    expect(joining.stderr).toBe("");
+    expect(joining.code).toBe(0);
+    const owner = joining.stdout.slice(joining.stdout.indexOf("<for_owner>\n"), joining.stdout.indexOf("</for_owner>\n"));
+    expect(owner).toContain(`The Cards stage runs in a fresh session, not this one: start a fresh session and have it run \`${command}\`.\n`);
+  });
+}
+
 test("card join at Ended refuses a finding awaiting its key, naming the --key form, and leaves the final card closed and the plan in Ended", async () => {
   const { repo, deck, plan, first, final } = await inCheck();
   await ensureBranch("plan/greeting", "main", repo);

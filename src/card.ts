@@ -7,7 +7,7 @@ import * as dead from "./dead.ts";
 import * as document from "./document.ts";
 import * as ended from "./ended.ts";
 import { forOwner } from "./owner.ts";
-import { type Context, listPlans, listWaiting, type Pending, type Plan, refuseSlug, startPlan, type State, sweepRemoved, waitingCards } from "./plan.ts";
+import { commandFor, type Context, listPlans, listWaiting, type Pending, type Plan, refuseSlug, startPlan, type State, sweepRemoved, waitingCards } from "./plan.ts";
 import * as reports from "./reports.ts";
 import * as stopped from "./stopped.ts";
 
@@ -72,11 +72,6 @@ const TABLE: Record<State, { bare: Handler; open: Partial<Record<VerbName, Verb>
 const USAGE = `usage: card [<verb>] [--plan <slug>]
 
   ${VERBS.join("  ")}`;
-
-/** `card`, or with more than one plan in progress, `card --plan <slug>`: how this plan's every command starts. */
-function commandFor(plan: Plan, many: boolean): string {
-  return many ? `card --plan ${plan.slug}` : "card";
-}
 
 /** The commands open in the plan's state, bare `card` first, one per line. */
 function openCommands(plan: Plan, command: string): string {

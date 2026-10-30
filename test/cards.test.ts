@@ -43,6 +43,32 @@ async function headline(deck: Deck, id: string): Promise<string> {
 
 const finding = (headline: string, blockedBy: string[] = []) => ({ labels: [], blockedBy, headline, body: "Found.\n" });
 
+/** The text between the owner marks of a printout, or "" where it has none. */
+function ownerText(stdout: string): string {
+  const open = stdout.indexOf("<for_owner>\n");
+  return open === -1 ? "" : stdout.slice(open, stdout.indexOf("</for_owner>\n"));
+}
+
+test("card done in Cards tells the owner, inside the owner marks, that the Check stage runs in a fresh session running card", async () => {
+  const { repo, plan } = await inCards();
+  await Bun.write(path.join(plan.cardsDir, "01-check-the-whole-plan.md"), "# Check the whole plan\n\nGuide.\n");
+
+  const result = await card(["done"], repo);
+  expect(result.code).toBe(0);
+  expect(ownerText(result.stdout)).toContain("The Check stage runs in a fresh session, not this one");
+  expect(ownerText(result.stdout)).toContain("start a fresh session and have it run `card`.\n");
+});
+
+test("card done in Cards, with two plans in progress, tells the owner the fresh session runs the command naming the plan", async () => {
+  const { repo, deck, plan } = await inCards();
+  await startPlan(deck, "other-plan");
+  await Bun.write(path.join(plan.cardsDir, "01-check-the-whole-plan.md"), "# Check the whole plan\n\nGuide.\n");
+
+  const result = await card(["--plan", "the-plan", "done"], repo);
+  expect(result.code).toBe(0);
+  expect(ownerText(result.stdout)).toContain("have it run `card --plan the-plan`.\n");
+});
+
 test("three drafted files become three cards in filename order, the third the final card, and the plan moves to Check", async () => {
   const { repo, deck, plan } = await inCards();
   // Written out of order, so filename order is not creation order.

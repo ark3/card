@@ -119,6 +119,11 @@ export type Plan = PlanRecord & {
   cardsDir: string;
 };
 
+/** `card`, or with more than one plan in progress, `card --plan <slug>`: how this plan's every command starts. */
+export function commandFor(plan: Plan, many: boolean): string {
+  return many ? `card --plan ${plan.slug}` : "card";
+}
+
 /**
  * What a verb acting on one plan is handed. `command` is how every printed
  * command starts: `card`, or `card --plan <slug>` while more than one plan is

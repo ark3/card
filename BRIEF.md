@@ -513,7 +513,7 @@ A session runs every invocation of the tool, never the owner at a terminal — r
 A session left to its own judgment retells, and a retelling is a second copy that drifts from the first: a promotion text that is retold proves nothing the card-id check said about what the owner posts, and a condensed final-card guide can drop the one step that mattered.
 So the tool's output has two registers: text for the session, and text for the owner, marked as such, which the prompt beside it directs the session to put in its reply unaltered, not summarized — all of it, not only where exactness matters, because one rule asks a literal reader for no judgment of category, and text the tool marks for the owner is already written for the owner.
 This is "code steers" applied to what the owner hears: the tool decides what reaches the owner, not a session's sense of what is worth repeating.
-It binds every site where the tool tells the owner something: the stop and what it waits on, the findings and the settling prompt, promotion text, the final card's guide, and progress.
+It binds every site where the tool tells the owner something: the stop and what it waits on, the findings and the settling prompt, promotion text, the final card's guide, progress, and the authoring stage boundary, where the next stage runs in a fresh session.
 
 ## The card file and the deck
 

@@ -141,8 +141,11 @@ export async function done({ deck, plan, command, args }: Context): Promise<void
   const drafts = drafted.map(({ file, card }, index) => ({ name: path.basename(file), id: ids[index]!, card }));
   const pending: Pending = { verb: "done", drafts, cards, final };
   const moved = await finishDone(deck, await writeRecord(plan, { pending }), pending);
-  console.log(
-    `Took in ${drafted.length} drafted and ${plan.joins.length} joined cards; the Cards stage is done, and the plan \`${moved.slug}\` is in the Check stage.`,
+  process.stdout.write(
+    forOwner(
+      `Took in ${drafted.length} drafted and ${plan.joins.length} joined cards; the Cards stage is done, and the plan \`${moved.slug}\` is in the Check stage.\n\n` +
+        `The Check stage runs in a fresh session, not this one, so that a session that did not write the cards checks them: start a fresh session and have it run \`${command}\`.\n`,
+    ),
   );
 }
 

@@ -83,8 +83,11 @@ export async function join(context: Context): Promise<void> {
   const { deck, plan, command } = context;
   const { id, card } = await settling(context, "join");
   await finishJoin(deck, await writeRecord(plan, { pending: { verb: "join", id } }), id);
-  console.log(
-    `${id} has joined the plan \`${plan.slug}\`, whose final card is reopened; the plan is back in the Cards stage, which a fresh session takes up by running \`${command}\`: ${card.headline}`,
+  process.stdout.write(
+    forOwner(
+      `${id} has joined the plan \`${plan.slug}\`, whose final card is reopened; the plan is back in the Cards stage: ${card.headline}\n\n` +
+        `The Cards stage runs in a fresh session, not this one: start a fresh session and have it run \`${command}\`.\n`,
+    ),
   );
 }
 

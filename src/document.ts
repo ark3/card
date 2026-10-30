@@ -1,6 +1,7 @@
 import prompt from "../payload/document.md" with { type: "text" };
+import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
-import { type Context, listPlans, renamePlan, slugify, writeRecord } from "./plan.ts";
+import { commandFor, type Context, listPlans, renamePlan, slugify, writeRecord } from "./plan.ts";
 
 /** The Document stage's prompt, which bare `card` prints for as long as the stage lasts. */
 export async function printPrompt({ plan, command }: Context): Promise<void> {
@@ -67,5 +68,13 @@ export async function done({ deck, plan, command, args }: Context): Promise<void
     }
   }
   await writeRecord(moved, { state: "Cards", placeholder: false });
-  console.log(`The Document stage is done, and the plan \`${moved.slug}\` is in the Cards stage.`);
+  // `command` was formed before any rename, so where it names a plan it names
+  // a slug no plan has now; it is bare `card` only while this plan is alone.
+  const next = commandFor(moved, command !== "card");
+  process.stdout.write(
+    forOwner(
+      `The Document stage is done, and the plan \`${moved.slug}\` is in the Cards stage.\n\n` +
+        `The Cards stage runs in a fresh session, not this one: start a fresh session and have it run \`${next}\`.\n`,
+    ),
+  );
 }
