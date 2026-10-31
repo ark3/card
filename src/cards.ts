@@ -36,13 +36,22 @@ export async function planCards(deck: Deck, plan: Plan): Promise<string[]> {
   });
 }
 
-/** The Cards stage's prompt, which bare `card` prints for as long as the stage lasts. */
-export async function printPrompt({ deck, plan, command }: Context): Promise<void> {
+/**
+ * The Cards stage prompt's one block for the owner: the waiting cards the
+ * plan has still to settle, or that none is left. A recovered `card amend`
+ * prints it alone, since the rest of the prompt is for the session.
+ */
+export async function waitingBlock(deck: Deck, plan: Plan, command: string): Promise<string> {
   // A card the owner put off for later is still waiting, for every other
   // plan, but this plan's sessions have the owner's answer already. One the
   // owner drafted for promotion is settled too, and lists only the command
   // that records its key, even if this plan left it for later first.
   const waiting = await waitingCards(deck, plan);
+  return forOwner(waiting.length > 0 ? listWaiting(waiting, command) : "No waiting card is left for this plan to settle.\n");
+}
+
+/** The Cards stage's prompt, which bare `card` prints for as long as the stage lasts. */
+export async function printPrompt({ deck, plan, command }: Context): Promise<void> {
   const joined = await Promise.all(
     plan.joins.map(async (id) => {
       const file = path.join(deck.openDir, `${id}.md`);
@@ -56,11 +65,7 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
     PLAN_DOCUMENT: plan.document,
     DRAFTING_DIR: plan.cardsDir,
     DECK: deck.deckDir,
-    WAITING_CARDS: forOwner(
-      waiting.length > 0
-        ? listWaiting(waiting, command)
-        : "No waiting card is left for this plan to settle.\n",
-    ).trimEnd(),
+    WAITING_CARDS: (await waitingBlock(deck, plan, command)).trimEnd(),
     JOINED_FINDINGS: joined.length > 0 ? joined.join("").trimEnd() : "No finding has joined this plan.",
     PLAN_CARDS: cards.length > 0 ? cards.join("").trimEnd() : "The plan holds no cards yet: this is its first pass through this stage.",
   };
@@ -140,10 +145,14 @@ export async function done({ deck, plan, command, args }: Context): Promise<void
   const final = keepsFinal ? plan.final! : ids.at(-1)!;
   const drafts = drafted.map(({ file, card }, index) => ({ name: path.basename(file), id: ids[index]!, card }));
   const pending: Pending = { verb: "done", drafts, cards, final };
-  const moved = await finishDone(deck, await writeRecord(plan, { pending }), pending);
+  printDone(await finishDone(deck, await writeRecord(plan, { pending }), pending), drafted.length, plan.joins.length, command);
+}
+
+/** What `card done` in the Cards stage prints for the owner once `moved` is in Check, whether it ran whole or was finished from its record. */
+export function printDone(moved: Plan, drafted: number, joined: number, command: string): void {
   process.stdout.write(
     forOwner(
-      `Took in ${drafted.length} drafted and ${plan.joins.length} joined cards; the Cards stage is done, and the plan \`${moved.slug}\` is in the Check stage.\n\n` +
+      `Took in ${drafted} drafted and ${joined} joined cards; the Cards stage is done, and the plan \`${moved.slug}\` is in the Check stage.\n\n` +
         `The Check stage runs in a fresh session, not this one, so that a session that did not write the cards checks them: start a fresh session and have it run \`${command}\`.\n`,
     ),
   );

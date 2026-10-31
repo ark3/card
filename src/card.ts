@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import * as bounced from "./bounced.ts";
-import { createDeck, type Deck, DEFAULT_PREFIX, requireDeck, resolveDeck } from "./deck.ts";
+import { readCard } from "./cardfile.ts";
+import { createDeck, type Deck, DEFAULT_PREFIX, locate, requireDeck, resolveDeck } from "./deck.ts";
 import * as cards from "./cards.ts";
 import * as check from "./check.ts";
 import * as dead from "./dead.ts";
@@ -97,7 +98,11 @@ async function printWaiting(deck: Deck, command: string): Promise<void> {
  * every step after is safe to run again, so one that died partway is
  * finished here, once, before any verb or bare `card` acts on the plan, and
  * the invocation goes on from where the verb would have left it; a plan the
- * finished verb removed is not in the list. What a plan removal left is
+ * finished verb removed is not in the list. Each finished verb prints what
+ * its own run would have printed for the owner, its command formed once
+ * every plan is listed, and `stops` says whether one ended an authoring
+ * stage, after which the invocation goes no further, so the session that ran
+ * it never goes on into the next stage's prompt. What a plan removal left is
  * removed first. Done here rather than in `listPlans`, which reads, so that
  * no read path writes, and no run of another plan, which lists the plans
  * too, finishes a verb still in flight.
@@ -111,16 +116,17 @@ async function printWaiting(deck: Deck, command: string): Promise<void> {
  * ids its verb carries stay the plan's, as `holds` has them. So one plan's
  * failure stops no other plan and no verb that needs none.
  */
-async function plansIn(deck: Deck): Promise<Plan[]> {
+async function plansIn(deck: Deck): Promise<{ plans: Plan[]; stops: boolean }> {
   await sweepRemoved(deck);
   const plans: Plan[] = [];
+  const recovered: Finished[] = [];
   for (const plan of await listPlans(deck)) {
     if (plan.pending === null) {
       plans.push(plan);
       continue;
     }
     const recorded = `\`card ${plan.pending.verb}\` on the plan \`${plan.slug}\` is recorded but did not finish`;
-    let finished: Plan | null;
+    let finished: Finished;
     try {
       finished = await finish(deck, plan, plan.pending);
     } catch (error) {
@@ -129,9 +135,21 @@ async function plansIn(deck: Deck): Promise<Plan[]> {
       continue;
     }
     console.error(`card: ${recorded}, and is finished now, before anything else runs`);
-    if (finished !== null) plans.push(finished);
+    recovered.push(finished);
+    if (finished.plan !== null) plans.push(finished.plan);
   }
-  return plans;
+  for (const { plan, print } of recovered) await print(plan === null ? "card" : commandFor(plan, plans.length > 1));
+  return { plans, stops: recovered.some(({ ends }) => ends) };
+}
+
+/**
+ * The line a run of `card` asked for `asked` prints when a recorded verb it
+ * finished ended an authoring stage, so the command it was asked for never ran.
+ */
+function notRun(asked: string): void {
+  process.stdout.write(
+    `\n\`${asked}\` did not run: a recorded verb this run of card finished ended an authoring stage, so the run stopped there. Run \`${asked}\` again.\n`,
+  );
 }
 
 /** Why a held plan opens no command, and what frees it. */
@@ -144,20 +162,39 @@ function held(plan: Plan): void {
   throw new Error(`the plan \`${plan.slug}\` is held until its recorded \`card ${plan.pending.verb}\` finishes: ${HELD}`);
 }
 
-/** Finishes the verb `pending` records on `plan`, returning the plan as the verb leaves it, or null where it removed the plan. */
-async function finish(deck: Deck, plan: Plan, pending: Pending): Promise<Plan | null> {
+/**
+ * A recorded verb finished: the plan as the verb leaves it, or null where it
+ * removed the plan; what the verb's own run prints for the owner, given the
+ * plan's command; and whether the verb ended an authoring stage.
+ */
+type Finished = { plan: Plan | null; print: (command: string) => Promise<void>; ends: boolean };
+
+/** Finishes the verb `pending` records on `plan`. */
+async function finish(deck: Deck, plan: Plan, pending: Pending): Promise<Finished> {
   switch (pending.verb) {
-    case "done":
-      return cards.finishDone(deck, plan, pending);
-    case "join":
-      return ended.finishJoin(deck, plan, pending.id);
-    case "amend":
-      return stopped.finishAmend(deck, plan);
-    case "stop":
-      return stopped.finishStop(deck, plan);
-    case "drop":
-      await ended.finishDrop(deck, plan, pending.settles);
-      return null;
+    case "done": {
+      const moved = await cards.finishDone(deck, plan, pending);
+      // The joins as recorded before the finish, which takes them in.
+      return { plan: moved, ends: true, print: async (command) => cards.printDone(moved, pending.drafts.length, plan.joins.length, command) };
+    }
+    case "join": {
+      const joined = await ended.finishJoin(deck, plan, pending.id);
+      const { headline } = await readCard((await locate(deck, pending.id))!.path);
+      return { plan: joined, ends: true, print: async (command) => ended.printJoined(joined, pending.id, headline, command) };
+    }
+    case "amend": {
+      const amended = await stopped.finishAmend(deck, plan);
+      // The rest of the Cards stage prompt is for the session that ran the amend.
+      return { plan: amended, ends: false, print: async (command) => void process.stdout.write(await cards.waitingBlock(deck, amended, command)) };
+    }
+    case "stop": {
+      const halted = await stopped.finishStop(deck, plan);
+      return { plan: halted, ends: false, print: (command) => reports.stopped({ deck, plan: halted, command, args: [], openCommands }) };
+    }
+    case "drop": {
+      const dropped = await ended.finishDrop(deck, plan, pending.settles);
+      return { plan: null, ends: false, print: () => ended.printDropped(deck, plan.slug, dropped) };
+    }
   }
 }
 
@@ -173,7 +210,12 @@ async function start(deck: Deck, slug: string | null, many: boolean): Promise<vo
 async function bare(slug: string | null, cwd: string): Promise<void> {
   // A plan is about to start or already exists, and either way it needs a deck.
   const deck = (await resolveDeck(cwd)) ?? (await createDeck(cwd, DEFAULT_PREFIX));
-  const plans = await plansIn(deck);
+  const { plans, stops } = await plansIn(deck);
+  // Bare `card` with no plan named asked for nothing beyond the next thing, which is the fresh session's now.
+  if (stops) {
+    if (slug !== null) notRun(`card --plan ${slug}`);
+    return;
+  }
   const many = plans.length > 1;
 
   if (slug !== null) {
@@ -249,7 +291,8 @@ async function main(argv: string[], cwd: string): Promise<void> {
   if (!(VERBS as readonly string[]).includes(name)) throw new Error(`no such verb as \`${name}\`\n${USAGE}`);
 
   const deck = await requireDeck(cwd);
-  const plans = await plansIn(deck);
+  const { plans, stops } = await plansIn(deck);
+  if (stops) return notRun(["card", ...argv].join(" "));
   if (name === "decline" || name === "promote") {
     // A slug it is given must still name a plan, so a typo is refused here as everywhere.
     if (slug !== null) pick(plans, slug, name);

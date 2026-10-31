@@ -2151,6 +2151,19 @@ async function diedJoining(both: boolean) {
 /** What every invocation after the join died says before it goes on. */
 const JOIN_FINISHED = "card: `card join` on the plan `greeting` is recorded but did not finish, and is finished now, before anything else runs\n";
 
+/** What the join, finished, prints for the owner, as its own run would have. */
+function joined(finding: string): string {
+  return forOwner(
+    `${finding} has joined the plan \`greeting\`, whose final card is reopened; the plan is back in the Cards stage: Nothing says goodbye\n\n` +
+      "The Cards stage runs in a fresh session, not this one: start a fresh session and have it run `card`.\n",
+  );
+}
+
+/** What a run of `card` asked for `asked` prints once a recorded verb it finished ended an authoring stage. */
+function notRun(asked: string): string {
+  return `\n\`${asked}\` did not run: a recorded verb this run of card finished ended an authoring stage, so the run stopped there. Run \`${asked}\` again.\n`;
+}
+
 /** That the final card is in `open/` alone, reopened with its record kept, as the join leaves it. */
 function reopenedOnce(deck: Deck, final: string): void {
   expect(existsSync(path.join(deck.closedDir, `${final}.md`))).toBe(false);
@@ -2163,24 +2176,30 @@ for (const [left, both] of [
   ["reopened", false],
   ["whole in both open/ and closed/", true],
 ] as const) {
-  test(`bare card at Ended, after a join died with the final card ${left}, finishes the join, leaving the final card open once and the plan in Cards with the finding joined, and prints the Cards prompt`, async () => {
+  test(`bare card at Ended, after a join died with the final card ${left}, finishes the join and stops there, printing the join's report for the owner, leaving the final card open once and the plan in Cards with the finding joined; the next bare card prints the Cards prompt`, async () => {
     const { repo, deck, plan, final, finding } = await diedJoining(both);
 
     const bare = await card([], repo);
-    expect(bare.stderr).toBe(JOIN_FINISHED);
-    expect(bare.code).toBe(0);
-    expect(bare.stdout).toContain("# The Cards stage");
-    expect(bare.stdout).toContain(`${finding}  Nothing says goodbye\n  ${path.join(deck.openDir, `${finding}.md`)}\n`);
+    expect(bare).toEqual({ code: 0, stdout: joined(finding), stderr: JOIN_FINISHED });
     reopenedOnce(deck, final);
     const state = record(plan.dir);
     expect([state.state, state.joins, state.pending]).toEqual(["Cards", [finding], null]);
+
+    const next = await card([], repo);
+    expect(next.code).toBe(0);
+    expect(next.stdout).toContain("# The Cards stage");
+    expect(next.stdout).toContain(`${finding}  Nothing says goodbye\n  ${path.join(deck.openDir, `${finding}.md`)}\n`);
   });
 
-  test(`card later, after a join died with the final card ${left}, finishes the join first, then withdraws it in the Cards stage, leaving the final card open once; card finish is not open there`, async () => {
+  test(`card later, after a join died with the final card ${left}, finishes the join and stops, saying card later did not run; run again, it withdraws the join in the Cards stage, leaving the final card open once; card finish is not open there`, async () => {
     const { repo, deck, plan, final, finding } = await diedJoining(both);
 
+    const stopped = await card(["later", finding], repo);
+    expect(stopped).toEqual({ code: 0, stdout: joined(finding) + notRun(`card later ${finding}`), stderr: JOIN_FINISHED });
+    expect([record(plan.dir).joins, record(plan.dir).later]).toEqual([[finding], []]);
+
     const later = await card(["later", finding], repo);
-    expect(later.stderr).toBe(JOIN_FINISHED);
+    expect(later.stderr).toBe("");
     expect(later.code).toBe(0);
     reopenedOnce(deck, final);
     const state = record(plan.dir);
@@ -2189,14 +2208,18 @@ for (const [left, both] of [
     expect(record(plan.dir).state).toBe("Cards");
   });
 
-  test(`card drop, after a join died with the final card ${left}, finishes the join first, then closes the final card and the joined finding declined once each and ends the plan`, async () => {
+  test(`card drop, after a join died with the final card ${left}, finishes the join and stops, saying card drop did not run; run again, it closes the final card and the joined finding declined once each and ends the plan`, async () => {
     const { repo, deck, final, finding } = await diedJoining(both);
+
+    const stopped = await card(["drop"], repo);
+    expect(stopped).toEqual({ code: 0, stdout: joined(finding) + notRun("card drop"), stderr: JOIN_FINISHED });
+    expect(await listPlans(deck)).toHaveLength(1);
 
     const dropping = await card(["drop"], repo);
     expect(dropping).toEqual({
       code: 0,
       stdout: forOwner(`The plan \`greeting\` is dropped.\n\nThese cards of the plan are closed declined:\n\n${final}  Check the plan\n${finding}  Nothing says goodbye\n`),
-      stderr: JOIN_FINISHED,
+      stderr: "",
     });
     expect(await listPlans(deck)).toEqual([]);
     for (const id of [final, finding]) {
@@ -2207,12 +2230,11 @@ for (const [left, both] of [
     }
   });
 
-  test(`card join, retried after a join died with the final card ${left}, finishes the join first and then joins nothing twice, leaving the final card open once`, async () => {
+  test(`card join, retried after a join died with the final card ${left}, finishes the join and stops there, joining nothing twice and leaving the final card open once`, async () => {
     const { repo, deck, plan, final, finding } = await diedJoining(both);
 
     const joining = await card(["join", finding], repo);
-    expect(joining.stderr).toBe(JOIN_FINISHED);
-    expect(joining.code).toBe(0);
+    expect(joining).toEqual({ code: 0, stdout: joined(finding) + notRun(`card join ${finding}`), stderr: JOIN_FINISHED });
     reopenedOnce(deck, final);
     const state = record(plan.dir);
     expect([state.state, state.joins, state.pending]).toEqual(["Cards", [finding], null]);

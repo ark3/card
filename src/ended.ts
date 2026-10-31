@@ -115,10 +115,14 @@ export async function printPrompt({ deck, plan, command }: Context): Promise<voi
 export async function join(context: Context): Promise<void> {
   const { deck, plan, command } = context;
   const { id, card } = await settling(context, "join");
-  await finishJoin(deck, await writeRecord(plan, { pending: { verb: "join", id } }), id);
+  printJoined(await finishJoin(deck, await writeRecord(plan, { pending: { verb: "join", id } }), id), id, card.headline, command);
+}
+
+/** What `card join <id>` at Ended prints for the owner once `joined` is back in Cards, whether it ran whole or was finished from its record. */
+export function printJoined(joined: Plan, id: string, headline: string, command: string): void {
   process.stdout.write(
     forOwner(
-      `${id} has joined the plan \`${plan.slug}\`, whose final card is reopened; the plan is back in the Cards stage: ${card.headline}\n\n` +
+      `${id} has joined the plan \`${joined.slug}\`, whose final card is reopened; the plan is back in the Cards stage: ${headline}\n\n` +
         `The Cards stage runs in a fresh session, not this one: start a fresh session and have it run \`${command}\`.\n`,
     ),
   );
@@ -195,13 +199,21 @@ export async function drop({ deck, plan, command, args }: Context): Promise<void
       throw new Error(`the plan is not dropped, since git would not remove its worktree: it holds modified or untracked files:\n${lost.trimEnd()}`);
     }
   }
-  const { removed, closed } = await finishDrop(deck, await writeRecord(dropped, { pending: { verb: "drop", settles } }), settles);
+  await printDropped(deck, plan.slug, await finishDrop(deck, await writeRecord(dropped, { pending: { verb: "drop", settles } }), settles));
+}
+
+/**
+ * What `card drop` prints for the owner once the plan `slug` is gone, from
+ * what `finishDrop` reports, whether the drop ran whole or was finished from
+ * its record.
+ */
+export async function printDropped(deck: Deck, slug: string, { removed, closed }: Awaited<ReturnType<typeof finishDrop>>): Promise<void> {
   const gone = removed === null ? "" : `: its worktree ${removed.tree} is removed, and its branch \`${removed.branch}\` is kept`;
   const cards =
     closed.length > 0
       ? `These cards of the plan are closed declined:\n\n${(await Promise.all(closed.map(async (id) => `${await named(deck, id)}\n`))).join("")}`
       : "No card of the plan was left open to close.\n";
-  process.stdout.write(forOwner(`The plan \`${plan.slug}\` is dropped${gone}.\n\n${cards}`));
+  process.stdout.write(forOwner(`The plan \`${slug}\` is dropped${gone}.\n\n${cards}`));
 }
 
 /**

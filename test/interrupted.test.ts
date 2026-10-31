@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import relay from "../payload/relay.md" with { type: "text" };
 import { parseCard } from "../src/cardfile.ts";
 import { type Cycle, fileHeld } from "../src/cycle.ts";
 import { createDeck, type Deck } from "../src/deck.ts";
@@ -646,3 +647,123 @@ test("card drop in Stopped with its worktree gone and its branch checked out els
   expect(plans).toEqual([]);
   expect(cards).toEqual(["closed declined Add the greeting, 1 close notes, 0 promotions", "closed declined Check the plan, 1 close notes, 0 promotions"]);
 });
+
+/** The text between each pair of owner marks in a printout, in order. */
+function ownerBlocks(stdout: string): string[] {
+  return [...stdout.matchAll(/<for_owner>\n([\s\S]*?)<\/for_owner>\n/g)].map((match) => match[1]!);
+}
+
+/** Kills the fixture's verb right after its first write, its pending record, and checks the record holds it. */
+async function diedRecorded({ repo, deck, args }: Fixture): Promise<void> {
+  expect((await card(args, repo, 1)).code).toBe(137);
+  expect(JSON.parse(readFileSync(path.join(deck.cardDir, "plans", "greeting", "state.json"), "utf8")).pending).not.toBeNull();
+}
+
+/** A second plan in progress, `other`, in the Cards stage. */
+async function otherInCards(deck: Deck): Promise<void> {
+  await writeRecord(await startPlan(deck, "other"), { state: "Cards", placeholder: false });
+}
+
+/** A second plan in progress, `other`, Running with its run on record, which reads Dead, so `card stop` would stop it. */
+async function otherRunning(repo: string, deck: Deck): Promise<string> {
+  const plan = await startPlan(deck, "other");
+  await Bun.write(plan.document, "---\nbranch: plan/other\nstart-point: main\n---\n\n# Other\n\nAnother intent.\n");
+  const first = await fileCard(deck, { labels: [], blockedBy: [], headline: "Do the other thing", body: "Body.\n" });
+  await ensureBranch("plan/other", "main", repo);
+  await holdWorktree(plan.slug, "plan/other", repo);
+  const base = (await gitOrThrow(["rev-parse", "main"], repo)).trim();
+  const cycle: Cycle = { card: first, base, role: "implementer", step: "implement", sessions: {}, rounds: 0, exchanges: 0 };
+  await writeRecord(plan, { state: "Running", placeholder: false, cards: [first], final: first, harness: "pi", run: await deadRun(), cycle });
+  return path.join(plan.dir, "state.json");
+}
+
+// Each verb that ends an authoring stage, its fixture, the reminder its
+// owner block carries, and the heading of the next stage's prompt.
+const ENDS_STAGE: [string, () => Promise<Fixture>, string, string][] = [
+  ["card done in the Cards stage", drafted, "The Check stage runs in a fresh session, not this one", "# The Check stage"],
+  [
+    "card join at Ended",
+    async () => {
+      const fixture = await ended(true);
+      return { ...fixture, args: ["join", fixture.finding] };
+    },
+    "The Cards stage runs in a fresh session, not this one",
+    "# The Cards stage",
+  ],
+];
+
+for (const [verb, setup, reminder, heading] of ENDS_STAGE) {
+  for (const many of [false, true]) {
+    test(`a recorded ${verb} that died is finished by bare card${many ? ", with a second plan in progress," : ""} which prints its reminder that the next stage runs in a fresh session, and stops there, printing no next stage's prompt`, async () => {
+      const fixture = await setup();
+      await diedRecorded(fixture);
+      if (many) await otherInCards(fixture.deck);
+
+      const bare = await card([], fixture.repo);
+      expect(bare.code).toBe(0);
+      const owner = ownerBlocks(bare.stdout).join("");
+      expect(owner).toContain(reminder);
+      expect(owner).toContain(`have it run \`${many ? "card --plan greeting" : "card"}\`.`);
+      expect(bare.stdout).not.toContain(heading);
+      expect(bare.stdout).not.toContain("did not run");
+    });
+  }
+}
+
+test("a recorded card done that died, finished by another verb on another plan, prints the done's owner block and says that verb did not run and must be run again, and that verb does not act", async () => {
+  const fixture = await drafted();
+  await diedRecorded(fixture);
+  const other = await otherRunning(fixture.repo, fixture.deck);
+
+  const stopping = await card(["--plan", "other", "stop"], fixture.repo);
+  expect(stopping.code).toBe(0);
+  const owner = ownerBlocks(stopping.stdout);
+  expect(owner).toHaveLength(1);
+  expect(owner[0]).toContain("the Cards stage is done, and the plan `greeting` is in the Check stage");
+  expect(owner[0]).toContain("have it run `card --plan greeting`.");
+  expect(stopping.stdout).toContain("`card --plan other stop` did not run");
+  expect(stopping.stdout).toContain("Run `card --plan other stop` again.");
+  expect(JSON.parse(readFileSync(other, "utf8")).state).toBe("Running");
+});
+
+/**
+ * The first owner block of a printout, each card id in it put as its card's
+ * headline and the fixture's repository as `<repo>`, since each fixture draws
+ * ids and makes a repository of its own.
+ */
+function ownerBlockOf(stdout: string, { repo, deck }: Fixture): string {
+  const headlines = new Map<string, string>();
+  for (const dir of [deck.openDir, deck.closedDir]) {
+    for (const name of readdirSync(dir).filter((each) => each.endsWith(".md"))) {
+      headlines.set(name.slice(0, -3), parseCard(readFileSync(path.join(dir, name), "utf8")).headline);
+    }
+  }
+  const block = ownerBlocks(stdout)[0];
+  expect(block).toBeDefined();
+  return block!.replace(/proj-[a-z]{6}/g, (id) => `<${headlines.get(id) ?? id}>`).replaceAll(repo, "<repo>");
+}
+
+// Each recorded verb that ends no authoring stage, with its fixture; for
+// `amend`, its owner block is the Cards stage prompt's list of waiting cards.
+const GOES_ON: [string, () => Promise<Fixture>][] = [
+  ["card drop in Bounced", () => atLand("Bounced", "drop")],
+  ["card amend in Bounced", () => atLand("Bounced", "amend")],
+  ["card stop in Dead", () => atLand("Running", "stop")],
+];
+
+for (const [verb, setup] of GOES_ON) {
+  test(`a recorded ${verb} that died is finished by bare card, which prints, ahead of anything else, the owner block an uninterrupted ${verb} prints`, async () => {
+    const uninterrupted = await setup();
+    const run = await card(uninterrupted.args, uninterrupted.repo);
+    expect(run.code).toBe(0);
+    const expected = ownerBlockOf(run.stdout, uninterrupted);
+
+    const fixture = await setup();
+    await diedRecorded(fixture);
+    const bare = await card([], fixture.repo);
+    expect(bare.code).toBe(0);
+    expect(bare.stdout).toStartWith(`${relay}<for_owner>\n`);
+    expect(ownerBlockOf(bare.stdout, fixture)).toBe(expected);
+    expect(bare.stdout).not.toContain("did not run");
+  });
+}
