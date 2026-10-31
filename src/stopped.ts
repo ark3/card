@@ -12,7 +12,10 @@ import * as reports from "./reports.ts";
  * `card stop` in Running or Dead: ends the run, its role and every process
  * the role started, discards the in-flight card's work and leaves the card
  * open, and records the plan Stopped, reporting the card it stopped at. The
- * record is written only once the run is gone, so nothing writes over it.
+ * stop is recorded only once the run is gone, so nothing writes over it, and
+ * before anything else is written, so `finishStop` can finish a stop that
+ * died partway; the worktree the settling needs, which git can refuse to
+ * give back, is held before the record.
  */
 export async function stop(context: Context): Promise<void> {
   const { deck, plan, command, args } = context;
@@ -23,8 +26,20 @@ export async function stop(context: Context): Promise<void> {
     process.stdout.write(forOwner(`The plan \`${plan.slug}\`'s run had already reached ${ended.state}, so there was no run to stop.\n`));
     return;
   }
-  const { plan: settled } = await settle(deck, { ...ended, state: "Stopped" });
-  await reports.stopped({ ...context, plan: await writeRecord(settled, { state: "Stopped" }) });
+  await holdWorktree(plan.slug, readDocument(await Bun.file(plan.document).text()).fields.get("branch")!, process.cwd());
+  // Dead is read, never written, so the record says Stopped, as the run now is.
+  await reports.stopped({ ...context, plan: await finishStop(deck, await writeRecord(ended, { state: "Stopped", pending: { verb: "stop" } })) });
+}
+
+/**
+ * Finishes `card stop` from what its record holds: the card in flight is
+ * settled, its work discarded and the findings its cycle holds filed, and the
+ * plan recorded Stopped. The run was ended before the record, so nothing
+ * here needs it.
+ */
+export async function finishStop(deck: Deck, plan: Plan): Promise<Plan> {
+  const { plan: settled } = await settle(deck, plan);
+  return writeRecord(settled, { state: "Stopped", pending: null });
 }
 
 /**

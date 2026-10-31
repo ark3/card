@@ -153,6 +153,8 @@ async function finish(deck: Deck, plan: Plan, pending: Pending): Promise<Plan | 
       return ended.finishJoin(deck, plan, pending.id);
     case "amend":
       return stopped.finishAmend(deck, plan);
+    case "stop":
+      return stopped.finishStop(deck, plan);
     case "drop":
       await ended.finishDrop(deck, plan, pending.settles);
       return null;

@@ -65,11 +65,11 @@ async function inCards(): Promise<Fixture> {
 const GOODBYE = { headline: "Nothing says goodbye", body: "The greeting has no farewell." };
 
 /**
- * The plan Bounced at its first card's land step, the work left uncommitted
- * in the worktree, the reviewer having approved with a finding its cycle
- * holds, not yet filed.
+ * The plan at its first card's land step, the work left uncommitted in the
+ * worktree, the reviewer having approved with a finding its cycle holds, not
+ * yet filed: Bounced, or Running with a dead run, which reads Dead.
  */
-async function bounced(verb: string): Promise<Fixture> {
+async function atLand(state: "Bounced" | "Running", verb: string): Promise<Fixture> {
   const { repo, deck, plan, file } = await greeting();
   const first = await file("Add the greeting");
   const final = await file("Check the plan");
@@ -90,8 +90,8 @@ async function bounced(verb: string): Promise<Fixture> {
     subject: "Add the greeting",
     note: "Landed.",
   };
-  const bounce = { role: "reviewer" as const, session, cause: "the host repository's hook still refused the commit after 2 returns" };
-  await writeRecord(plan, { state: "Bounced", placeholder: false, cards: [first, final], final, harness: "pi", run: await deadRun(), cycle, bounce });
+  const bounce = state === "Bounced" ? { role: "reviewer" as const, session, cause: "the host repository's hook still refused the commit after 2 returns" } : null;
+  await writeRecord(plan, { state, placeholder: false, cards: [first, final], final, harness: "pi", run: await deadRun(), cycle, bounce });
   return { repo, deck, args: [verb], files: GOODBYE.headline };
 }
 
@@ -196,10 +196,11 @@ async function snapshot({ repo, deck }: Fixture) {
 const VERBS: [string, () => Promise<Fixture>, boolean][] = [
   ["card done in the Cards stage", drafted, true],
   ["card drop in the Cards stage", inCards, true],
-  ["card drop in Bounced", () => bounced("drop"), true],
+  ["card drop in Bounced", () => atLand("Bounced", "drop"), true],
   ["card drop in Dead", () => afterRun("Running"), true],
   ["card drop in Stopped", () => afterRun("Stopped"), true],
-  ["card amend in Bounced", () => bounced("amend"), true],
+  ["card amend in Bounced", () => atLand("Bounced", "amend"), true],
+  ["card stop in Dead", () => atLand("Running", "stop"), true],
   ["card finish at Ended", async () => ({ ...(await ended(false)), args: ["finish"] }), true],
   [
     "card join at Ended",
@@ -262,6 +263,40 @@ for (const [verb, setup, planVerb] of VERBS) {
     SLOW,
   );
 }
+
+test("a card stop killed right after its settling recorded the held finding's id is finished before card resume runs: the finding is filed once and listed in the plan's findings", async () => {
+  // The first death after which the record holds the finding's id.
+  let fixture: Fixture;
+  let state: string;
+  for (let writes = 1; ; writes++) {
+    fixture = await atLand("Running", "stop");
+    expect((await card(fixture.args, fixture.repo, writes)).code).toBe(137);
+    state = path.join(fixture.deck.cardDir, "plans", "greeting", "state.json");
+    if (JSON.parse(readFileSync(state, "utf8")).cycle.held[0].id !== undefined) break;
+  }
+  const { repo, deck } = fixture;
+  expect(readdirSync(deck.openDir).filter((name) => readFileSync(path.join(deck.openDir, name), "utf8").includes(GOODBYE.headline))).toEqual([]);
+
+  // The resumed run's reconciler stops it, so it writes nothing more once it bounces.
+  const outer = process.env.PATH;
+  try {
+    const control = stand(["pi"]);
+    queue(control, [{ answer: JSON.stringify({ outcome: "stop", cause: "intent", question: "Is a greeting wanted?" }) }]);
+    const resumed = await card(["resume"], repo);
+    expect(resumed.code).toBe(0);
+    for (const deadline = Date.now() + 20_000; JSON.parse(readFileSync(state, "utf8")).state !== "Bounced"; await Bun.sleep(50)) {
+      if (Date.now() > deadline) throw new Error("timed out waiting for the resumed run to bounce");
+    }
+  } finally {
+    process.env.PATH = outer;
+  }
+
+  const filed = (await snapshot(fixture)).cards.filter((line) => line.includes(GOODBYE.headline));
+  expect(filed).toEqual(["open - Nothing says goodbye, 0 close notes, 0 promotions"]);
+  const { findings } = JSON.parse(readFileSync(state, "utf8"));
+  expect(findings).toHaveLength(1);
+  expect(readFileSync(path.join(deck.openDir, `${findings[0].id}.md`), "utf8")).toContain(`# ${GOODBYE.headline}`);
+}, 60_000);
 
 test("a card done that died once recorded, its drafts then deleted, is finished from the record: bare card finds the plan in Check with every drafted card filed", async () => {
   const fixture = await drafted();

@@ -91,6 +91,8 @@ export type Pending =
   | { verb: "join"; id: string }
   /** `card amend` in Bounced or Stopped. */
   | { verb: "amend" }
+  /** `card stop` in Running or Dead, once the run is gone. */
+  | { verb: "stop" }
   /** `card drop`, and whether the card in flight is settled before the worktree goes. */
   | { verb: "drop"; settles: boolean };
 
