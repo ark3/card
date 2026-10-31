@@ -478,24 +478,61 @@ function ownerBlock(stdout: string): string {
   return stdout.slice(stdout.indexOf("<for_owner>\n"), stdout.indexOf("</for_owner>\n"));
 }
 
+/** What bare `card` says in Ended of a plan document changed by `counts` lines in `sections`, ahead of the command that shows the exact diff. */
+function changes(plan: Plan, counts: string, sections: string[]): string {
+  return (
+    `The plan document ${plan.document} has changed since the owner last approved it, by ${counts} lines, in these sections:\n\n` +
+    sections.map((section) => `- ${section}\n`).join("") +
+    `\nThis command, run in a terminal, shows the exact diff from the approved text to the current one:\n\n  git diff --no-index -- ${plan.approved} ${plan.document}\n`
+  );
+}
+
+/** Runs `inCheck`'s plan to Ended with `body` added to its plan document before approval and `edit`, a shell command, run by its first reconciler; then the owner block of bare `card`. */
+async function endedWithEdit(body: string, edit: (plan: Plan) => string) {
+  const { repo, plan } = await inCheck();
+  writeFileSync(plan.document, `${readFileSync(plan.document, "utf8")}\n${body}`);
+  const control = stand(["pi"]);
+  queue(control, [proceed(edit(plan))], [done()], [approved("Add the greeting")], [proceed()], [done()], [approved("Check the plan")]);
+
+  expect((await card(["approve"], repo)).code).toBe(0);
+  await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+  const ending = await card([], repo);
+  expect(ending.code).toBe(0);
+  return { plan, owner: ownerBlock(ending.stdout) };
+}
+
 test(
-  "a reconciler that edits an acceptance criterion in the plan document has bare card at Ended show the owner a diff with the criterion's old and new text, ahead of the findings",
+  "a reconciler that edits an acceptance criterion in the plan document has bare card at Ended show the owner the line counts, the section and the command for the exact diff, with no fence, ahead of the findings",
   async () => {
-    const { repo, plan } = await inCheck();
-    writeFileSync(plan.document, `${readFileSync(plan.document, "utf8")}\n${CRITERION}`);
-    const control = stand(["pi"]);
-    queue(control, [proceed(moveCriterion(plan))], [done()], [approved("Add the greeting")], [proceed()], [done()], [approved("Check the plan")]);
-
-    expect((await card(["approve"], repo)).code).toBe(0);
-    await until("the plan to end", () => record(plan.dir).state === "Ended");
-
-    const ending = await card([], repo);
-    expect(ending.code).toBe(0);
-    const owner = ownerBlock(ending.stdout);
-    const changed = `The plan document ${plan.document} has changed since the owner last approved it, as this diff from the approved text to the current one shows:\n\n\`\`\`diff\n@@ -9,4 +9,4 @@\n`;
-    expect(owner).toContain(`\n\n${changed}`);
-    expect(owner).toContain("\n-1. The greeting prints hello.\n+1. The greeting prints hi.\n```\n\nThe run filed no findings.\n");
+    const { plan, owner } = await endedWithEdit(CRITERION, moveCriterion);
+    expect(path.isAbsolute(plan.approved)).toBe(true);
+    expect(path.isAbsolute(plan.document)).toBe(true);
+    expect(owner).toContain(`\n\n${changes(plan, "+1 -1", ["Acceptance criteria"])}\nThe run filed no findings.\n`);
+    expect(owner).not.toContain("```");
+    expect(owner).not.toContain("prints hi");
     expect(owner).not.toContain("as the owner last approved it.");
+  },
+  SLOW,
+);
+
+test(
+  "bare card at Ended names each section a reconciler's edits fall in once, in document order, a nested one by its heading path",
+  async () => {
+    const body = "## Decisions\n\n### What a recovered verb prints\n\nIt prints the report.\n\n## Acceptance criteria\n\n1. One.\n2. Two.\n3. Three.\n";
+    const edit = (plan: Plan) => `sed -i -e 's/the report/the owner'"'"'s report/' -e 's/One\\./Uno./' -e 's/Three\\./Tres./' '${plan.document}'`;
+    const { plan, owner } = await endedWithEdit(body, edit);
+    expect(owner).toContain(changes(plan, "+3 -3", ["Decisions › What a recovered verb prints", "Acceptance criteria"]));
+  },
+  SLOW,
+);
+
+test(
+  "bare card at Ended names the real section an edit inside a fenced block falls in, not a heading line the fence holds",
+  async () => {
+    const body = "## Decisions\n\nThe report reads:\n\n```\n## Not a heading\nold line\n```\n";
+    const { plan, owner } = await endedWithEdit(body, (plan) => `sed -i 's/old line/new line/' '${plan.document}'`);
+    expect(owner).toContain(changes(plan, "+1 -1", ["Decisions"]));
   },
   SLOW,
 );
@@ -511,11 +548,15 @@ test("bare card in Ended says no approved text was kept for a plan without one, 
   const unkept = await card([], repo);
   expect(unkept).toEqual({ code: 0, stdout: ended(plan, final, tree, "Guide.\n", NOT_KEPT), stderr: "" });
   expect(ownerBlock(unkept.stdout)).not.toContain("```");
+  expect(ownerBlock(unkept.stdout)).not.toMatch(/\+\d+ -\d+/);
+  expect(ownerBlock(unkept.stdout)).not.toContain("git diff");
 
   writeFileSync(plan.approved, readFileSync(plan.document, "utf8"));
   const kept = await card([], repo);
   expect(kept).toEqual({ code: 0, stdout: ended(plan, final, tree, "Guide.\n", asApproved(plan)), stderr: "" });
   expect(ownerBlock(kept.stdout)).not.toContain("```");
+  expect(ownerBlock(kept.stdout)).not.toMatch(/\+\d+ -\d+/);
+  expect(ownerBlock(kept.stdout)).not.toContain("git diff");
 });
 
 /** Asserts that nothing of a run started: the plan in Check, no branch, no worktree, no log, and no role called. */
@@ -2283,7 +2324,7 @@ test(
     queue(control, [proceed(moveCriterion(plan))], [done()], [approvedWith], [proceed()], [done()], [approved("Check the plan")]);
     expect((await card(["approve"], repo)).code).toBe(0);
     await until("the plan to end", () => record(plan.dir).state === "Ended");
-    expect(ownerBlock((await card([], repo)).stdout)).toContain("\n-1. The greeting prints hello.\n+1. The greeting prints hi.\n");
+    expect(ownerBlock((await card([], repo)).stdout)).toContain(changes(plan, "+1 -1", ["Acceptance criteria"]));
 
     // In the Cards stage the criterion is put back, and one added for the farewell.
     const finding = record(plan.dir).findings[0]!.id;

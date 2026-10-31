@@ -1,5 +1,5 @@
 import prompt from "../payload/settle.md" with { type: "text" };
-import { readCard } from "./cardfile.ts";
+import { fences, HEADING, readCard } from "./cardfile.ts";
 import { settling } from "./cards.ts";
 import type { Role } from "./cycle.ts";
 import { endRun, settle } from "./dead.ts";
@@ -37,32 +37,72 @@ async function branchOf(plan: Plan): Promise<string> {
 }
 
 /**
+ * The section each line of a plan document's `text` falls in: "the
+ * frontmatter" for a line between the `---` lines at its top, as
+ * `readDocument` reads them, and otherwise the path of headings above it,
+ * the nearest and each enclosing one of a lower level, joined by " › ", with
+ * the `# ` title left out, or "the opening, above the first section" where
+ * none is. A heading line is in its own section, and a fenced line is never a
+ * heading.
+ */
+function sectionsOf(text: string): string[] {
+  const lines = text.split("\n");
+  const { fenced } = fences(text);
+  const close = text.startsWith("---\n") ? text.indexOf("\n---\n", 3) : -1;
+  // The index of the frontmatter's closing `---` line, or -1 where there is none.
+  const closing = close === -1 ? -1 : text.slice(0, close + 1).split("\n").length - 1;
+  const path: { level: number; title: string }[] = [];
+  return lines.map((line, index) => {
+    if (index <= closing) return "the frontmatter";
+    const level = fenced[index] ? 0 : (HEADING.exec(line)?.[2]!.length ?? 0);
+    if (level > 1) {
+      while (path.length > 0 && path.at(-1)!.level >= level) path.pop();
+      path.push({ level, title: line.replace(HEADING, "").replace(/[ \t]+#+[ \t]*$/, "").trim() });
+    }
+    return path.length === 0 ? "the opening, above the first section" : path.map(({ title }) => title).join(" › ");
+  });
+}
+
+/**
  * How the plan document differs from the text the owner last approved, which
- * `card approve` keeps: a diff of the two, frontmatter included, or a
- * sentence saying they are the same, or that a plan approved before the text
- * was kept has none to compare against. A reconciler may edit the document
- * during the run, and the final card checks the criteria it states then.
+ * `card approve` keeps: the lines added and removed, frontmatter included,
+ * the sections the changed lines fall in, and the command that shows the
+ * exact diff, for the owner to run, or a sentence saying the two are the
+ * same, or that a plan approved before the text was kept has none to compare
+ * against. Nothing here is a text a session relaying it would retype
+ * inexactly. A reconciler may edit the document during the run, and the
+ * final card checks the criteria it states then.
  */
 async function documentChanges(plan: Plan): Promise<string> {
   const kept = Bun.file(plan.approved);
   if (!(await kept.exists())) {
     return "No approved text of the plan document was kept for this plan, so what the run changed in it cannot be shown.\n";
   }
-  if ((await kept.text()) === (await Bun.file(plan.document).text())) {
+  const before = await kept.text();
+  const after = await Bun.file(plan.document).text();
+  if (before === after) {
     return `The plan document ${plan.document} is as the owner last approved it.\n`;
   }
   // Exit 1 is git's word that the files differ.
-  const diff = await git(["diff", "--no-index", "--no-color", "--no-ext-diff", "-U3", "--", plan.approved, plan.document], plan.dir);
-  if (!diff.stdout.includes("\n@@ ")) throw new Error(diff.stderr.trim() || "git diff failed on the plan document");
-  // From the first hunk, since the header above it names only the files, and
-  // each hunk's header cut to its line numbers, without the line of the
-  // document git puts after them as context.
-  const hunks = diff.stdout.slice(diff.stdout.indexOf("\n@@ ") + 1).replace(/^(@@ -\S+ \+\S+ @@).*$/gm, "$1");
-  // Longer than any run of backticks in the diff, so no line of the document closes it.
-  const fence = "`".repeat(Math.max(3, ...(hunks.match(/`+/g) ?? []).map((run) => run.length + 1)));
+  const files = ["--", plan.approved, plan.document];
+  const numstat = await git(["diff", "--no-index", "--numstat", ...files], plan.dir);
+  const counts = /^(\d+)\t(\d+)\t/.exec(numstat.stdout);
+  if (counts === null) throw new Error(numstat.stderr.trim() || "git diff failed on the plan document");
+  // With no context, each hunk's header gives the removed lines of the
+  // approved text and the added lines of the current one, line by line,
+  // where a hunk's context could span headings.
+  const diff = await git(["diff", "--no-index", "--no-color", "--no-ext-diff", "-U0", ...files], plan.dir);
+  const was = sectionsOf(before);
+  const is = sectionsOf(after);
+  const sections = new Set<string>();
+  for (const [, from, removed, to, added] of diff.stdout.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)) {
+    for (let line = Number(from); line < Number(from) + Number(removed ?? 1); line++) sections.add(was[line - 1]!);
+    for (let line = Number(to); line < Number(to) + Number(added ?? 1); line++) sections.add(is[line - 1]!);
+  }
   return (
-    `The plan document ${plan.document} has changed since the owner last approved it, as this diff from the approved text to the current one shows:\n\n` +
-    `${fence}diff\n${hunks}${fence}\n`
+    `The plan document ${plan.document} has changed since the owner last approved it, by +${counts[1]} -${counts[2]} lines, in these sections:\n\n` +
+    [...sections].map((section) => `- ${section}\n`).join("") +
+    `\nThis command, run in a terminal, shows the exact diff from the approved text to the current one:\n\n  git diff --no-index -- ${plan.approved} ${plan.document}\n`
   );
 }
 

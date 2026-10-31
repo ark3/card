@@ -105,7 +105,7 @@ export function refuseHeadlines(what: string, text: string): void {
 
 // An ATX heading's marker, by CommonMark: up to three spaces, then one to six
 // `#`, then a space, a tab or the end of the line.
-const HEADING = /^( {0,3})(#{1,6})(?=[ \t]|$)/;
+export const HEADING = /^( {0,3})(#{1,6})(?=[ \t]|$)/;
 // The level of the shallowest heading pasted text keeps, below the `## `
 // section the tool writes it under.
 const PASTED_LEVEL = 3;

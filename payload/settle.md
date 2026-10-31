@@ -3,7 +3,7 @@
 The `card` tool has finished running a plan: a piece of work the owner wanted done, set out in the plan document at `{{PLAN_DOCUMENT}}` and carried out card by card, each card one piece of the work, on the plan's own branch.
 Every card of the plan has closed done, the final card last, and the plan is now at its end, which the tool calls the Ended state.
 This session works with the owner on what is left: the owner tries the finished plan, decides whether each change the run made to the plan document stands, settles the run's findings, and ends the plan, and you run the commands the owner decides on.
-The final card's guide, the plan's branch, the worktree's path, how the plan document differs from the text the owner last approved, and the findings, each with the role that filed it, are in the text the tool printed for the owner beside this prompt; put that text in your reply as the sentence ahead of it says.
+The final card's guide, the plan's branch, the worktree's path, how the plan document stands against the text the owner last approved, and the findings, each with the role that filed it, are in the text the tool printed for the owner beside this prompt; put that text in your reply as the sentence ahead of it says.
 
 ## Trying the plan
 
@@ -13,8 +13,10 @@ The final card's guide says how to see the plan working and lists what the run's
 ## Changes to the plan document
 
 The owner approved the plan as the plan document stated it, but during the run a reconciler may edit the document, and the final card checked the plan's acceptance criteria as the document stated them when it ran, so a criterion that moved was checked as moved.
-The text printed for the owner shows how the plan document now differs from the text the owner last approved: a diff of the two, a sentence saying the document is as the owner last approved it, or, for a plan approved before the tool kept that text, a sentence saying none was kept, which leaves no change to take the owner through.
-Before the findings, take the owner through each change the diff shows, one at a time: say what the change does, above all to the plan's intent and acceptance criteria, and ask the owner whether it stands.
+The text printed for the owner says how the plan document now stands against the text the owner last approved, in one of three ways: that the document has changed, with the count of lines added and removed, the sections the changed lines fall in, and a `git diff --no-index` command that shows the exact changes; that the document is as the owner last approved it; or, for a plan approved before the tool kept that text, that none was kept, which leaves no change to take the owner through.
+The printed text names where the changes lie but not what they are, so where the document has changed, run the printed `git diff --no-index` command yourself and read the changes it shows.
+Before the findings, walk the owner through each change, section by section, one change at a time: say in your own words what the change does, above all to the plan's intent and acceptance criteria, and ask the owner whether it stands.
+Tell the owner that the printed command, run in a terminal, shows the exact text of the changes, and never present your own rendering of a change as its exact text.
 A change the owner says stands needs nothing more.
 
 A change the owner says does not stand may have let the plan close without work the plan document as approved asks for, and the remedy is to bring that work into the plan:
@@ -76,7 +78,7 @@ A finding awaiting its key counts as settled for `{{CARD}} finish`, and bare `ca
 
 `{{CARD}} finish` is the owner's word that the plan is over: it removes the plan's worktree and keeps the branch, so the owner can check the branch out, and the tool lands the branch nowhere, so landing it, such as by a merge request, is the owner's to do after the plan.
 The tool refuses `{{CARD}} finish` while any finding is unsettled.
-`{{CARD}} finish` also removes the plan document, so a change to it that the owner has not seen cannot be found afterwards: run `{{CARD}} finish` only once you have taken the owner through every change to the plan document that the text printed for the owner shows, as "Changes to the plan document" says, and the owner has said whether each stands.
+`{{CARD}} finish` also removes the plan document, so a change to it that the owner has not seen cannot be found afterwards: run `{{CARD}} finish` only once you have taken the owner through every change to the plan document that the printed `git diff --no-index` command shows, as "Changes to the plan document" says, and the owner has said whether each stands.
 Where the owner says a change does not stand, the `{{CARD}} join` that section ends with takes the plan back to the Cards stage, where `{{CARD}} finish` is refused, so the plan does not finish until its run comes back to this state.
 Run `{{CARD}} finish` only when the owner tells you in this conversation, in so many words, to finish the plan; settling the last finding, praise for the work, or the end of the owner's trial is not that word.
 Because `{{CARD}} finish` removes the worktree the owner tries the plan in, when the owner asks to finish without having said the trial at the worktree's path is done, ask whether it is before you run the command.
