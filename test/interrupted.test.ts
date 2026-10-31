@@ -116,6 +116,15 @@ async function deadRun() {
   return { pid: dead.pid, boot: readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() };
 }
 
+/**
+ * Whether the plan `greeting` holds a recorded drop, which a drop that died
+ * holds from its record until its plan's directory is renamed away.
+ */
+function dropRecorded({ deck }: Fixture): boolean {
+  const state = path.join(deck.cardDir, "plans", "greeting", "state.json");
+  return existsSync(state) && JSON.parse(readFileSync(state, "utf8")).pending?.verb === "drop";
+}
+
 /** The plan Ended, both its cards closed done, with one finding filed, unsettled, when `withFinding`. */
 async function ended(withFinding: boolean): Promise<Fixture & { finding: string }> {
   const { repo, deck, plan, file } = await greeting();
@@ -225,6 +234,8 @@ for (const [verb, setup, planVerb] of VERBS) {
       expect(run.code).toBe(0);
       const after = await snapshot(uninterrupted);
       expect(after).not.toEqual(before);
+      // What the owner is told, which a drop finished from its record prints too.
+      const dropped = verb.startsWith("card drop") ? ownerBlockOf(run.stdout, uninterrupted) : null;
       // Every retry ends as this does, so each files the finding once too.
       const { files } = uninterrupted;
       if (files !== undefined) expect(after.cards.filter((line) => line.includes(files))).toEqual([`open - ${files}, 0 close notes, 0 promotions`]);
@@ -242,9 +253,11 @@ for (const [verb, setup, planVerb] of VERBS) {
       async function dieAfter(writes: number): Promise<boolean> {
         const looked = await setup();
         if (!(await killed(looked, writes))) return false;
+        const recorded = dropRecorded(looked);
         const bare = await card([], looked.repo);
         expect(bare.code).toBe(0);
         if (planVerb) expect([before, after]).toContainEqual(await snapshot(looked));
+        if (dropped !== null && recorded) expect(ownerBlockOf(bare.stdout, looked)).toBe(dropped);
 
         const retried = await setup();
         expect(await killed(retried, writes)).toBe(true);
@@ -436,7 +449,12 @@ test("a hidden file or a hidden directory of someone else's in the plans directo
   expect(readFileSync(path.join(plansDir, ".notes", "kept.md"), "utf8")).toBe("Kept.\n");
 });
 
-test("a drop in Bounced whose worktree the owner removed by hand still settles the card in flight, closing done a card whose commit landed", async () => {
+/**
+ * The plan Bounced at its first card's land step after the commit landed, the
+ * worktree then removed by hand, so a drop's settling holds it again and
+ * closes the first card done.
+ */
+async function landedBounced(): Promise<Fixture> {
   const { repo, deck, plan, file } = await greeting();
   const first = await file("Add the greeting");
   const final = await file("Check the plan");
@@ -450,14 +468,70 @@ test("a drop in Bounced whose worktree the owner removed by hand still settles t
   const bounce = { role: "reviewer" as const, session, cause: "usage limit reached" };
   await writeRecord(plan, { state: "Bounced", placeholder: false, cards: [first, final], final, harness: "pi", run: await deadRun(), cycle, bounce });
   await gitOrThrow(["worktree", "remove", tree], repo);
+  return { repo, deck, args: ["drop"] };
+}
 
-  const dropping = await card(["drop"], repo);
+test("a drop in Bounced whose worktree the owner removed by hand still settles the card in flight, closing done a card whose commit landed", async () => {
+  const fixture = await landedBounced();
+  const dropping = await card(fixture.args, fixture.repo);
   expect(dropping.stderr).toBe("");
   expect(dropping.code).toBe(0);
-  expect((await snapshot({ repo, deck, args: [] })).cards).toEqual([
+  expect((await snapshot(fixture)).cards).toEqual([
     "closed declined Check the plan, 1 close notes, 0 promotions",
     "closed done Add the greeting, 1 close notes, 0 promotions",
   ]);
+});
+
+test(
+  "a drop in Bounced whose settling closes the card in flight done, killed after each of its writes while it is recorded, is finished by bare card printing the owner block an uninterrupted drop prints, the card closed done not among those closed declined",
+  async () => {
+    const uninterrupted = await landedBounced();
+    const run = await card(uninterrupted.args, uninterrupted.repo);
+    expect(run.code).toBe(0);
+    const expected = ownerBlockOf(run.stdout, uninterrupted);
+    expect(expected).toContain("its worktree <repo>/.worktrees/greeting is removed, and its branch `plan/greeting` is kept");
+    expect(expected).toContain("These cards of the plan are closed declined:\n\n<Check the plan>  Check the plan\n");
+    expect(expected).not.toContain("Add the greeting");
+
+    // Deaths before the record, or once the plan's directory is renamed away, leave no drop recorded to finish.
+    let deaths = 0;
+    for (let writes = 1; ; writes++) {
+      const fixture = await landedBounced();
+      const dying = await card(fixture.args, fixture.repo, writes);
+      if (dying.code === 0) break;
+      expect(dying.code).toBe(137);
+      if (!dropRecorded(fixture)) continue;
+      deaths++;
+      const bare = await card([], fixture.repo);
+      expect(bare.code).toBe(0);
+      expect(ownerBlockOf(bare.stdout, fixture)).toBe(expected);
+    }
+    expect(deaths).toBeGreaterThan(1);
+  },
+  SLOW,
+);
+
+test("a drop recorded before a drop's report was recorded with it, killed once recorded, is finished by bare card printing the owner block an uninterrupted drop prints", async () => {
+  const uninterrupted = await afterRun("Stopped");
+  const run = await card(uninterrupted.args, uninterrupted.repo);
+  expect(run.code).toBe(0);
+  const expected = ownerBlockOf(run.stdout, uninterrupted);
+  expect(expected).toContain("its worktree <repo>/.worktrees/greeting is removed, and its branch `plan/greeting` is kept");
+  expect(expected).toContain("These cards of the plan are closed declined:\n\n<Add the greeting>  Add the greeting\n<Check the plan>  Check the plan\n");
+
+  const fixture = await afterRun("Stopped");
+  await diedRecorded(fixture);
+  const state = path.join(fixture.deck.cardDir, "plans", "greeting", "state.json");
+  const record = JSON.parse(readFileSync(state, "utf8"));
+  // As the record of a drop read before it carried its report.
+  record.pending = { verb: "drop", settles: record.pending.settles };
+  writeFileSync(state, JSON.stringify(record));
+
+  const bare = await card([], fixture.repo);
+  expect(bare.stderr).not.toContain("finishing it failed");
+  expect(bare.code).toBe(0);
+  expect(ownerBlockOf(bare.stdout, fixture)).toBe(expected);
+  expect((await snapshot(fixture)).plans).toEqual([]);
 });
 
 test("a run that died after its landing filed the reviewer's findings and before the commit was recorded is carried on by bare card filing none of them twice", async () => {

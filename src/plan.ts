@@ -93,8 +93,19 @@ export type Pending =
   | { verb: "amend" }
   /** `card stop` in Running or Dead, once the run is gone. */
   | { verb: "stop" }
-  /** `card drop`, and whether the card in flight is settled before the worktree goes. */
-  | { verb: "drop"; settles: boolean };
+  /**
+   * `card drop`, whether the card in flight is settled before the worktree
+   * goes, and what the drop reports, fixed when it is decided. A drop
+   * recorded before its report was carries none.
+   */
+  | ({ verb: "drop"; settles: boolean } & Partial<DropReport>);
+
+/**
+ * What `card drop` reports: the worktree it removes, with the branch it
+ * keeps, where there is one, and the cards and joins of the plan not yet
+ * closed.
+ */
+export type DropReport = { removes: { tree: string; branch: string } | null; closes: string[] };
 
 /** What a state file written before a field existed reads as for that field. */
 const EMPTY: Omit<PlanRecord, "state" | "placeholder"> = {

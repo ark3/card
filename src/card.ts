@@ -192,8 +192,10 @@ async function finish(deck: Deck, plan: Plan, pending: Pending): Promise<Finishe
       return { plan: halted, ends: false, print: (command) => reports.stopped({ deck, plan: halted, command, args: [], openCommands }) };
     }
     case "drop": {
-      const dropped = await ended.finishDrop(deck, plan, pending.settles);
-      return { plan: null, ends: false, print: () => ended.printDropped(deck, plan.slug, dropped) };
+      const { removes, closes } = pending;
+      const report = removes === undefined || closes === undefined ? await ended.dropReport(deck, plan, pending.settles) : { removes, closes };
+      await ended.finishDrop(deck, plan, pending.settles);
+      return { plan: null, ends: false, print: () => ended.printDropped(deck, plan.slug, report) };
     }
   }
 }

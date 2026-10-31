@@ -10,7 +10,7 @@ import { holdWorktree, removeWorktree, unremovable, worktreeOf } from "./landing
 import { closeCard, recordSections, reopenCard } from "./operations.ts";
 import { forOwner } from "./owner.ts";
 import { fill, wrapPayload } from "./payload.ts";
-import { type Context, listPlans, type Plan, removePlan, type Standing, standing, writeRecord } from "./plan.ts";
+import { type Context, type DropReport, listPlans, type Plan, removePlan, type Standing, standing, writeRecord } from "./plan.ts";
 import { named } from "./reports.ts";
 
 // What `closeCard` writes above a close note, from its heading.
@@ -178,7 +178,8 @@ export async function finish({ deck, plan, command, args }: Context): Promise<vo
  * goes, as `card finish` removes it. Waiting cards, the run's findings
  * among them, stay waiting. The drop is recorded once the run is gone, which
  * alone writes the record while it lives, and before anything else is
- * written, so `finishDrop` can finish a drop that died partway.
+ * written, so `finishDrop` can finish a drop that died partway, with what it
+ * reports, so a finished one reports what the drop's own run would have.
  */
 export async function drop({ deck, plan, command, args }: Context): Promise<void> {
   if (args.length > 0) throw new Error(`usage: ${command} drop`);
@@ -191,24 +192,48 @@ export async function drop({ deck, plan, command, args }: Context): Promise<void
   // now. One not settled goes as it stands, not forced, as `card finish`
   // does not force it, so work the owner left in it, which is theirs to
   // settle, refuses the drop.
-  if (dropped.run !== null) {
+  const report = await dropReport(deck, dropped, settles);
+  const lost = report.removes === null || settles ? "" : await unremovable(report.removes.tree);
+  if (lost !== "") {
+    throw new Error(`the plan is not dropped, since git would not remove its worktree: it holds modified or untracked files:\n${lost.trimEnd()}`);
+  }
+  await finishDrop(deck, await writeRecord(dropped, { pending: { verb: "drop", settles, ...report } }), settles);
+  await printDropped(deck, plan.slug, report);
+}
+
+/**
+ * What a drop of `plan` reports, from the worktree and the cards as they
+ * stand: the worktree a settling, where `settles` says, holds, or else the
+ * one that stands, and the plan's cards and joins not closed. A drop
+ * recorded before its report was reports this as its finishing begins, as
+ * its own run then did.
+ */
+export async function dropReport(deck: Deck, plan: Plan, settles: boolean): Promise<DropReport> {
+  let removes = null;
+  // The first `card approve` made the branch and the worktree, and nothing before it does.
+  if (plan.run !== null) {
     const branch = await branchOf(plan);
     const tree = settles ? await holdWorktree(plan.slug, branch, process.cwd()) : await worktreeOf(plan.slug, branch, process.cwd());
-    const lost = tree === null || settles ? "" : await unremovable(tree);
-    if (lost !== "") {
-      throw new Error(`the plan is not dropped, since git would not remove its worktree: it holds modified or untracked files:\n${lost.trimEnd()}`);
-    }
+    if (tree !== null) removes = { tree, branch };
   }
-  await printDropped(deck, plan.slug, await finishDrop(deck, await writeRecord(dropped, { pending: { verb: "drop", settles } }), settles));
+  const closes: string[] = [];
+  for (const id of [...plan.cards, ...plan.joins]) if (!(await locate(deck, id))!.closed) closes.push(id);
+  return { removes, closes };
 }
 
 /**
  * What `card drop` prints for the owner once the plan `slug` is gone, from
- * what `finishDrop` reports, whether the drop ran whole or was finished from
- * its record.
+ * what its record says it reports, whether the drop ran whole or was
+ * finished from its record. Of the cards it recorded, those closed declined
+ * are listed, not a card in flight the settling closed done.
  */
-export async function printDropped(deck: Deck, slug: string, { removed, closed }: Awaited<ReturnType<typeof finishDrop>>): Promise<void> {
-  const gone = removed === null ? "" : `: its worktree ${removed.tree} is removed, and its branch \`${removed.branch}\` is kept`;
+export async function printDropped(deck: Deck, slug: string, { removes, closes }: DropReport): Promise<void> {
+  const closed: string[] = [];
+  for (const id of closes) {
+    const where = (await locate(deck, id))!;
+    if (where.closed && (await readCard(where.path)).closed === "declined") closed.push(id);
+  }
+  const gone = removes === null ? "" : `: its worktree ${removes.tree} is removed, and its branch \`${removes.branch}\` is kept`;
   const cards =
     closed.length > 0
       ? `These cards of the plan are closed declined:\n\n${(await Promise.all(closed.map(async (id) => `${await named(deck, id)}\n`))).join("")}`
@@ -223,16 +248,10 @@ export async function printDropped(deck: Deck, slug: string, { removed, closed }
  * directory removed, its record with it. Each step is safe to run again: a
  * worktree a settling needs is held again where it is gone, so the
  * settling always has a tree to run in, one not settled is removed only
- * where it stands, and a card already closed is passed over. Returns the
- * worktree removed, if there was one, and the cards closed.
+ * where it stands, and a card already closed is passed over.
  */
-export async function finishDrop(
-  deck: Deck,
-  plan: Plan,
-  settles: boolean,
-): Promise<{ removed: { tree: string; branch: string } | null; closed: string[] }> {
+export async function finishDrop(deck: Deck, plan: Plan, settles: boolean): Promise<void> {
   let dropped = plan;
-  let removed = null;
   // The first `card approve` made the branch and the worktree, and nothing before it does.
   if (dropped.run !== null) {
     const branch = await branchOf(dropped);
@@ -250,16 +269,12 @@ export async function finishDrop(
           `the drop of the plan \`${plan.slug}\` is recorded, but git would not remove its worktree: ${(error as Error).message}\nOnce git can remove it, the next run of card finishes the drop.`,
         );
       }
-      removed = { tree, branch };
     }
   }
   const note = `Dropped with the plan \`${plan.slug}\`, which the owner gave up.`;
-  const closed: string[] = [];
   for (const id of [...dropped.cards, ...dropped.joins]) {
     if ((await locate(deck, id))!.closed) continue;
     await closeCard(deck, id, "declined", note);
-    closed.push(id);
   }
   await removePlan(deck, plan);
-  return { removed, closed };
 }
