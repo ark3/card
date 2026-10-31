@@ -781,6 +781,20 @@ for (const [verb, setup, reminder, heading] of ENDS_STAGE) {
       expect(bare.stdout).not.toContain(heading);
       expect(bare.stdout).not.toContain("did not run");
     });
+
+    test(`a recorded ${verb} that died is finished by card --plan naming its plan${many ? ", with a second plan in progress," : ""} which prints the reminder bare card prints, naming the same command, and stops there, saying nothing did not run and printing no next stage's prompt`, async () => {
+      const fixture = await setup();
+      await diedRecorded(fixture);
+      if (many) await otherInCards(fixture.deck);
+
+      const named = await card(["--plan", "greeting"], fixture.repo);
+      expect(named.code).toBe(0);
+      const owner = ownerBlocks(named.stdout).join("");
+      expect(owner).toContain(reminder);
+      expect(owner).toContain(`have it run \`${many ? "card --plan greeting" : "card"}\`.`);
+      expect(named.stdout).not.toContain(heading);
+      expect(named.stdout).not.toContain("did not run");
+    });
   }
 }
 
@@ -798,6 +812,33 @@ test("a recorded card done that died, finished by another verb on another plan, 
   expect(stopping.stdout).toContain("`card --plan other stop` did not run");
   expect(stopping.stdout).toContain("Run `card --plan other stop` again.");
   expect(JSON.parse(readFileSync(other, "utf8")).state).toBe("Running");
+});
+
+test("a recorded card done that died, finished by card --plan naming another plan in progress, prints the done's owner block and says that command did not run", async () => {
+  const fixture = await drafted();
+  await diedRecorded(fixture);
+  await otherInCards(fixture.deck);
+
+  const named = await card(["--plan", "other"], fixture.repo);
+  expect(named.code).toBe(0);
+  const owner = ownerBlocks(named.stdout);
+  expect(owner).toHaveLength(1);
+  expect(owner[0]).toContain("have it run `card --plan greeting`.");
+  expect(named.stdout).toContain("`card --plan other` did not run");
+  expect(named.stdout).toContain("Run `card --plan other` again.");
+  expect(named.stdout).not.toContain("# The Cards stage");
+});
+
+test("a recorded card done that died, finished by card --plan naming no plan, says that command did not run and starts no plan under the slug", async () => {
+  const fixture = await drafted();
+  await diedRecorded(fixture);
+
+  const named = await card(["--plan", "fresh"], fixture.repo);
+  expect(named.code).toBe(0);
+  expect(ownerBlocks(named.stdout).join("")).toContain("have it run `card`.");
+  expect(named.stdout).toContain("`card --plan fresh` did not run");
+  expect(named.stdout).toContain("Run `card --plan fresh` again.");
+  expect(existsSync(path.join(fixture.deck.cardDir, "plans", "fresh"))).toBe(false);
 });
 
 /**

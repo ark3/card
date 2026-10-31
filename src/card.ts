@@ -100,9 +100,10 @@ async function printWaiting(deck: Deck, command: string): Promise<void> {
  * the invocation goes on from where the verb would have left it; a plan the
  * finished verb removed is not in the list. Each finished verb prints what
  * its own run would have printed for the owner, its command formed once
- * every plan is listed, and `stops` says whether one ended an authoring
- * stage, after which the invocation goes no further, so the session that ran
- * it never goes on into the next stage's prompt. What a plan removal left is
+ * every plan is listed, and `ended` holds the slug of each plan whose
+ * finished verb ended an authoring stage; `stops` says whether there is one,
+ * after which the invocation goes no further, so the session that ran it
+ * never goes on into the next stage's prompt. What a plan removal left is
  * removed first. Done here rather than in `listPlans`, which reads, so that
  * no read path writes, and no run of another plan, which lists the plans
  * too, finishes a verb still in flight.
@@ -116,10 +117,11 @@ async function printWaiting(deck: Deck, command: string): Promise<void> {
  * ids its verb carries stay the plan's, as `holds` has them. So one plan's
  * failure stops no other plan and no verb that needs none.
  */
-async function plansIn(deck: Deck): Promise<{ plans: Plan[]; stops: boolean }> {
+async function plansIn(deck: Deck): Promise<{ plans: Plan[]; ended: Set<string>; stops: boolean }> {
   await sweepRemoved(deck);
   const plans: Plan[] = [];
   const recovered: Finished[] = [];
+  const ended = new Set<string>();
   for (const plan of await listPlans(deck)) {
     if (plan.pending === null) {
       plans.push(plan);
@@ -136,10 +138,11 @@ async function plansIn(deck: Deck): Promise<{ plans: Plan[]; stops: boolean }> {
     }
     console.error(`card: ${recorded}, and is finished now, before anything else runs`);
     recovered.push(finished);
+    if (finished.ends) ended.add(plan.slug);
     if (finished.plan !== null) plans.push(finished.plan);
   }
   for (const { plan, print } of recovered) await print(plan === null ? "card" : commandFor(plan, plans.length > 1));
-  return { plans, stops: recovered.some(({ ends }) => ends) };
+  return { plans, ended, stops: ended.size > 0 };
 }
 
 /**
@@ -212,10 +215,12 @@ async function start(deck: Deck, slug: string | null, many: boolean): Promise<vo
 async function bare(slug: string | null, cwd: string): Promise<void> {
   // A plan is about to start or already exists, and either way it needs a deck.
   const deck = (await resolveDeck(cwd)) ?? (await createDeck(cwd, DEFAULT_PREFIX));
-  const { plans, stops } = await plansIn(deck);
-  // Bare `card` with no plan named asked for nothing beyond the next thing, which is the fresh session's now.
+  const { plans, ended, stops } = await plansIn(deck);
+  // Bare `card` asked for nothing beyond the plan's next thing, which for a
+  // plan whose stage just ended is the fresh session's now, named or not; a
+  // plan named outside those asked for something that did not run.
   if (stops) {
-    if (slug !== null) notRun(`card --plan ${slug}`);
+    if (slug !== null && !ended.has(slug)) notRun(`card --plan ${slug}`);
     return;
   }
   const many = plans.length > 1;
