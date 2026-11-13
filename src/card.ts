@@ -11,6 +11,7 @@ import { forOwner } from "./owner.ts";
 import { commandFor, type Context, listPlans, listWaiting, type Pending, type Plan, refuseSlug, startPlan, type State, sweepRemoved, waitingCards } from "./plan.ts";
 import * as reports from "./reports.ts";
 import * as stopped from "./stopped.ts";
+import { watch } from "./watch.ts";
 
 type Handler = (context: Context) => Promise<void>;
 /** A verb's code, and the arguments every printed command shows it with. */
@@ -20,6 +21,8 @@ type Verb = { run: Handler; args?: string };
  * Every verb of `BRIEF.md`'s surface but bare `card`, named from the start:
  * a verb whose code has not landed is open in no state yet, so it refuses as
  * not open there rather than as unknown, and anything else is unknown.
+ * `watch` is in no row of the table: it is no state's command, and `main`
+ * runs it before anything that writes.
  */
 const VERBS = [
   "done",
@@ -34,6 +37,7 @@ const VERBS = [
   "promote",
   "finish",
   "drop",
+  "watch",
 ] as const;
 type VerbName = (typeof VERBS)[number];
 
@@ -298,6 +302,11 @@ async function main(argv: string[], cwd: string): Promise<void> {
   if (!(VERBS as readonly string[]).includes(name)) throw new Error(`no such verb as \`${name}\`\n${USAGE}`);
 
   const deck = await requireDeck(cwd);
+  // Ahead of `plansIn`, which writes, since looking must change nothing.
+  if (name === "watch") {
+    if (slug !== null) throw new Error("`card watch` shows every plan, so it takes no --plan");
+    return watch(deck);
+  }
   const { plans, stops } = await plansIn(deck);
   if (stops) return notRun(["card", ...argv].join(" "));
   if (name === "decline" || name === "promote") {
