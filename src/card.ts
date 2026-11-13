@@ -305,7 +305,8 @@ async function main(argv: string[], cwd: string): Promise<void> {
   // Ahead of `plansIn`, which writes, since looking must change nothing.
   if (name === "watch") {
     if (slug !== null) throw new Error("`card watch` shows every plan, so it takes no --plan");
-    return watch(deck);
+    if (args.some((arg) => arg !== "--network")) throw new Error("`card watch` takes no arguments but --network");
+    return watch(deck, args.includes("--network"));
   }
   const { plans, stops } = await plansIn(deck);
   if (stops) return notRun(["card", ...argv].join(" "));

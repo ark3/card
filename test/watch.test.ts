@@ -1,8 +1,9 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { type Cycle, EXCHANGES, REVISION_ROUNDS } from "../src/cycle.ts";
-import { createDeck, type Deck } from "../src/deck.ts";
+import { CONFIG_NAME, createDeck, type Deck } from "../src/deck.ts";
 import { closeCard, fileCard } from "../src/operations.ts";
 import { listPlans, marked, type Plan, type PlanRecord, RUN_MARK, runMark, startPlan, STATES, writeRecord } from "../src/plan.ts";
 import { figures } from "../src/watch.ts";
@@ -36,14 +37,25 @@ async function card(args: string[], cwd: string) {
   return { code: await proc.exited, stdout, stderr };
 }
 
+/** The machine's first non-loopback IPv4 address, or null when it has none. */
+const LAN = Object.values(networkInterfaces()).flat().find((each) => each?.family === "IPv4" && !each.internal)?.address ?? null;
+
+/** The URL a frame of `card watch` ends with. */
+function servedAt(frame: string): string {
+  const match = /\nServed at (http:\/\/\S+)\n$/.exec(frame);
+  if (match === null) throw new Error(`no URL in the frame: ${JSON.stringify(frame)}`);
+  return match[1]!;
+}
+
 /**
- * Runs `card watch` until it has drawn `frames` frames, then kills it, and
- * returns the last frame; throws if it exits first or draws too few in time.
+ * Runs `card watch` with `args` until it has drawn `frames` frames, calls
+ * `during` with the last of them while it still runs, then kills it, and
+ * returns that frame; throws if it exits first or draws too few in time.
  */
-async function watchFor(cwd: string, frames = 3): Promise<string> {
+async function watchFor(cwd: string, { frames = 3, args = [], during }: { frames?: number; args?: string[]; during?: (frame: string) => Promise<void> } = {}): Promise<string> {
   const env: Record<string, string | undefined> = { ...process.env, CARD_WATCH_EVERY: "50" };
   delete env.CARD_ROOT;
-  const proc = Bun.spawn([process.execPath, CARD, "watch"], { cwd, env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn([process.execPath, CARD, "watch", ...args], { cwd, env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
   const reader = proc.stdout.getReader();
   const decoder = new TextDecoder();
   let out = "";
@@ -55,12 +67,42 @@ async function watchFor(cwd: string, frames = 3): Promise<string> {
       if (done) throw new Error(`card watch exited: ${await new Response(proc.stderr).text()}`);
       out += decoder.decode(value);
     }
+    const drawn = out.split(CLEAR);
+    const last = drawn[drawn.length - 2]!;
+    await during?.(last);
+    return last;
   } finally {
     proc.kill("SIGKILL");
     await proc.exited;
   }
-  const drawn = out.split(CLEAR);
-  return drawn[drawn.length - 2]!;
+}
+
+/** The page at `url`'s text, asserting it is the page. */
+async function fetchPage(url: string): Promise<string> {
+  const response = await fetch(url);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+  const text = await response.text();
+  expect(text).toContain('<meta http-equiv="refresh"');
+  return text;
+}
+
+/** Whether a request to `url` fails to connect. */
+async function refused(url: string): Promise<boolean> {
+  try {
+    await fetch(url, { signal: AbortSignal.timeout(2000) });
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** A port nothing listens on, as of now. */
+function freePort(): number {
+  const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+  const port = probe.port!;
+  probe.stop(true);
+  return port;
 }
 
 /** Every file and directory under `dir`, each with its bytes, a directory with none. */
@@ -89,10 +131,14 @@ function cycleOf(card: string, changes: Partial<Cycle> = {}): Cycle {
   return { card, base: "0".repeat(40), role: "implementer", step: "implement", sessions: {}, rounds: 0, exchanges: 0, ...changes };
 }
 
-/** Asserts that `card watch` draws its frames and leaves the card directory as it found it, returning the last frame. */
+/**
+ * Asserts that `card watch` draws its frames, answers a request with its
+ * page meanwhile, and leaves the card directory as it found it, returning the
+ * last frame.
+ */
 async function unchanged(repo: string, deck: Deck): Promise<string> {
   const before = tree(deck.cardDir);
-  const drawn = await watchFor(repo);
+  const drawn = await watchFor(repo, { during: async (frame) => void (await fetchPage(servedAt(frame))) });
   expect(tree(deck.cardDir)).toEqual(before);
   return drawn;
 }
@@ -100,7 +146,7 @@ async function unchanged(repo: string, deck: Deck): Promise<string> {
 test("card watch changes nothing under the card directory with no plan, and says so", async () => {
   const repo = await tempRepo();
   const deck = await createDeck(repo, "proj");
-  expect(await unchanged(repo, deck)).toBe("No plan is in progress.\n");
+  expect(await unchanged(repo, deck)).toMatch(/^No plan is in progress\.\n\nServed at http:\/\/127\.0\.0\.1:\d+\/\n$/);
 });
 
 test("card watch picks up a plan started while it watches", async () => {
@@ -197,6 +243,84 @@ test("card watch refuses --plan, since it shows every plan; bare card's lists of
   expect(listed.stderr).toBe("");
   for (const state of STATES) expect(listed.stdout).toContain(`  card --plan ${state.toLowerCase()} drop\n`);
   expect(listed.stdout).not.toContain("watch");
+});
+
+test("card watch serves its page on 127.0.0.1 alone by default, at the URL it prints, showing the plan's slug and card count", async () => {
+  const { repo } = await planned();
+  await watchFor(repo, {
+    during: async (frame) => {
+      const url = servedAt(frame);
+      expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
+      const text = await fetchPage(url);
+      expect(text).toContain("greeting  Check");
+      expect(text).toContain("0/3 cards closed");
+      if (LAN !== null) expect(await refused(`http://${LAN}:${new URL(url).port}/`)).toBe(true);
+    },
+  });
+});
+
+test.skipIf(LAN === null)("card watch --network serves its page at the machine's first non-loopback IPv4 address (skipped where the machine has none)", async () => {
+  const { repo } = await planned();
+  await watchFor(repo, {
+    args: ["--network"],
+    during: async (frame) => {
+      const url = servedAt(frame);
+      expect(url).toMatch(new RegExp(`^http://${LAN!.replaceAll(".", "\\.")}:\\d+/$`));
+      expect(await fetchPage(url)).toContain("greeting  Check");
+    },
+  });
+});
+
+test("card watch serves its page on the port [watch] port sets, and refuses, naming it, when that port is taken", async () => {
+  const { repo, deck } = await planned();
+  const port = freePort();
+  appendFileSync(path.join(deck.cardDir, CONFIG_NAME), `\n[watch]\nport = ${port}\n`);
+  await watchFor(repo, {
+    during: async (frame) => {
+      expect(servedAt(frame)).toBe(`http://127.0.0.1:${port}/`);
+      expect(await fetchPage(`http://127.0.0.1:${port}/`)).toContain("greeting  Check");
+    },
+  });
+
+  const holder = Bun.serve({ hostname: "127.0.0.1", port, fetch: () => new Response() });
+  try {
+    const result = await card(["watch"], repo);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(`port ${port}`);
+  } finally {
+    holder.stop(true);
+  }
+});
+
+test("card watch's page stops answering once the process is killed", async () => {
+  const repo = await tempRepo();
+  await createDeck(repo, "proj");
+  const url = servedAt(await watchFor(repo, { during: async (frame) => void (await fetchPage(servedAt(frame))) }));
+  expect(await refused(url)).toBe(true);
+});
+
+test("card watch's page escapes the headlines it shows", async () => {
+  const { repo, deck, ids } = await planned((ids) => ({
+    state: "Running",
+    harness: "pi",
+    run: { pid: process.pid, boot: BOOT },
+    cycle: cycleOf(ids[0]!, { started: Date.now() }),
+  }));
+  const file = path.join(deck.openDir, `${ids[0]}.md`);
+  writeFileSync(file, readFileSync(file, "utf8").replace("Add the greeting", "Add <b>the</b> & greeting"));
+  await watchFor(repo, {
+    during: async (frame) => {
+      const text = await fetchPage(servedAt(frame));
+      expect(text).toContain("Add &lt;b&gt;the&lt;/b&gt; &amp; greeting");
+      expect(text).not.toContain("<b>");
+    },
+  });
+});
+
+test("card watch refuses any argument but --network", async () => {
+  const repo = await tempRepo();
+  await createDeck(repo, "proj");
+  expect(await card(["watch", "--networks"], repo)).toEqual({ code: 1, stdout: "", stderr: "card: `card watch` takes no arguments but --network\n" });
 });
 
 /** `plan` as `listPlans` would read it, its state set outright. */

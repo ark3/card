@@ -1,7 +1,9 @@
+import { networkInterfaces } from "node:os";
+import path from "node:path";
 import { readCard } from "./cardfile.ts";
 import { members } from "./cards.ts";
 import { EXCHANGES, REVISION_ROUNDS, type Role } from "./cycle.ts";
-import { type Deck, locate } from "./deck.ts";
+import { CONFIG_NAME, type Deck, locate } from "./deck.ts";
 import { listPlans, type Plan, type State } from "./plan.ts";
 
 /**
@@ -129,26 +131,95 @@ async function frame(deck: Deck): Promise<string> {
   return `${blocks.join("\n\n")}\n`;
 }
 
+/** One frame's text, or why it could not be read, for the terminal and the page alike. */
+async function view(deck: Deck): Promise<string> {
+  try {
+    return await frame(deck);
+  } catch (error) {
+    return `card: ${error instanceof Error ? error.message : String(error)}\n`;
+  }
+}
+
 /**
  * A test's way to redraw faster than a person needs, in milliseconds. Inert
  * unless the test sets the variable.
  */
 const EVERY = Number(process.env.CARD_WATCH_EVERY ?? 0) || 2000;
 
+/** How often the page reloads itself, in seconds. */
+const REFRESH = 3;
+
+const ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+/** `text` made safe to place in HTML, since card headlines and slugs are arbitrary. */
+const escape = (text: string) => text.replace(/[&<>"']/g, (char) => ENTITIES[char]!);
+
+/** The page: the frame's text, escaped, reloading itself every few seconds. */
+function page(text: string): string {
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="${REFRESH}">
+<title>card watch</title>
+</head>
+<body>
+<pre>${escape(text)}</pre>
+</body>
+</html>
+`;
+}
+
+/** The port `[watch] port` in the deck's config sets, or 0, for a free one, when it sets none. */
+async function configuredPort(deck: Deck): Promise<number> {
+  const configPath = path.join(deck.cardDir, CONFIG_NAME);
+  const parsed = Bun.TOML.parse(await Bun.file(configPath).text()) as { watch?: { port?: unknown } };
+  const port = parsed.watch?.port;
+  if (port === undefined) return 0;
+  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`${configPath} sets [watch] port to ${JSON.stringify(port)}, which is not a port`);
+  }
+  return port;
+}
+
+/** The machine's first non-loopback IPv4 address, or null when it has none. */
+function lanAddress(): string | null {
+  for (const each of Object.values(networkInterfaces()).flat()) {
+    if (each !== undefined && each.family === "IPv4" && !each.internal) return each.address;
+  }
+  return null;
+}
+
 /**
  * `card watch`: redraws every plan in progress in place, every couple of
  * seconds, until it is killed, writing nothing anywhere but the terminal. A
  * frame that cannot be read, as when a card moves between directories under
- * it, shows why, and the next frame tries again.
+ * it, shows why, and the next frame tries again. While it runs it serves the
+ * same view as a page, on 127.0.0.1 alone unless `network` is set, since the
+ * page has no authentication, and every frame ends with the page's URL; the
+ * server lives in this process, so killing it stops the page.
  */
-export async function watch(deck: Deck): Promise<never> {
+export async function watch(deck: Deck, network: boolean): Promise<never> {
+  const port = await configuredPort(deck);
+  let server: ReturnType<typeof Bun.serve>;
+  try {
+    server = Bun.serve({
+      hostname: network ? "0.0.0.0" : "127.0.0.1",
+      port,
+      async fetch(request) {
+        if (new URL(request.url).pathname !== "/") return new Response("Not found\n", { status: 404 });
+        return new Response(page(await view(deck)), { headers: { "content-type": "text/html; charset=utf-8" } });
+      },
+    });
+  } catch (error) {
+    if ((error as { code?: unknown }).code === "EADDRINUSE") throw new Error(`port ${port}, which [watch] port sets, is taken`);
+    throw error;
+  }
+  // With no non-loopback address, the page is still reachable on this machine.
+  const host = network ? (lanAddress() ?? "127.0.0.1") : "127.0.0.1";
+  const url = `http://${host}:${server.port}/`;
   for (;;) {
-    let text: string;
-    try {
-      text = await frame(deck);
-    } catch (error) {
-      text = `card: ${error instanceof Error ? error.message : String(error)}\n`;
-    }
+    let text = `${await view(deck)}\nServed at ${url}\n`;
     const width = process.stdout.columns;
     if (width !== undefined) text = text.split("\n").map((line) => line.slice(0, width)).join("\n");
     // Home and clear to the end, so each frame replaces the last.
