@@ -8,7 +8,7 @@
  * resume prompt on stdin, and its first card's cycle then carries on from the
  * step that bounced it rather than starting afresh.
  */
-import { type CycleEnd, resumeCard, runCard } from "./cycle.ts";
+import { type CycleEnd, landedEntry, resumeCard, runCard } from "./cycle.ts";
 import { locate, requireDeck } from "./deck.ts";
 import { listPlans, RUN_MARK, runMark, writeRecord } from "./plan.ts";
 
@@ -63,7 +63,7 @@ for (const id of plan.cards) {
     if (question !== undefined) console.log(`It asks the owner: ${question}`);
     process.exit(0);
   }
-  plan = await writeRecord(plan, { landed: [...plan.landed, { card: id, commit: ended.sha }] });
+  plan = await writeRecord(plan, { landed: [...plan.landed, landedEntry(plan.cycle!, ended.sha)] });
   console.log(`${id} landed as ${ended.sha}.`);
 }
 await writeRecord(plan, { state: "Ended" });

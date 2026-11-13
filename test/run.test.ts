@@ -5,7 +5,7 @@ import documentStage from "../payload/document.md" with { type: "text" };
 import settle from "../payload/settle.md" with { type: "text" };
 import { answerInstruction } from "../src/answer.ts";
 import { startRun } from "../src/check.ts";
-import { type Cycle, RECONCILER, type Role, type Step } from "../src/cycle.ts";
+import { type Cycle, landedEntry, RECONCILER, type Role, type Step } from "../src/cycle.ts";
 import { createDeck, type Deck } from "../src/deck.ts";
 import { branchExists, git, gitOrThrow, listWorktrees } from "../src/git.ts";
 import { ensureBranch, holdWorktree, land } from "../src/landing.ts";
@@ -190,12 +190,171 @@ test(
 
     const [landed] = (await gitOrThrow(["rev-list", `${base}..plan/greeting~1`], repo)).split("\n");
     const at: PlanRecord = JSON.parse(readFileSync(snapshot, "utf8"));
-    expect(at.landed).toEqual([{ card: first, commit: landed! }]);
+    expect(at.landed).toEqual([{ card: first, commit: landed!, active: expect.any(Number), roles: expect.any(Object) }]);
     expect(at.cycle?.card).toBe(final);
     expect(at.cycle?.step).toBe("reconcile");
     expect(at.run?.pid).toBeNumber();
     expect(at.run?.boot).toBe(readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim());
     expect(record(plan.dir).run).toEqual(at.run);
+  },
+  SLOW,
+);
+
+/** The milliseconds `roles` records, summed. */
+const summed = (roles: Partial<Record<Role, number>>) => Object.values(roles).reduce((sum, each) => sum + each, 0);
+
+test(
+  "each card a run lands records its cycle's active time, with each role's share, which sum to it",
+  async () => {
+    const { repo, plan, first, final } = await inCheck();
+    const control = stand(["pi"]);
+    queue(control, [proceed()], [done("sleep 0.3")], [approved("Add the greeting")], [proceed()], [done()], [approved("Check the plan")]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const { landed } = record(plan.dir);
+    expect(landed.map(({ card }) => card)).toEqual([first, final]);
+    for (const { active, roles } of landed) {
+      expect(Object.keys(roles!).sort()).toEqual(["implementer", "reconciler", "reviewer"]);
+      expect(active).toBe(summed(roles!));
+    }
+    expect(landed[0]!.roles!.implementer).toBeGreaterThanOrEqual(300);
+  },
+  SLOW,
+);
+
+test(
+  "while a role session runs the cycle records when it started, and once its turn ends, by an answer or by failing, it records none and the turn's time is the role's",
+  async () => {
+    const { repo, plan } = await inCheck();
+    const control = stand(["pi"]);
+    queue(
+      control,
+      [proceed(hold(control, "reconciler"))],
+      [{ run: hold(control, "failing"), stderr: "usage limit reached\n", exit: 1 }, done()],
+      [approved("Add the greeting")],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
+    const before = Date.now();
+    expect((await card(["approve"], repo)).code).toBe(0);
+
+    await until("the reconciler to start", () => existsSync(path.join(control, "reconciler.started")));
+    const reconciling = record(plan.dir).cycle!;
+    expect(reconciling.role).toBe("reconciler");
+    expect(reconciling.started).toBeWithin(before, Date.now() + 1);
+    expect(reconciling.active).toBeUndefined();
+    release(control, "reconciler");
+
+    await until("the implementer to start", () => existsSync(path.join(control, "failing.started")));
+    const implementing = record(plan.dir).cycle!;
+    expect(implementing.role).toBe("implementer");
+    expect(implementing.started).toBeGreaterThanOrEqual(reconciling.started!);
+    expect(Object.keys(implementing.active!)).toEqual(["reconciler"]);
+    const released = Date.now();
+    release(control, "failing");
+
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+    const bounced = record(plan.dir).cycle!;
+    expect(bounced.started).toBeUndefined();
+    expect(bounced.active!.implementer).toBeGreaterThanOrEqual(released - implementing.started!);
+
+    expect((await card(["resume"], repo)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+    expect(record(plan.dir).cycle!.started).toBeUndefined();
+  },
+  SLOW,
+);
+
+test(
+  "a card that bounces and lands after card resume records the active time of the whole cycle, both sides of the bounce, and none of the time it sat in Bounced",
+  async () => {
+    const { repo, plan, first } = await inCheck();
+    const control = stand(["pi"]);
+    const question = "The card calls `greet()`, which nothing defines; should this card build it?";
+    const stop: Reply = { answer: JSON.stringify({ outcome: "stop", cause: "order", question }), run: "sleep 0.3" };
+    queue(control, [stop, proceed("sleep 0.3")], [done()], [approved("Add the greeting")], [proceed()], [done()], [approved("Check the plan")]);
+
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the plan to bounce", () => record(plan.dir).state === "Bounced");
+    const bouncedAt = Date.now();
+    // Longer than the card's every session together, so counting it would show.
+    await Bun.sleep(3_000);
+    const resumedAt = Date.now();
+    expect((await card(["resume"], repo, `${OWNER_ANSWER}\n`)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const landed = record(plan.dir).landed.find(({ card }) => card === first)!;
+    expect(landed.roles!.reconciler).toBeGreaterThanOrEqual(600);
+    expect(landed.active).toBe(summed(landed.roles!));
+    expect(landed.active).toBeLessThan(resumedAt - bouncedAt);
+  },
+  SLOW,
+);
+
+test("a state file written before the times were recorded reads through listPlans as a plan with no times, and its cycle lands with none", async () => {
+  const { deck, plan, first, final, base } = await inCheck();
+  const cycle = { card: final, base, role: "reviewer", step: "land", sessions: {}, rounds: 0, exchanges: 0, subject: "Check the plan", note: NOTE, commit: base };
+  const old = { state: "Ended", placeholder: false, cards: [first, final], final, joins: [], later: [], cycle, harness: "pi", run: null, landed: [{ card: first, commit: base }], findings: [], bounce: null, pending: null };
+  writeFileSync(path.join(plan.dir, "state.json"), `${JSON.stringify(old)}\n`);
+
+  const [read] = await listPlans(deck);
+  expect(read!.landed).toEqual([{ card: first, commit: base }]);
+  expect(read!.landed[0]).not.toContainKeys(["active", "roles"]);
+  expect(read!.cycle).not.toContainKeys(["active", "started"]);
+  expect(landedEntry(read!.cycle!, base)).toEqual({ card: final, commit: base });
+});
+
+test(
+  "a card whose commit landed before its run died is recorded landed with its cycle's active time, and not the start of the turn the run was killed in",
+  async () => {
+    const { repo, plan, first, final, base } = await inCheck();
+    await ensureBranch("plan/greeting", "main", repo);
+    const tree = await holdWorktree(plan.slug, "plan/greeting", repo);
+    writeFileSync(path.join(tree, "hello.txt"), "hello\n");
+    const commit = await land("Add the greeting", NOTE, tree);
+    const sessions = { reconciler: crypto.randomUUID(), implementer: crypto.randomUUID(), reviewer: crypto.randomUUID() };
+    const active = { reconciler: 1_000, implementer: 2_000, reviewer: 500 };
+    const cycle: Cycle = {
+      ...{ card: first, base, role: "reviewer", step: "land", sessions, rounds: 0, exchanges: 0, subject: "Add the greeting", note: NOTE },
+      ...{ commit, active, started: Date.now() - 60_000 },
+    };
+    await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: await deadPid(), boot: BOOT }, cycle, landed: [] });
+    const control = stand(["pi"]);
+    queue(control, [proceed()], [done()], [approved("Check the plan")]);
+
+    expect((await card([], repo)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const [settled, next] = record(plan.dir).landed;
+    expect(settled).toEqual({ card: first, commit, active: 3_500, roles: active });
+    expect(next!.card).toBe(final);
+  },
+  SLOW,
+);
+
+test(
+  "a card that reruns after its run died records only the active time of the cycle that lands it",
+  async () => {
+    const { repo, plan, first, base } = await inCheck();
+    await ensureBranch("plan/greeting", "main", repo);
+    await holdWorktree(plan.slug, "plan/greeting", repo);
+    const hour = 3_600_000;
+    const sessions = { reconciler: crypto.randomUUID(), implementer: crypto.randomUUID() };
+    const cycle: Cycle = { card: first, base, role: "implementer", step: "implement", sessions, rounds: 0, exchanges: 0, active: { reconciler: hour }, started: Date.now() };
+    await writeRecord(plan, { state: "Running", harness: "pi", run: { pid: await deadPid(), boot: BOOT }, cycle, landed: [] });
+    const control = stand(["pi"]);
+    queue(control, [proceed()], [done()], [approved("Add the greeting")], [proceed()], [done()], [approved("Check the plan")]);
+
+    expect((await card([], repo)).code).toBe(0);
+    await until("the plan to end", () => record(plan.dir).state === "Ended");
+
+    const [rerun] = record(plan.dir).landed;
+    expect(rerun!.card).toBe(first);
+    expect(rerun!.active).toBeLessThan(hour);
+    expect(Object.keys(rerun!.roles!).sort()).toEqual(["implementer", "reconciler", "reviewer"]);
   },
   SLOW,
 );
@@ -287,7 +446,16 @@ test(
     const cause = "the card depends on work no earlier card has landed, a problem of order for authoring to fix";
     expect(bounce).toEqual({ role: "reconciler", session: bounce!.session, cause, question });
     expect(bounce!.session.id).toBe(cycle!.sessions.reconciler!);
-    expect(cycle).toEqual({ card: first, base, role: "reconciler", step: "reconcile", sessions: { reconciler: bounce!.session.id }, rounds: 0, exchanges: 0 });
+    expect(cycle).toEqual({
+      card: first,
+      base,
+      role: "reconciler",
+      step: "reconcile",
+      sessions: { reconciler: bounce!.session.id },
+      rounds: 0,
+      exchanges: 0,
+      active: { reconciler: expect.any(Number) },
+    });
     expect(existsSync(path.join(control, "queue", "2", "answers"))).toBe(true);
     expect(await subjects(repo, base)).toEqual([]);
     expect(existsSync(path.join(deck.openDir, `${first}.md`))).toBe(true);

@@ -1,5 +1,5 @@
 import { startRun } from "./check.ts";
-import { fileHeld } from "./cycle.ts";
+import { fileHeld, landedEntry } from "./cycle.ts";
 import { type Deck, locate } from "./deck.ts";
 import { readDocument } from "./document.ts";
 import { discard, holdWorktree } from "./landing.ts";
@@ -55,7 +55,7 @@ export async function settle(deck: Deck, plan: Plan): Promise<{ plan: Plan; tree
   if (cycle?.commit !== undefined && !plan.landed.some(({ commit }) => commit === cycle.commit)) {
     // Its commit landed, so it closes from the reviewer's note, never committed again.
     if (!(await locate(deck, cycle.card))!.closed) await closeCard(deck, cycle.card, "done", cycle.note!);
-    plan = await writeRecord(plan, { landed: [...plan.landed, { card: cycle.card, commit: cycle.commit }] });
+    plan = await writeRecord(plan, { landed: [...plan.landed, landedEntry(cycle, cycle.commit)] });
   }
   return { plan, tree };
 }
