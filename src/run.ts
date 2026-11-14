@@ -10,6 +10,7 @@
  */
 import { type CycleEnd, landedEntry, resumeCard, runCard } from "./cycle.ts";
 import { locate, requireDeck } from "./deck.ts";
+import { notify } from "./notify.ts";
 import { listPlans, RUN_MARK, runMark, writeRecord } from "./plan.ts";
 
 const [slug, tree, flag] = process.argv.slice(2) as [string, string, string?];
@@ -47,8 +48,9 @@ for (const id of plan.cards) {
     if (resuming === null && Bun.deepEquals(current.cycle, plan.cycle)) {
       // Thrown before the card's cycle was recorded, so no session of it has
       // anything to answer, and the card reruns from a fresh reconciler.
-      await writeRecord(current, { state: "Stopped" });
+      const stopped = await writeRecord(current, { state: "Stopped" });
       console.log(`The run stopped before ${id}'s cycle started: ${cause}`);
+      await notify(deck, stopped, "stopped", id);
       process.exit(0);
     }
     const { role, sessions } = current.cycle!;
@@ -58,13 +60,16 @@ for (const id of plan.cards) {
   plan = ended.plan;
   if (ended.outcome === "stopped") {
     const { role, session, cause, question, feedback, gap } = ended;
-    await writeRecord(plan, { state: "Bounced", bounce: { role, session, cause, question, feedback, gap } });
+    const bounced = await writeRecord(plan, { state: "Bounced", bounce: { role, session, cause, question, feedback, gap } });
     console.log(`The run bounced at ${id}: the ${role} stopped it: ${cause}`);
     if (question !== undefined) console.log(`It asks the owner: ${question}`);
+    await notify(deck, bounced, "bounced", id, { role, cause });
     process.exit(0);
   }
   plan = await writeRecord(plan, { landed: [...plan.landed, landedEntry(plan.cycle!, ended.sha)] });
   console.log(`${id} landed as ${ended.sha}.`);
+  await notify(deck, plan, "landed", id);
 }
-await writeRecord(plan, { state: "Ended" });
+plan = await writeRecord(plan, { state: "Ended" });
 console.log("The run ended after the plan's last card.");
+await notify(deck, plan, "ended");

@@ -1,12 +1,12 @@
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import documentStage from "../payload/document.md" with { type: "text" };
 import settle from "../payload/settle.md" with { type: "text" };
 import { answerInstruction } from "../src/answer.ts";
 import { startRun } from "../src/check.ts";
 import { type Cycle, landedEntry, RECONCILER, type Role, type Step } from "../src/cycle.ts";
-import { createDeck, type Deck } from "../src/deck.ts";
+import { CONFIG_NAME, createDeck, type Deck } from "../src/deck.ts";
 import { branchExists, git, gitOrThrow, listWorktrees } from "../src/git.ts";
 import { ensureBranch, holdWorktree, land } from "../src/landing.ts";
 import { appendRecord, closeCard, fileCard, reopenCard } from "../src/operations.ts";
@@ -2846,3 +2846,208 @@ test("a second plan started with --plan while the first is in Check: bare card l
   expect(first).toBe("card: `card --plan greeting done` is not open while the plan `greeting` is in Check, where these commands are open:");
   expect(lines.map((line) => line.trim()).sort()).toEqual(opened("card --plan greeting", "Check"));
 });
+
+/**
+ * Sets the deck's `[notify] command` to run a script that appends its `$1`
+ * and its stdin, one line each, to `pushes`, then runs `then` as shell. The
+ * script sets its own PATH, since the run's holds only the stand-ins and git.
+ */
+function pushTo(deck: Deck, pushes: string, then = ""): void {
+  const script = path.join(tempDir(), "push.sh");
+  writeFileSync(script, `PATH='${OUTER_PATH}'\n{ printf '%s\\n' "$1"; cat; printf '\\n'; } >> '${pushes}'\n${then}\n`);
+  const command = `/bin/sh '${script}' "$1"`;
+  appendFileSync(path.join(deck.cardDir, CONFIG_NAME), `\n[notify]\ncommand = ${JSON.stringify(command)}\n`);
+}
+
+type Push = { summary: string; input: Record<string, unknown> };
+
+/** Each call `pushTo`'s script recorded, in order; a summary over one line breaks the pairing, and the JSON with it. */
+function pushed(pushes: string): Push[] {
+  if (!existsSync(pushes)) return [];
+  const lines = readFileSync(pushes, "utf8").trimEnd().split("\n");
+  expect(lines.length % 2).toBe(0);
+  const result: Push[] = [];
+  for (let at = 0; at < lines.length; at += 2) result.push({ summary: lines[at]!, input: JSON.parse(lines[at + 1]!) });
+  return result;
+}
+
+/** Queues a two-card run that lands both and ends, approves it, and waits for the run to exit. */
+async function endedRun(push?: (deck: Deck) => void) {
+  const made = await inCheck();
+  push?.(made.deck);
+  const control = stand(["pi"]);
+  queue(control, [proceed()], [done()], [approved("Add the greeting")], [proceed()], [done()], [approved("Check the plan")]);
+  expect((await card(["approve"], made.repo)).code).toBe(0);
+  const { pid } = record(made.plan.dir).run!;
+  await until("the run to end", () => !running(pid));
+  return { ...made, control, log: readFileSync(path.join(made.plan.dir, "run.log"), "utf8") };
+}
+
+/**
+ * The plan's state file with what differs between any two runs made alike
+ * put aside: its repository's path, its card ids, commits and session and boot
+ * ids, and every number but the counts, which are times and the run's pid.
+ */
+function alike({ repo, plan, first, final }: { repo: string; plan: Plan; first: string; final: string }): unknown {
+  const text = readFileSync(path.join(plan.dir, "state.json"), "utf8")
+    .replaceAll(repo, "<repo>")
+    .replaceAll(first, "<first>")
+    .replaceAll(final, "<final>")
+    .replace(/\b[0-9a-f]{40}\b/g, "<commit>")
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g, "<uuid>");
+  return JSON.parse(text, (key, value) => (typeof value === "number" && key !== "rounds" && key !== "exchanges" ? 0 : value));
+}
+
+test(
+  "a run of two cards that ends calls the push command three times, landed, landed and ended, each with a one-line summary and the event as JSON on stdin",
+  async () => {
+    const pushes = path.join(tempDir(), "pushes");
+    const { first, final } = await endedRun((deck) => pushTo(deck, pushes));
+
+    const calls = pushed(pushes);
+    expect(calls.map(({ summary }) => summary)).toEqual([
+      `greeting: landed ${first}  Add the greeting`,
+      `greeting: landed ${final}  Check the plan`,
+      "greeting: ended",
+    ]);
+    expect(calls.map(({ input }) => input)).toEqual([
+      { plan: "greeting", event: "landed", card: { id: first, headline: "Add the greeting" }, bounce: null, closed: 1, cards: 2, estimate: expect.any(Number) },
+      { plan: "greeting", event: "landed", card: { id: final, headline: "Check the plan" }, bounce: null, closed: 2, cards: 2, estimate: 0 },
+      { plan: "greeting", event: "ended", card: null, bounce: null, closed: 2, cards: 2, estimate: 0 },
+    ]);
+  },
+  SLOW,
+);
+
+/** Approves a run with the push command set, queued with `sessions`, waits for it to exit, and asserts it bounced once at the first card, pushing that. */
+async function bouncedPush(role: Role, ...sessions: Reply[][]): Promise<void> {
+  const { repo, deck, plan, first } = await inCheck();
+  const pushes = path.join(tempDir(), "pushes");
+  pushTo(deck, pushes);
+  queue(stand(["pi"]), ...sessions);
+  expect((await card(["approve"], repo)).code).toBe(0);
+  const { pid } = record(plan.dir).run!;
+  await until("the run to end", () => !running(pid));
+
+  const { state, bounce } = record(plan.dir);
+  expect(state).toBe("Bounced");
+  expect(bounce!.role).toBe(role);
+  const input = { plan: "greeting", event: "bounced", card: { id: first, headline: "Add the greeting" }, bounce: { role, cause: bounce!.cause }, closed: 0, cards: 2, estimate: null };
+  expect(pushed(pushes)).toEqual([{ summary: `greeting: bounced ${first}  Add the greeting`, input }]);
+}
+
+test(
+  "a run its reconciler stops calls the push command once, with bounced, the reconciler and its cause",
+  () => bouncedPush("reconciler", [{ answer: JSON.stringify({ outcome: "stop", cause: "order", question: "Which card builds greet()?" }) }]),
+  SLOW,
+);
+
+test(
+  "a run whose role fails calls the push command once, with bounced, the role and its cause",
+  () => bouncedPush("implementer", [proceed()], [{ stderr: "usage limit reached\n", exit: 1 }]),
+  SLOW,
+);
+
+test("a run that stops before a card's cycle starts calls the push command once, with stopped and the card", async () => {
+  const { repo, deck, plan, first } = await inCheck();
+  const pushes = path.join(tempDir(), "pushes");
+  pushTo(deck, pushes);
+  stand(["pi"]);
+  // Not a git worktree, so the cycle's first read of HEAD throws.
+  await startRun(plan, "pi", tempDir(), repo);
+  const { pid } = record(plan.dir).run!;
+  await until("the run to end", () => !running(pid));
+
+  expect(record(plan.dir).state).toBe("Stopped");
+  const input = { plan: "greeting", event: "stopped", card: { id: first, headline: "Add the greeting" }, bounce: null, closed: 0, cards: 2, estimate: null };
+  expect(pushed(pushes)).toEqual([{ summary: `greeting: stopped ${first}  Add the greeting`, input }]);
+});
+
+test(
+  "card stop on a running plan does not call the push command, and the run card resume carries on to its end calls it on landed, landed and ended alone",
+  async () => {
+    const { repo, deck, plan } = await inCheck();
+    const pushes = path.join(tempDir(), "pushes");
+    pushTo(deck, pushes);
+    const control = stand(["pi"]);
+    queue(
+      control,
+      [proceed()],
+      [done(hold(control, "first"))],
+      [proceed()],
+      [done()],
+      [approved("Add the greeting")],
+      [proceed()],
+      [done()],
+      [approved("Check the plan")],
+    );
+    expect((await card(["approve"], repo)).code).toBe(0);
+    await until("the first role to start", () => existsSync(path.join(control, "first.started")));
+
+    expect((await card(["stop"], repo)).code).toBe(0);
+    expect(record(plan.dir).state).toBe("Stopped");
+    expect(existsSync(pushes)).toBe(false);
+
+    expect((await card(["resume"], repo)).code).toBe(0);
+    const { pid } = record(plan.dir).run!;
+    await until("the run to end", () => !running(pid));
+    expect(record(plan.dir).state).toBe("Ended");
+    expect(pushed(pushes).map(({ input }) => input.event)).toEqual(["landed", "landed", "ended"]);
+  },
+  SLOW,
+);
+
+/**
+ * Runs `endedRun` with no push command and then with one whose script ends
+ * with `then`, asserting the first's log is the run's own lines alone, and
+ * that both leave the same outcome and state file; returns the second's log.
+ */
+async function sameAsWithout(then: string): Promise<string> {
+  const without = await endedRun();
+  const [one, two] = record(without.plan.dir).landed.map(({ commit }) => commit);
+  const proceeded = (id: string) => `${id}: the reconciler proceeded: Nothing needed changing.\n`;
+  const lines = [proceeded(without.first), `${without.first} landed as ${one}.\n`, proceeded(without.final), `${without.final} landed as ${two}.\n`];
+  expect(without.log).toBe(`${lines.join("")}The run ended after the plan's last card.\n`);
+  const pushes = path.join(tempDir(), "pushes");
+  const withPush = await endedRun((deck) => pushTo(deck, pushes, then));
+  expect(pushed(pushes).map(({ input }) => input.event)).toEqual(["landed", "landed", "ended"]);
+  expect(await subjects(withPush.repo, withPush.base)).toEqual(await subjects(without.repo, without.base));
+  expect(alike(withPush)).toEqual(alike(without));
+  return withPush.log;
+}
+
+test(
+  "a push command that exits non-zero leaves the run as it is with none, and its status is in the run's log",
+  async () => {
+    const log = await sameAsWithout("exit 3");
+    expect(log.match(/card: the push command for (landed|ended) exited with status 3\n/g)).toHaveLength(3);
+  },
+  2 * SLOW,
+);
+
+test(
+  "a push command that prints leaves the run as it is with none, and what it prints is in the run's log",
+  async () => {
+    const log = await sameAsWithout("echo 'to stdout'; echo 'to stderr' >&2");
+    expect(log.match(/to stdout\n/g)).toHaveLength(3);
+    expect(log.match(/to stderr\n/g)).toHaveLength(3);
+  },
+  2 * SLOW,
+);
+
+test(
+  "a push command that sleeps past the timeout leaves the run as it is with none, is ended with what it started, and the timeout is in the run's log",
+  async () => {
+    const pids = path.join(tempDir(), "pids");
+    process.env.CARD_NOTIFY_TIMEOUT_MS = "300";
+    try {
+      const log = await sameAsWithout(`sleep 30 & echo $! >> '${pids}'; wait`);
+      expect(log.match(/card: the push command for (landed|ended) timed out after 300ms and was killed\n/g)).toHaveLength(3);
+      const sleepers = readFileSync(pids, "utf8").trim().split("\n").map(Number);
+      expect(sleepers.map(running)).toEqual([false, false, false]);
+    } finally {
+      delete process.env.CARD_NOTIFY_TIMEOUT_MS;
+    }
+  },
+  2 * SLOW,
+);
