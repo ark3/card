@@ -204,6 +204,21 @@ test("card watch changes nothing under the card directory with a plan whose run 
   expect(existsSync(path.join(plan.dir, "run.log"))).toBe(false);
 });
 
+test("card watch changes nothing under the card directory in every state, and shows the card counts in each", async () => {
+  for (const state of STATES) {
+    const live = state === "Running";
+    const run = { pid: live ? process.pid : await deadPid(), boot: BOOT };
+    const { repo, deck } = await planned((ids) => ({
+      state: state === "Dead" ? "Running" : state,
+      harness: "pi",
+      run,
+      cycle: live || state === "Dead" ? cycleOf(ids[0]!, { started: Date.now() }) : null,
+    }));
+    const drawn = await unchanged(repo, deck);
+    expect(drawn).toContain(`greeting  ${state}\n  0/3 cards closed, `);
+  }
+}, 30_000);
+
 test("card watch changes nothing under the card directory with a plan holding a pending verb", async () => {
   const run = { pid: await deadPid(), boot: BOOT };
   const { repo, deck } = await planned(() => ({ state: "Running", harness: "pi", run, pending: { verb: "stop" } }));
