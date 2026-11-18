@@ -21,7 +21,7 @@ import { citedIds } from "./id.ts";
 import { addedLines, changedSince, CommitRefused, discard, land, snapshot, uncommittedDiff, undoMovedHead } from "./landing.ts";
 import { appendRecord, closeCard, drawIds, dropUnlanded, fileCardAs, toolWrittenChanges } from "./operations.ts";
 import { fill } from "./payload.ts";
-import { type Plan, writeRecord } from "./plan.ts";
+import { type Landed, type Plan, writeRecord } from "./plan.ts";
 
 /** The roles of one card's cycle. */
 export type Role = "reconciler" | "implementer" | "reviewer";
@@ -88,7 +88,37 @@ export type Cycle = {
    * reconciler's included.
    */
   finding?: string;
+  /**
+   * The active time each role's sessions have run in this cycle, in
+   * milliseconds, added to as each turn of a role session ends, by its answer
+   * being taken or by its failing, repair prompts included. Time the plan sits
+   * in Bounced or Stopped between turns is in no role's, and neither is a turn
+   * `card ask` runs. A cycle recorded by a run that predates the times has
+   * none.
+   */
+  active?: Partial<Record<Role, number>>;
+  /**
+   * When the role session now running, the session of the cycle's `role`,
+   * started its turn, as `Date.now()` gives it, recorded before the turn
+   * starts and cleared once it ends, so the cycle's active time so far is its
+   * `active` with the time since this added. A run killed mid-turn, by its
+   * death or `card stop`, leaves it recorded, though that session no longer
+   * runs.
+   */
+  started?: number;
 };
+
+/**
+ * The plan's `landed` entry for the cycle `cycle`, whose card landed as
+ * `commit`, with the active time its roles' sessions recorded and none a turn
+ * left recorded as started, since a run killed mid-turn leaves no record of
+ * when that session stopped running.
+ */
+export function landedEntry(cycle: Cycle, commit: string): Landed {
+  if (cycle.active === undefined) return { card: cycle.card, commit };
+  const active = Object.values(cycle.active).reduce((sum, each) => sum + each, 0);
+  return { card: cycle.card, commit, active, roles: cycle.active };
+}
 
 /**
  * How a cycle ended, and the plan as it then stands. A reconciler that stops
@@ -333,6 +363,9 @@ const LANDING: ObjectSchema = {
   required: ["outcome", "subject", "close_note"],
 };
 
+/** Runs a role session's turn, `call`, counting its span as the cycle's `active` time, as `cycleFrom` records it. */
+type Timed = (call: () => Promise<Answer>) => Promise<Answer>;
+
 /**
  * What the one-way reference rule finds wrong with the subject and close note
  * of `answer`, naming each card id of the `prefix` deck they cite, or null
@@ -358,7 +391,8 @@ function messageCites(answer: Answer, prefix: string): string | null {
  * sends the reviewer back ID_RETURNS times, and its next failure throws
  * RoleFailure, quoting what still cites an id. Each answer it sends back
  * for is handed to `hold` as it is read, so its findings are recorded even
- * where a later check fails.
+ * where a later check fails, and each turn it sends the reviewer back for
+ * runs through `timed`, so its time is the reviewer's active time.
  */
 async function referenceChecked(
   deck: Deck,
@@ -367,6 +401,7 @@ async function referenceChecked(
   base: string,
   answer: Answer,
   hold: (answer: Answer) => Promise<void>,
+  timed: Timed,
 ): Promise<Answer> {
   let messageReturns = 0;
   let diffReturns = 0;
@@ -377,7 +412,7 @@ async function referenceChecked(
         throw new RoleFailure(`the subject and close note still cited a card id after ${ID_RETURNS} returns: ${cited}`);
       }
       messageReturns++;
-      answer = await correct(reviewer, cited, LANDING, reviewed);
+      answer = await timed(() => correct(reviewer, cited, LANDING, reviewed));
       await hold(answer);
       continue;
     }
@@ -393,7 +428,7 @@ async function referenceChecked(
     diffReturns++;
     const ids = [...new Set(lines.flatMap((line) => citedIds(line, deck.prefix)))];
     const stripping = fill(stripIds, { LINES: lines.join("\n"), IDS: ids.map((id) => `\`${id}\``).join(", ") });
-    answer = await resume(reviewer, stripping, LANDING, reviewed);
+    answer = await timed(() => resume(reviewer, stripping, LANDING, reviewed));
     await hold(answer);
   }
 }
@@ -667,6 +702,24 @@ async function cycleFrom(
     cycle = { ...cycle, role, step, sessions, rounds, exchanges };
     plan = await writeRecord(plan, { cycle });
   };
+  /**
+   * Runs `call`, a turn of the session of the cycle's role, with the cycle
+   * recording when it started while it runs, and its span added to the role's
+   * active time once it ends, by an answer or by any error alike, so the time
+   * the plan then sits in Bounced or Stopped is never counted.
+   */
+  const timed: Timed = async (call) => {
+    cycle = { ...cycle, started: Date.now() };
+    plan = await writeRecord(plan, { cycle });
+    try {
+      return await call();
+    } finally {
+      const { started, ...rest } = cycle;
+      const spent = (cycle.active?.[cycle.role] ?? 0) + Date.now() - started!;
+      cycle = { ...rest, active: { ...cycle.active, [cycle.role]: spent } };
+      plan = await writeRecord(plan, { cycle });
+    }
+  };
   /** Records the findings of a reviewer's `approved` or `fixed` answer in the cycle, merged into those it holds. */
   const hold = async (answer: Answer) => {
     cycle = { ...cycle, held: merged(cycle.held ?? [], (answer.findings ?? []) as Finding[]) };
@@ -679,12 +732,12 @@ async function cycleFrom(
     // The card's commit, once a reviewer's answer has landed.
     let sha = "";
     try {
-      answer = await answering(answerer(role), prompt, ...asked(step, exchanges, final));
+      answer = await timed(() => answering(answerer(role), prompt, ...asked(step, exchanges, final)));
       // A cycle resumed at the land step lands its reviewer's landing answer here too.
       for (let hookReturns = 0; (step === "review" || step === "land") && answer.outcome !== "revision"; hookReturns++) {
         // The answer read above, or the one a hook's refusal sent back for.
         await hold(answer);
-        answer = await referenceChecked(deck, answerer(role), tree, base, answer, hold);
+        answer = await referenceChecked(deck, answerer(role), tree, base, answer, hold, timed);
         // The commit and the card's close note take the note alike, as `escapePasted` makes it.
         const subject = landingSubject(answer.subject as string);
         const note = escapePasted(answer.close_note as string);
@@ -700,7 +753,7 @@ async function cycleFrom(
           if (hookReturns === ID_RETURNS) {
             throw new RoleFailure(`the host repository's hook still refused the commit after ${ID_RETURNS} returns: ${error.message}`);
           }
-          answer = await resume(answerer(role), fill(hookRefused, { OUTPUT: error.message }), LANDING, reviewed);
+          answer = await timed(() => resume(answerer(role), fill(hookRefused, { OUTPUT: error.message }), LANDING, reviewed));
         }
       }
     } catch (error) {

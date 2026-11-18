@@ -251,6 +251,20 @@ It writes enough state after every card for a dead run to resume from the last c
 It records the kernel's boot id beside the run's pid and treats a changed boot id as death, since pids restart low after a boot and a pid file alone can name an unrelated live process.
 Bare `card` carries a dead run on, and the card that was in flight reruns from its reconciler on a clean worktree, so a death costs only that card's progress.
 
+The run records how long its role sessions actually ran, so `card watch` and the push command below can say how far along a run is from the plan's record alone.
+While a card's cycle runs, the record holds each role's active time in that cycle, the time its sessions' turns have taken, and the start of the turn running now, so a reader gets the card's time so far by adding the time since that start; once the card lands, its entry among the landed cards carries the cycle's total and each role's share of it.
+Active time counts only a role session's turns: the time a plan sits waiting in Bounced or Stopped is not counted, nor the turns of `card ask`, nor a discarded cycle's time, so a card that reruns after a death, a `card stop` or a `card amend` counts only the cycle that lands it.
+
+The owner may set `[notify] command` in `card-config.toml`, in the card directory, to a push command the run calls on its events, so the owner is told when something happens without watching the run.
+The run calls it on four events, each after writing its record: `landed`, when a card lands; `bounced`, when a role's answer or a role's failure bounces the run; `stopped`, when the run stops itself before a card's cycle starts; and `ended`, after the plan's last card.
+`card stop` is not one, because the owner who ran it already knows, and because only the run calls the command, which neither `card stop`, nor the stop inside `card drop`, nor bare `card` carrying a dead run on is.
+The command runs under `sh -c` with a one-line summary of the event as `$1`, naming the plan, the event and the card's id and headline where there is a card, so a one-line `curl` or `ntfy` needs to parse nothing, and with one JSON object on its stdin: the plan, the event, the card, a bounce's role and cause, and the cards closed, the plan's cards and the estimate of the time left, as `card watch` shows them.
+Its output and how it ended go to the run's log, and once it has run ten seconds it and every process it started are killed.
+Every failure of the command is logged and swallowed, so a push command can never change a run's outcome or its record, and holds the run up no longer than its timeout.
+With no command set, the run starts no process for it.
+
+A death is still noticed only when something runs `card`, bare `card` carrying the run on or `card watch` showing it dead, so no event announces it: a watcher that detected deaths and announced them is more machinery than deaths have yet justified.
+
 ### Findings
 
 The reconciler, implementer and reviewer all report findings, through one optional field every role's answer shares, and the tool files each one the same way, as a waiting card.
@@ -371,6 +385,7 @@ A card it would add goes through `card amend` and the Cards stage, since a card 
 
 The verbs are the operations the interactive sessions need — the authoring stages, the check before approval, answering a stopped run, settling findings at the end — and no more, because the headless roles act only through their answers: the tool itself puts the card in the prompt, files a run's findings, appends the account and the close note and closes the card, holds the plan's worktree, commits, and checks text for card ids, each deck operation through `deck`'s modules.
 The test that decides each invocation: one is justified only where an interactive session needs code to run at a moment the session chooses, and its content rides on arguments or stdin, never on a file left waiting.
+`card watch` is the one verb that test does not admit, since no session needs it: the owner runs it to look, and it exists anyway because a run lasts hours the owner does not wait through, while bare `card`, which finishes a recorded verb and carries a dead run on as it reports, is no safe way to glance at one, and `card watch` writes nothing.
 
 A plan is always in one state, which the tool records.
 Bare `card` acts on it as the table says and prints the exact commands open in it, so the session copies a command rather than recalling a vocabulary; every other `card` verb is refused there, naming the state and printing the commands that are open.
@@ -390,8 +405,9 @@ A held plan, below, is the one exception: it stays in its state and opens no com
 Running moves on by itself: to Bounced when a role stops the run, and to Ended when the last card closes done.
 Dead is Running with its process gone, which the tool detects by pid and boot id ("Where the run lives").
 `card decline` and `card promote` are open in every state for a waiting card, and `card drop` in every state for the plan.
+`card watch` is in no row either: it is open in every state, a held plan's included, and with no plan at all, and bare `card` never prints it, since it is the owner's glance and no session's next command.
 
-A verb that writes more than once — `done` in the Cards stage, `join` at Ended, `amend`, `stop`, `drop` — records the decision it carries in the plan's record before its first other write, and every invocation of `card` finishes a recorded verb before it does anything else, so a verb that died partway is finished from its record, never undone.
+A verb that writes more than once — `done` in the Cards stage, `join` at Ended, `amend`, `stop`, `drop` — records the decision it carries in the plan's record before its first other write, and every invocation of `card` but `card watch` finishes a recorded verb before it does anything else, so a verb that died partway is finished from its record, never undone.
 The finishing prints what the verb would have printed for the owner, its command formed for the plan it finished, since the owner was never told of a decision its run did not live to report.
 A drop's report is recorded with the drop, the worktree it removes and the branch it keeps, where there is one, and the plan's cards not yet closed, so a drop finished after its run removed the worktree or closed some cards still reports them; it lists those of the recorded cards the deck shows closed declined, not a card in flight its settling closed done.
 After finishing one that ended an authoring stage, `done` in the Cards stage or `join` at Ended, the run of `card` stops there and does not go on to the command it was asked for, so the session that ran the verb is never handed the next stage's prompt, which a fresh session runs; unless it was bare `card` asking after no plan in particular, or after a plan whose stage a verb it finished ended, either of which asked for nothing beyond the next thing, it prints that the command it was asked for did not run and must be run again.
@@ -400,13 +416,13 @@ What could refuse such a verb is checked before the record, and what is written 
 So a recorded verb fails to finish only on a git or disk error, and its plan is then held: it opens no command, not even `drop`, since its recorded decision can be neither undone nor treated as finished, and every other verb assumes a whole state, which a half-dropped plan, say, is not.
 The cards the recorded verb carries, those a `done` files and the one a `join` takes in, are the held plan's meanwhile, so no other plan's listing offers them and no other plan's `join`, nor `decline` or `promote`, takes them.
 Bare `card` on a held plan prints the error that stopped the verb, then refuses, saying the plan is held until its recorded verb finishes and why it opens no command; with more than one plan in progress, it lists the held plan with its state, marked held, says the same, and prints no command for it.
-The next invocation of `card`, any verb and any plan, tries the recorded verb again once the error is put right; other plans, and `decline` and `promote` on waiting cards, go on meanwhile.
+The next invocation of `card`, any verb but `card watch` and any plan, tries the recorded verb again once the error is put right; other plans, and `decline` and `promote` on waiting cards, go on meanwhile.
 
 - **Starting.**
   Bare `card` with no plan in progress lists the waiting cards, with `decline` and `promote` open for each, and starts a new plan in the Document stage; the plan exists from there, and `card drop` ends one started by mistake.
 - **More than one plan.**
   With more than one plan in progress, bare `card` lists the plans with their states and prints each command with `--plan <slug>` filled in, right after the word `card`.
-  `--plan` is accepted by every verb in any position; only bare `card --plan <slug>` starts a plan under a slug no plan has, and every other verb refuses a slug it does not know, so a typo cannot start one.
+  `--plan` is accepted by every verb but `card watch`, which shows every plan, in any position; only bare `card --plan <slug>` starts a plan under a slug no plan has, and every other verb refuses a slug it does not know, so a typo cannot start one.
   A plan started without a name gets a placeholder slug, which its document's headline replaces when the Document stage ends.
   A second plan starts while one is in progress when the first is halted for it, the common case at work, where a load-bearing bug gets a ticket of its own and the first plan waits until it lands.
 - **Finishing.**
@@ -431,6 +447,8 @@ The spelling:
   `later` rather than `new`, which would read as filing a card, the act of `deck new`.
 - `card finish` — end the plan.
 - `card drop` — give the plan up.
+- `card watch` — the owner's glance at every plan in progress, strictly read-only: it creates no deck, finishes no recorded verb and carries on no dead run, and it redraws, until it is killed, each plan's state, its cards closed out of its cards, its active time, a rough estimate of the time left and, in Running, the card in flight with its role, revision rounds, exchanges and active time, flagged when it shows an early sign of a bounce.
+  While it runs it serves the same view as a web page that reloads itself, on localhost alone by default, since the page has no authentication, and on every interface with `--network`, at a free port unless `[watch] port` in `card-config.toml` fixes one, and the page lives only as long as the process.
 - `--plan <slug>` — the plan a command means: needed to start a plan while another is in progress, and to name one while more than one is.
 
 Separate words were chosen over folding the acts into `card done` with arguments: the owner's choice has to be carried either way, so folding saves nothing there, while a session holding a stale picture of the state — the run finished, or another session approved — gets a loud refusal from a word used in the wrong state, where a folded `done` would quietly do what the current state means by it, approval included, which "Recorded transitions" keeps to the owner's explicit word.
@@ -587,7 +605,7 @@ The design is implemented when every one of these holds on the finished branch; 
 
 1. **The surface.**
    In a git repository with no deck, bare `card` creates the deck under the prefix `card` and prints the Document stage's prompt.
-   `card`'s verbs are `card`, `card done`, `card approve`, `card amend`, `card stop`, `card ask`, `card resume`, `card join`, `card later`, `card decline`, `card promote` in its two forms, `card finish` and `card drop`, with `--plan <slug>` accepted by any.
+   `card`'s verbs are `card`, `card done`, `card approve`, `card amend`, `card stop`, `card ask`, `card resume`, `card join`, `card later`, `card decline`, `card promote` in its two forms, `card finish`, `card drop` and `card watch`, with `--plan <slug>` accepted by any but `card watch`.
    `deck`'s verbs are `deck init`, `deck new`, `deck show`, `deck list`, `deck close`, `deck lint` and `deck agent-help`.
    Each executable refuses any other verb as unknown.
    In every state of the table under "The plan's states and the verb surface", bare `card` does what the table says, and every `card` verb not open there refuses, names the state, and prints the commands open in it.
@@ -622,6 +640,9 @@ The design is implemented when every one of these holds on the finished branch; 
    Liveness is pid plus boot id.
    A dead run is carried on by bare `card` from the last card closed, the card in flight rerunning from its reconciler on a clean worktree.
    During a run bare `card` reports the active card and role and how many cards have closed.
+   The run records each role session's active time in a card's cycle and each landed card's, leaving out time waiting in Bounced or Stopped and a discarded cycle's time.
+   `card watch` shows every plan in progress, in the terminal and as a web page on localhost unless `--network` is given, at `[watch] port` where that is set, and leaves every file under the card directory byte-for-byte unchanged, in every state and with no plan, creating no deck where there is none.
+   With `[notify] command` set, the run calls it on `landed`, `bounced`, `stopped` and `ended`, never on `card stop`, with the summary as `$1` and the JSON object on stdin, and a command that fails, prints or outlives its timeout leaves the run's outcome and its record unchanged, with its output, its failure or its timeout in the run's log.
 8. **The plan document and the final card.**
    Reconcilers and the final card's roles read the plan document, and nobody else does.
    The final card runs last.

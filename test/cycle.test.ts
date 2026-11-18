@@ -174,6 +174,7 @@ test("each role is launched fresh under its own id, which the plan's record hold
     subject: SUBJECT,
     note: NOTE,
     commit,
+    active: expect.any(Object),
   });
   expect(ended.plan.cycle).toEqual(record);
 });
@@ -392,7 +393,7 @@ test("an implementer that fails stops the cycle at its step, with the cause and 
   expect(ended.session).toEqual({ harness: "pi", id: ids[1]!, dir: tree });
   expect(ended.cause).toContain("usage limit reached");
   const sessions = { reconciler: ids[0], implementer: ids[1] };
-  expect(ended.plan.cycle).toEqual({ card: id, base, role: "implementer", step: "implement", sessions, rounds: 0, exchanges: 0 });
+  expect(ended.plan.cycle).toEqual({ card: id, base, role: "implementer", step: "implement", sessions, rounds: 0, exchanges: 0, active: expect.any(Object) });
   expect((await listPlans(deck))[0]!.cycle).toEqual(ended.plan.cycle);
   expect(existsSync(path.join(control, ids[2]!, "calls"))).toBe(false);
   expect(await headSha(tree)).toBe(base);
@@ -418,6 +419,7 @@ test("a reviewer that fails stops the cycle at review, the account appended and 
     sessions: { reconciler: ids[0], implementer: ids[1], reviewer: ids[2] },
     rounds: 0,
     exchanges: 0,
+    active: expect.any(Object),
   });
   expect(await headSha(tree)).toBe(base);
   expect(await gitOrThrow(["status", "--porcelain"], tree)).toBe("?? hello.txt\n");
@@ -472,7 +474,7 @@ test("a reconciler that stops ends the cycle stopped with its cause and question
   expect(ended.session).toEqual({ harness: "pi", id: ids[0]!, dir: tree });
   expect(ended.cause).toBe("the card depends on work no earlier card has landed, a problem of order for authoring to fix");
   expect(ended.question).toBe(QUESTION);
-  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "reconcile", sessions: { reconciler: ids[0] }, rounds: 0, exchanges: 0 });
+  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "reconcile", sessions: { reconciler: ids[0] }, rounds: 0, exchanges: 0, active: expect.any(Object) });
   expect((await listPlans(deck))[0]!.cycle).toEqual(ended.plan.cycle);
   for (const session of [ids[1]!, ids[2]!]) expect(existsSync(path.join(control, session, "calls"))).toBe(false);
   expect(await headSha(tree)).toBe(base);
@@ -501,7 +503,7 @@ test("a reconciler that fails stops the cycle at reconcile, with its cause and s
   expect(ended.session.id).toBe(ids[0]!);
   expect(ended.cause).toContain("usage limit reached");
   expect(ended.question).toBeUndefined();
-  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "reconcile", sessions: { reconciler: ids[0] }, rounds: 0, exchanges: 0 });
+  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "reconcile", sessions: { reconciler: ids[0] }, rounds: 0, exchanges: 0, active: expect.any(Object) });
 });
 
 const RECORDED_GAP = "The plan's last check found no greeting.";
@@ -527,7 +529,7 @@ test("a reconciler that proceeds having changed the worktree stops the cycle as 
   expect(ended.cause).toContain("stray.txt");
   expect(ended.cause).toContain("left in place");
   expect(ended.question).toBeUndefined();
-  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "reconcile", sessions: { reconciler: ids[0] }, rounds: 0, exchanges: 0 });
+  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "reconcile", sessions: { reconciler: ids[0] }, rounds: 0, exchanges: 0, active: expect.any(Object) });
   expect(readFileSync(path.join(tree, "stray.txt"), "utf8")).toBe("stray\n");
   expect(readFileSync(path.join(tree, "README.md"), "utf8")).toEndWith("more\n");
   for (const session of [ids[1]!, ids[2]!]) expect(existsSync(path.join(control, session, "calls"))).toBe(false);
@@ -661,6 +663,7 @@ test(`past ${REVISION_ROUNDS} revision rounds, a reviewer asking for another sto
     sessions: { reconciler: ids[0], implementer: ids[1], reviewer: ids[5] },
     rounds: REVISION_ROUNDS,
     exchanges: 0,
+    active: expect.any(Object),
   });
   expect(await headSha(tree)).toBe(base);
   expect(await gitOrThrow(["status", "--porcelain"], tree)).toBe("?? hello.txt\n");
@@ -715,7 +718,7 @@ test("an implementer's blocked answer resumes the reconciler under its recorded 
   expect(ended.session).toEqual({ harness: "pi", id: ids[0]!, dir: tree });
   expect(ended.question).toBe(QUESTION);
   const sessions = { reconciler: ids[0], implementer: ids[1] };
-  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions, rounds: 0, exchanges: 1, finding: FINDING });
+  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions, rounds: 0, exchanges: 1, finding: FINDING, active: expect.any(Object) });
   expect((await listPlans(deck))[0]!.cycle).toEqual(ended.plan.cycle);
   expect(existsSync(path.join(control, ids[2]!, "calls"))).toBe(false);
 });
@@ -760,7 +763,7 @@ test("a reconciler that amends the card having changed its frontmatter or record
   expect(ended.cause).toContain("left in place");
   expect(ended.question).toBeUndefined();
   const sessions = { reconciler: ids[0], implementer: ids[1] };
-  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions, rounds: 0, exchanges: 1, finding: FINDING });
+  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions, rounds: 0, exchanges: 1, finding: FINDING, active: expect.any(Object) });
   const text = readFileSync(file, "utf8");
   expect(text).toStartWith("---\nlabels: greeting, urgent\n---\n");
   expect(text).toContain("## Gap\n\nThe plan's last check found a greeting.\n");
@@ -936,7 +939,7 @@ test(`a card gets ${EXCHANGES} exchanges counted across its implementers, and a 
   expect(ended.cause).toBe("the reconciler and the implementer had not agreed after 3 exchanges, the most a card gets");
   expect(ended.question).toBe(DISAGREEMENT);
   const sessions = { reconciler: ids[0], implementer: ids[2] };
-  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions, rounds: 0, exchanges: EXCHANGES + 1, finding: FINDING });
+  expect(ended.plan.cycle).toEqual({ card: id, base, role: "reconciler", step: "converse", sessions, rounds: 0, exchanges: EXCHANGES + 1, finding: FINDING, active: expect.any(Object) });
 });
 
 // The plan's final card: its implementer verifying the plan finds a gap, and
@@ -1229,6 +1232,7 @@ test(`a diff still citing a card id after ${ID_RETURNS} returns stops the cycle 
     rounds: 0,
     exchanges: 0,
     held: [],
+    active: expect.any(Object),
   });
   expect(await headSha(tree)).toBe(base);
   expect(await gitOrThrow(["status", "--porcelain"], tree)).toBe("?? hello.txt\n");

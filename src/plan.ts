@@ -54,8 +54,12 @@ export type PlanRecord = {
    * first `card approve`.
    */
   run: { pid: number; boot: string } | null;
-  /** Every card the run has closed done, with its commit, in the order it closed them. */
-  landed: { card: string; commit: string }[];
+  /**
+   * Every card the run has closed done, with its commit, in the order it
+   * closed them, and the active time of the cycle that landed it, as `Landed`
+   * has it.
+   */
+  landed: Landed[];
   /**
    * Every finding the run has filed, in the order it filed them: the id of the
    * waiting card it was filed as, the role that filed it and the card it was
@@ -78,6 +82,16 @@ export type PlanRecord = {
    */
   pending: Pending | null;
 };
+
+/**
+ * A card the run closed done, with its commit and, where its cycle recorded
+ * any, the active time of the cycle that landed it, as the cycle's `active`
+ * has it: `active` the milliseconds every role's sessions ran, and `roles`
+ * those of each role whose sessions ran, which sum to it. A card landed by a
+ * run that predates the times has neither. A card that reran counts only the
+ * cycle that landed it.
+ */
+export type Landed = { card: string; commit: string; active?: number; roles?: Partial<Record<Role, number>> };
 
 /** The verbs that record themselves before they write, each with what finishing it needs. */
 export type Pending =
